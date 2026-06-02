@@ -1,0 +1,1361 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Panel Control..</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/dataTables.bootstrap5.min.css">
+<style>
+:root {
+    --rojo:        #BD0F14;
+    --rojo-dark:   #8b0a0e;
+    --rojo-light:  #fde8e8;
+    --rojo-mid:    #f87171;
+    --azul:        #253150;
+    --azul-dark:   #161e33;
+    --azul-mid:    #3a4d7a;
+    --azul-light:  #e8edf6;
+    --grad-rojo:   linear-gradient(135deg, #8b0a0e 0%, #BD0F14 55%, #e05555 100%);
+    --grad-azul:   linear-gradient(135deg, #161e33 0%, #253150 60%, #3a4d7a 100%);
+    --grad-mix:    linear-gradient(135deg, #253150 0%, #BD0F14 100%);
+    --bg-page:     #F4F5F8;
+    --bg-card:     #FFFFFF;
+    --text-main:   #111827;
+    --text-muted:  #64748b;
+    --text-light:  #94a3b8;
+    --border:      #e5e7eb;
+    --sidebar-w:   240px;
+    --radius:      20px;
+    --radius-sm:   12px;
+    --shadow:      0 2px 12px rgba(37,49,80,0.08);
+    --shadow-md:   0 8px 28px rgba(37,49,80,0.14);
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--text-main); overflow-x:hidden; }
+
+#loader-container {
+    position:fixed; inset:0; z-index:99999;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+    transition:opacity 0.8s ease, visibility 0.8s;
+    background-color: #0b0f19; /* Base oscura premium */
+}
+.loader-hidden { opacity:0 !important; visibility:hidden !important; }
+
+.l-bg {
+    position:absolute; inset:0;
+    overflow: hidden;
+    z-index: 1;
+}
+.l-bg::before, .l-bg::after {
+    content: ''; position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.45;
+    animation: lPremiumDrift 12s infinite alternate ease-in-out;
+}
+.l-bg::before {
+    width: 60vw; height: 60vw;
+    background: var(--rojo);
+    top: -20%; left: -10%;
+}
+.l-bg::after {
+    width: 50vw; height: 50vw;
+    background: var(--azul-mid);
+    bottom: -10%; right: -10%;
+    animation-delay: -6s;
+}
+@keyframes lPremiumDrift {
+    0% { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(8%, 12%) scale(1.15); }
+}
+
+.l-grid { display: none; } 
+
+.l-orb {
+    position:absolute; z-index: 2;
+    width:320px; height:320px;
+    background:radial-gradient(circle, rgba(189,15,20,0.15) 0%, transparent 70%);
+    border-radius:50%;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    animation:lOrbPulse 3s ease-in-out infinite;
+}
+@keyframes lOrbPulse {
+    0%,100% { transform:translate(-50%,-50%) scale(1); opacity:0.6; }
+    50%      { transform:translate(-50%,-50%) scale(1.3); opacity:1; }
+}
+
+.l-card {
+    position:relative; z-index:3;
+    display:flex; flex-direction:column; align-items:center;
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:28px;
+    padding:52px 60px;
+    gap:30px;
+    box-shadow:0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+    min-width:360px;
+    animation:lCardIn 0.6s cubic-bezier(0.34,1.4,0.64,1) both;
+    backdrop-filter:blur(25px);
+    -webkit-backdrop-filter:blur(25px);
+}
+@keyframes lCardIn {
+    from { transform:scale(0.8) translateY(30px); opacity:0; }
+    to   { transform:scale(1) translateY(0); opacity:1; }
+}
+
+.l-logo-wrap {
+    position:relative;
+    width:100px; height:100px;
+    display:flex; align-items:center; justify-content:center;
+}
+.l-ring {
+    position:absolute; border-radius:50%;
+    border:2px solid transparent;
+}
+.l-ring-1 {
+    inset:0;
+    border-top-color:rgba(189,15,20,0.9);
+    border-right-color:rgba(189,15,20,0.2);
+    animation:lSpin 1.2s linear infinite;
+}
+.l-ring-2 {
+    inset:10px;
+    border-top-color:rgba(255,120,120,0.7);
+    border-left-color:rgba(255,120,120,0.15);
+    animation:lSpin 1.8s linear infinite reverse;
+}
+.l-ring-3 {
+    inset:20px;
+    border-top-color:rgba(37,49,80,0.8);
+    border-right-color:rgba(37,49,80,0.15);
+    animation:lSpin 2.8s linear infinite;
+}
+@keyframes lSpin { to { transform:rotate(360deg); } }
+
+.l-logo-inner {
+    width:52px; height:52px;
+    background:linear-gradient(135deg, rgba(189,15,20,0.2), rgba(37,49,80,0.3));
+    border:1px solid rgba(255,255,255,0.15);
+    border-radius:14px;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(8px);
+}
+.l-logo-inner img { width:50px; height:34px; object-fit:contain; filter:brightness(10); }
+
+.l-orbit-dot {
+    position:absolute; inset:-8px; border-radius:50%;
+    animation:lSpin 3s linear infinite;
+}
+.l-orbit-dot::before {
+    content:''; position:absolute; top:0; left:50%;
+    width:8px; height:8px; margin-left:-4px; margin-top:-4px;
+    background:var(--rojo);
+    border-radius:50%;
+    box-shadow:0 0 12px rgba(189,15,20,0.8), 0 0 24px rgba(189,15,20,0.4);
+}
+
+.l-text { text-align:center; }
+.l-title {
+    font-size:1.5rem; font-weight:800; color:white;
+    letter-spacing:-0.4px; line-height:1.2; margin-bottom:6px;
+}
+.l-title span { color:var(--rojo-mid); }
+.l-sub { font-size:0.82rem; color:rgba(255,255,255,0.5); font-weight:500; }
+
+.l-bar-wrap {
+    width:260px; height:4px;
+    background:rgba(255,255,255,0.1);
+    border-radius:99px; overflow:hidden;
+}
+.l-bar {
+    height:100%; width:0%;
+    background:linear-gradient(90deg, var(--azul), var(--rojo), #ff6b6b);
+    border-radius:99px;
+    animation:lBarFill 2.8s cubic-bezier(0.4,0,0.2,1) forwards;
+    box-shadow:0 0 12px rgba(189,15,20,0.5);
+}
+@keyframes lBarFill {
+    0%   { width:0%; }
+    30%  { width:35%; }
+    60%  { width:70%; }
+    100% { width:95%; }
+}
+
+.l-steps { display:flex; gap:20px; align-items:center; }
+.l-step-item {
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    animation:lStepFade 0.5s ease both;
+}
+.l-step-item:nth-child(1) { animation-delay:0.2s; }
+.l-step-item:nth-child(2) { animation-delay:0.5s; }
+.l-step-item:nth-child(3) { animation-delay:0.8s; }
+@keyframes lStepFade { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+.l-step-icon {
+    width:36px; height:36px; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.9rem; border:1px solid rgba(255,255,255,0.1);
+}
+.l-step-icon.done  { background:rgba(189,15,20,0.25); color:var(--rojo-mid); }
+.l-step-icon.prog  { background:rgba(37,49,80,0.4); color:#93c5fd; }
+.l-step-icon.pend  { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.35); }
+.l-step-lbl { font-size:0.62rem; color:rgba(255,255,255,0.4); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.l-step-sep { color:rgba(255,255,255,0.15); font-size:0.8rem; margin-top:-14px; }
+
+/* ================================================================
+   SIDEBAR
+   ================================================================ */
+#sidebar {
+    width:var(--sidebar-w); height:100vh; background:var(--bg-card);
+    position:fixed; top:0; left:0;
+    display:flex; flex-direction:column;
+    border-right:1px solid var(--border); z-index:100;
+}
+.sidebar-brand {
+    display:flex; align-items:center; gap:12px;
+    padding:22px 20px; border-bottom:1px solid var(--border);
+}
+.brand-icon {
+    width:38px; height:38px; background:var(--grad-azul);
+    border-radius:11px; display:flex; align-items:center; justify-content:center;
+    color:white; font-size:1rem; flex-shrink:0;
+    box-shadow:0 4px 14px rgba(37,49,80,0.35);
+}
+.brand-name { font-size:1.1rem; font-weight:800; color:var(--text-main); letter-spacing:-0.3px; }
+
+.sidebar-section { padding:18px 12px 4px; }
+.sidebar-label {
+    font-size:0.62rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:1.2px; color:var(--text-light); padding:0 8px; margin-bottom:6px;
+}
+.nav-link-admin {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 14px; border-radius:11px;
+    color:var(--text-muted); text-decoration:none;
+    font-weight:500; font-size:0.875rem;
+    transition:all 0.2s; position:relative; margin-bottom:2px;
+}
+.nav-link-admin i { font-size:1rem; flex-shrink:0; }
+.nav-link-admin:hover { background:var(--azul-light); color:var(--azul); }
+.nav-link-admin.active { background:var(--azul-light); color:var(--azul); font-weight:700; }
+.nav-link-admin.active::before {
+    content:''; position:absolute; left:0; top:6px; bottom:6px;
+    width:4px; background:var(--grad-azul); border-radius:0 4px 4px 0;
+}
+.nav-badge {
+    margin-left:auto; background:var(--rojo); color:white;
+    border-radius:6px; padding:2px 7px; font-size:0.67rem; font-weight:700;
+}
+
+/* ================================================================
+   NAVBAR (ELIMINADO - Perfil movido al sidebar)
+   ================================================================ */
+
+/* ================================================================
+   SIDEBAR PROFILE (Footer)
+   ================================================================ */
+.sidebar-profile {
+    margin-top:auto;
+    padding:16px 16px;
+    border-top:1px solid var(--border);
+    display:flex; align-items:center; gap:10px;
+}
+.sidebar-profile .avatar-circle {
+    width:36px; height:36px; border-radius:50%;
+    background:var(--grad-azul);
+    display:flex; align-items:center; justify-content:center;
+    color:white; font-size:0.88rem; flex-shrink:0;
+    box-shadow:0 2px 8px rgba(37,49,80,0.35);
+}
+.sidebar-profile-info {
+    display:flex; flex-direction:column; overflow:hidden;
+}
+.sidebar-profile-name {
+    font-size:0.78rem; font-weight:700; color:var(--text-main);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px;
+}
+.sidebar-profile-role {
+    font-size:0.65rem; font-weight:600; color:var(--text-muted); text-transform:uppercase;
+}
+
+/* ================================================================
+   SEGMENTED CONTROL (Prioridades)
+   ================================================================ */
+.segmented-control {
+    display:flex; align-items:center;
+    background:var(--bg-page); border:1.5px solid var(--border);
+    border-radius:14px; padding:4px; gap:3px;
+}
+.seg-btn {
+    display:flex; align-items:center; gap:6px;
+    padding:8px 16px; border:none; border-radius:11px;
+    background:transparent; color:var(--text-muted);
+    font-size:0.78rem; font-weight:700; font-family:'Manrope',sans-serif;
+    cursor:pointer; transition:all 0.25s ease; white-space:nowrap;
+}
+.seg-btn:hover {
+    background:rgba(37,49,80,0.05); color:var(--azul);
+}
+.seg-btn.active {
+    background:var(--grad-azul); color:white;
+    box-shadow:0 4px 12px rgba(37,49,80,0.25);
+}
+.seg-btn.active i { color:white; }
+.seg-btn i { font-size:0.9rem; }
+
+/* ================================================================
+   MAIN CONTENT
+   ================================================================ */
+.main-content { margin-left:var(--sidebar-w); padding:32px 28px 48px; min-height:100vh; }
+.page-title { font-size:2rem; font-weight:800; letter-spacing:-0.5px; color:var(--text-main); }
+.page-sub   { font-size:0.83rem; color:var(--text-muted); margin-top:3px; }
+
+.btn-primary-brand {
+    display:flex; align-items:center; gap:6px;
+    background:var(--grad-azul); color:white; border:none;
+    border-radius:50px; padding:10px 22px;
+    font-size:0.84rem; font-weight:700; font-family:'Manrope',sans-serif;
+    cursor:pointer; transition:all 0.2s;
+    box-shadow:0 4px 14px rgba(37,49,80,0.35); text-decoration:none;
+}
+.btn-primary-brand:hover { filter:brightness(1.1); transform:translateY(-1px); }
+
+.btn-outline-brand {
+    display:flex; align-items:center; gap:6px;
+    background:white; color:var(--text-main);
+    border:1.5px solid var(--border); border-radius:50px; padding:10px 20px;
+    font-size:0.84rem; font-weight:600; font-family:'Manrope',sans-serif;
+    cursor:pointer; transition:all 0.2s;
+}
+.btn-outline-brand:hover { border-color:var(--azul-mid); color:var(--azul); }
+
+/* ================================================================
+   METRIC CARDS
+   ================================================================ */
+.metrics-row { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px; }
+.metric-card {
+    background:var(--bg-card); border-radius:var(--radius); padding:22px;
+    box-shadow:var(--shadow); transition:transform 0.25s,box-shadow 0.25s;
+    border:1px solid var(--border);
+}
+.metric-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); }
+
+.metric-card.filled {
+    background:var(--grad-rojo); border:none;
+    box-shadow:0 8px 28px rgba(189,15,20,0.35);
+}
+.metric-card.filled .metric-label { color:rgba(255,255,255,0.65); }
+.metric-card.filled .metric-value { color:white; }
+.metric-card.filled .metric-trend { color:rgba(255,255,255,0.6); }
+.metric-card.filled .card-arrow  { border-color:rgba(255,255,255,0.25); color:rgba(255,255,255,0.7); }
+.metric-card.filled .trend-chip  { background:rgba(255,255,255,0.18); color:white; }
+
+.card-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+.metric-label { font-size:0.8rem; font-weight:600; color:var(--text-muted); }
+.card-arrow {
+    width:30px; height:30px; border-radius:50%;
+    border:1.5px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--text-muted); font-size:0.75rem; flex-shrink:0;
+}
+.metric-value { font-size:2.5rem; font-weight:800; line-height:1; letter-spacing:-1px; margin-bottom:10px; color:var(--text-main); }
+.metric-trend { display:flex; align-items:center; gap:6px; font-size:0.73rem; font-weight:600; color:var(--text-muted); }
+.trend-chip { background:rgba(37,49,80,0.08); color:var(--azul); border-radius:6px; padding:2px 8px; font-size:0.7rem; font-weight:700; }
+
+/* ================================================================
+   TABLES & DATATABLES
+   ================================================================ */
+.table-container {
+    background:var(--bg-card); border-radius:var(--radius); padding:26px;
+    box-shadow:var(--shadow); border:1px solid var(--border);
+}
+.table-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.table-title  { font-size:1rem; font-weight:800; color:var(--text-main); }
+.table-sub    { font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
+
+.table { color:var(--text-main) !important; background:transparent !important; margin-bottom:0 !important; }
+.table > :not(caption) > * > * { background:transparent !important; color:var(--text-main) !important; box-shadow:none !important; }
+.table thead th {
+    background:var(--bg-page) !important; color:var(--text-muted) !important;
+    font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+    border:none !important; padding:10px 14px;
+}
+.table thead th:first-child { border-radius:10px 0 0 10px; }
+.table thead th:last-child  { border-radius:0 10px 10px 0; }
+.table tbody td { padding:13px 14px; border-bottom:1px solid var(--border) !important; vertical-align:middle; font-size:0.875rem; color:var(--text-main) !important; }
+.table tbody tr:last-child td { border-bottom:none !important; }
+.table tbody tr:hover td { background:#fafbff !important; }
+
+/* Paginación y Filtros (Responsive Flexbox) */
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info { color:var(--text-muted) !important; font-size:0.8rem; }
+.dataTables_wrapper .dataTables_filter input {
+    background:var(--bg-page) !important; border:1.5px solid var(--border) !important;
+    color:var(--text-main) !important; border-radius:10px !important; padding:7px 12px !important;
+    outline:none; font-family:'Manrope',sans-serif; font-size:0.82rem; transition:border-color 0.2s;
+}
+.dataTables_wrapper .dataTables_filter input:focus { border-color:var(--azul-mid) !important; }
+.dataTables_wrapper .dataTables_length select {
+    background:var(--bg-page) !important; border:1.5px solid var(--border) !important;
+    border-radius:8px !important; color:var(--text-main) !important; padding:4px 8px; font-size:0.8rem;
+}
+.dataTables_wrapper .pagination { justify-content: flex-end; gap: 6px; margin: 0 !important; }
+.dataTables_wrapper .page-item .page-link {
+    border-radius: 8px !important; border: none !important;
+    color: var(--text-muted); background-color: transparent; font-size: 0.85rem; font-weight: 600;
+    min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 10px; transition: all 0.2s ease-in-out; box-shadow: none !important;
+}
+.dataTables_wrapper .page-item:not(.active):not(.disabled) .page-link:hover {
+    background-color: var(--azul-light) !important; color: var(--azul-dark) !important; transform: translateY(-1px);
+}
+.dataTables_wrapper .page-item.active .page-link {
+    background: var(--azul) !important; color: white !important;
+    box-shadow: 0 4px 12px rgba(37, 49, 80, 0.3) !important; transform: scale(1.05);
+}
+.dataTables_wrapper .page-item.disabled .page-link { color: #cbd5e1 !important; background: transparent !important; cursor: not-allowed; }
+
+/* BADGES */
+.badge-pill {
+    display:inline-flex; align-items:center; gap:5px;
+    padding:4px 11px; border-radius:20px;
+    font-size:0.72rem; font-weight:700; white-space:nowrap;
+}
+.badge-esp-digital  { background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+.badge-esp-desplaz  { background:#fdf4ff; color:#7e22ce; border:1px solid #e9d5ff; }
+.badge-esp-traslado { background:#d1fae5; color:#065f46; border:1px solid #a7f3d0; }
+.badge-est-activo      { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
+.badge-est-almuerzo    { background:#fef9c3; color:#a16207; border:1px solid #fde68a; }
+.badge-est-breakm      { background:#ffedd5; color:#c2410c; border:1px solid #fed7aa; }
+.badge-est-breakt      { background:#ede9fe; color:#6d28d9; border:1px solid #ddd6fe; }
+.badge-est-breakb      { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
+.badge-est-imprevisto  { background:var(--rojo-light); color:var(--rojo-dark); border:1px solid #fecaca; }
+.badge-est-inactivo    { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+.badge-est-default     { background:#f1f5f9; color:#64748b; border:1px solid #e2e8f0; }
+.badge-rol-admin  { background:var(--grad-azul); color:white; border:none; box-shadow:0 2px 8px rgba(37,49,80,0.25); }
+.badge-rol-asesor { background:#f8fafc; color:#475569; border:1px solid #e2e8f0; }
+.badge-cap  { background:var(--azul-light); color:var(--azul); border:1px solid #c7d2e8; }
+.badge-hora { background:var(--bg-page); color:var(--text-muted); border:1px solid var(--border); padding:4px 9px; border-radius:7px; font-size:0.7rem; font-weight:600; display:inline-flex; align-items:center; gap:4px; }
+.text-info { color:var(--azul) !important; }
+
+/* ACCIONES */
+.btn-action {
+    width:32px; height:32px; border-radius:9px;
+    border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-muted);
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:0.82rem; cursor:pointer; transition:all 0.2s; text-decoration:none;
+}
+.btn-action:hover { background:var(--azul); color:white; border-color:var(--azul); }
+
+/* MODALES */
+.modal-content {
+    background:var(--bg-card); border:none;
+    border-radius:var(--radius);
+    box-shadow:0 30px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05);
+    overflow:hidden;
+}
+.modal-header { padding:0; border-bottom:none; position:relative; }
+.modal-header-inner {
+    background:var(--grad-azul);
+    padding:28px 28px 24px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:relative; overflow:hidden;
+}
+.modal-header-inner::before {
+    content:''; position:absolute; top:-40px; right:-40px;
+    width:140px; height:140px;
+    background:radial-gradient(circle, rgba(189,15,20,0.3), transparent 70%);
+    border-radius:50%;
+}
+.modal-header-inner::after {
+    content:''; position:absolute; bottom:-30px; left:20px;
+    width:100px; height:100px;
+    background:radial-gradient(circle, rgba(255,255,255,0.05), transparent 70%);
+    border-radius:50%;
+}
+.modal-header-title { display:flex; align-items:center; gap:12px; position:relative; z-index:1; }
+.modal-header-icon {
+    width:40px; height:40px; background:rgba(255,255,255,0.15);
+    border:1px solid rgba(255,255,255,0.2); border-radius:11px;
+    display:flex; align-items:center; justify-content:center;
+    color:white; font-size:1.1rem;
+    backdrop-filter:blur(4px);
+}
+.modal-title { font-weight:800; font-size:1.05rem; color:white; margin:0; }
+.modal-subtitle { font-size:0.75rem; color:rgba(255,255,255,0.55); margin-top:2px; }
+.modal-footer { border-top:1px solid var(--border); padding:18px 26px; background:var(--bg-page); gap:10px; }
+.modal-body { padding:26px; }
+.modal-body label { font-size:0.79rem; font-weight:700; color:var(--text-main) !important; }
+
+.form-control, .form-select {
+    background:var(--bg-page) !important; border:1.5px solid var(--border) !important;
+    color:var(--text-main) !important; border-radius:10px !important;
+    font-size:0.875rem; font-family:'Manrope',sans-serif; padding:10px 14px !important;
+}
+.form-control::placeholder { color:var(--text-light); }
+.form-control:focus, .form-select:focus {
+    background:white !important; border-color:var(--azul-mid) !important;
+    box-shadow:0 0 0 3px rgba(37,49,80,0.1) !important;
+}
+.input-group-icon { position:relative; }
+.input-group-icon .form-control, .input-group-icon .form-select { padding-left:40px !important; }
+.input-icon {
+    position:absolute; left:13px; top:50%; transform:translateY(-50%);
+    color:var(--text-light); font-size:0.9rem; z-index:5; pointer-events:none;
+}
+
+.btn-modal-primary {
+    display:flex; align-items:center; gap:6px;
+    background:var(--grad-azul); color:white; border:none;
+    border-radius:10px; padding:11px 22px;
+    font-size:0.84rem; font-weight:700; font-family:'Manrope',sans-serif;
+    cursor:pointer; transition:all 0.2s; flex:1;
+    box-shadow:0 4px 14px rgba(37,49,80,0.3); justify-content:center;
+}
+.btn-modal-primary:hover { filter:brightness(1.08); transform:translateY(-1px); }
+.btn-modal-secondary {
+    background:var(--bg-card); color:var(--text-muted);
+    border:1.5px solid var(--border); border-radius:10px; padding:11px 22px;
+    font-size:0.84rem; font-weight:600; font-family:'Manrope',sans-serif;
+    cursor:pointer; transition:all 0.2s; flex:1; text-align:center;
+}
+.btn-modal-secondary:hover { border-color:var(--azul-mid); color:var(--azul); }
+
+.modal-header-inner.rojo { background:var(--grad-rojo); }
+.modal-header-inner.rojo::before { background:radial-gradient(circle, rgba(37,49,80,0.4), transparent 70%); }
+
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:translateY(0);} }
+
+/* Botón Pánico */
+.btn-panic-premium {
+    background: linear-gradient(135deg, var(--rojo) 0%, var(--rojo-dark) 100%);
+    color: white;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 15px rgba(189, 15, 20, 0.3);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn-panic-premium:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(189, 15, 20, 0.5);
+    filter: brightness(1.1);
+}
+
+.seccion-admin { animation:fadeUp 0.3s ease; }
+.metric-card:nth-child(1) { animation:fadeUp 0.35s 0.05s both; }
+.metric-card:nth-child(2) { animation:fadeUp 0.35s 0.10s both; }
+.metric-card:nth-child(3) { animation:fadeUp 0.35s 0.15s both; }
+.metric-card:nth-child(4) { animation:fadeUp 0.35s 0.20s both; }
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+
+
+</style>
+</head>
+<body>
+
+<div id="loader-container">
+    <div class="l-bg"></div>
+    <div class="l-grid"></div>
+    <div class="l-orb"></div>
+    <div class="l-card">
+        <div class="l-logo-wrap">
+            <div class="l-ring l-ring-1"></div>
+            <div class="l-ring l-ring-2"></div>
+            <div class="l-ring l-ring-3"></div>
+            <div class="l-orbit-dot"></div>
+            <div class="l-logo-inner">
+                <img src="https://www.ellibertador.co/assets/img/logo.svg" alt="Logo">
+            </div>
+        </div>
+        <div class="l-text">
+            <div class="l-title">Cargando <span>Sistema</span></div>
+            <div class="l-sub">Preparando el panel de administracion</div>
+        </div>
+        <div class="l-steps">
+            <div class="l-step-item">
+                <div class="l-step-icon done"><i class="bi bi-check-lg"></i></div>
+                <div class="l-step-lbl">Acceso</div>
+            </div>
+            <div class="l-step-sep"><i class="bi bi-chevron-right"></i></div>
+            <div class="l-step-item">
+                <div class="l-step-icon prog"><i class="bi bi-arrow-repeat"></i></div>
+                <div class="l-step-lbl">Datos</div>
+            </div>
+            <div class="l-step-sep"><i class="bi bi-chevron-right"></i></div>
+            <div class="l-step-item">
+                <div class="l-step-icon pend"><i class="bi bi-grid"></i></div>
+                <div class="l-step-lbl">Panel</div>
+            </div>
+        </div>
+        <div class="l-bar-wrap">
+            <div class="l-bar"></div>
+        </div>
+    </div>
+</div>
+
+<div id="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon"><i class="bi bi-grid-1x2-fill"></i></div>
+        <span class="brand-name">Gestión de análistas</span>
+    </div>
+    <div class="sidebar-section">
+        <div class="sidebar-label">Menu</div>
+        <a href="#" id="link-dashboard" class="nav-link-admin active" onclick="mostrarSeccion('dashboard', event)">
+            <i class="bi bi-speedometer2"></i> Dashboard
+            <span class="nav-badge" id="sidebar-badge-count" style="display:none">0</span>
+        </a>
+        <a href="#" id="link-usuarios" class="nav-link-admin" onclick="mostrarSeccion('usuarios', event)">
+            <i class="bi bi-people-fill"></i> Usuarios
+        </a>
+    </div>
+    <div class="sidebar-profile">
+        <div class="avatar-circle"><i class="bi bi-person-fill"></i></div>
+        <div class="sidebar-profile-info">
+            <span class="sidebar-profile-name" id="adminEmail">cargando...</span>
+            <span class="sidebar-profile-role">Administrador</span>
+        </div>
+    </div>
+</div>
+
+
+
+<div class="main-content">
+
+    <div id="seccion-dashboard" class="seccion-admin">
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="page-title">Dashboard</h1>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="segmented-control" id="segmentedPrioridad">
+            <button class="seg-btn active" data-value="NUEVAS_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-file-earmark-plus"></i> Nuevas
+            </button>
+            <button class="seg-btn" data-value="BIOMETRIA_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-fingerprint"></i> Biometría
+            </button>
+            <button class="seg-btn" data-value="INDUCCION_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-mortarboard"></i> Inducciones
+            </button>
+        </div>
+        <button class="btn-panic-premium" onclick="ejecutarPanicoGlobal()">
+            <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
+        </button>
+        <button class="btn-outline-brand" onclick="refrescarDashboard()">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+</div>
+
+        <div class="metrics-row">
+            <div class="metric-card filled">
+                <div class="card-top">
+                    <span class="metric-label">Pendientes</span>
+                    <div class="card-arrow"><i class="bi bi-arrow-up-right"></i></div>
+                </div>
+                <div class="metric-value" id="countNube">0</div>
+                <div class="metric-trend">
+                    <span class="trend-chip">En cola</span> Esperando gestion
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="card-top">
+                    <span class="metric-label">Asesores Activos</span>
+                    <div class="card-arrow"><i class="bi bi-arrow-up-right"></i></div>
+                </div>
+                <div class="metric-value" id="countActivos">0</div>
+                <div class="metric-trend">
+                    <span class="trend-chip" style="background:rgba(34,197,94,0.1);color:#15803d;">Activos</span> Disponibles
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="card-top">
+                    <span class="metric-label">Asesores Inactivos</span>
+                    <div class="card-arrow"><i class="bi bi-arrow-up-right"></i></div>
+                </div>
+                <div class="metric-value" id="countInactivos">0</div>
+                <div class="metric-trend">
+                    <span class="trend-chip" style="background:var(--rojo-light);color:var(--rojo);">Fuera</span> Sin gestion
+                </div>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div class="table-header">
+                <div>
+                    <div class="table-title">Monitoreo en Tiempo Real</div>
+                    <div class="table-sub">Seguimiento de gestiones activas del equipo</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table id="tablaMonitoreo" class="table align-middle w-100">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Poliza</th>
+                            <th>Estado</th>
+                            <th>Asesor</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuerpoMonitoreo"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="seccion-usuarios" class="seccion-admin" style="display:none;">
+        <div class="d-flex justify-content-between align-items-start mb-4">
+            <div>
+                <h1 class="page-title">Gestion Analistas</h1>
+                <p class="page-sub">Administra los perfiles y permisos del equipo.</p>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn-outline-brand" onclick="cargarUsuarios()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+                <button class="btn-primary-brand" onclick="abrirModalNuevoUsuario()">
+                    <i class="bi bi-person-plus-fill"></i> Nuevo Analista
+                </button>
+            </div>
+        </div>
+        <div class="table-container">
+            <div class="table-responsive">
+                <table id="tablaCRUD" class="table w-100">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Capacidad</th>
+                            <th>Especialidad</th>
+                            <th>Estado Actual</th>
+                            <th>Desde las</th>
+                            <th>Rol</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuerpoUsuarios"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="modalUsuario" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-header-inner" style="width:100%;">
+                    <div class="modal-header-title">
+                        <div class="modal-header-icon"><i class="bi bi-person-gear"></i></div>
+                        <div>
+                            <div class="modal-title">Ajustes de Perfil</div>
+                            <div class="modal-subtitle">Edita la informacion del analista</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" style="position:relative;z-index:1;"></button>
+                </div>
+            </div>
+            <form id="formUsuario">
+                <div class="modal-body">
+                    <input type="hidden" id="editCorreo">
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Capacidad de Gestion</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-speedometer2 input-icon"></i>
+                            <input type="number" id="editCapacidad" class="form-control" placeholder="Ej: 20">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Especialidad Operativa</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-briefcase input-icon"></i>
+                            <select class="form-select" id="editEspecialidad">
+                                <option value="ESTUDIO DIGITAL">ESTUDIO DIGITAL</option>
+                                <option value="PENDIENTE_BIOMETRIA">DESAPLAZAMIENTO</option>
+                                <option value="TRASLADOS">TRASLADOS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Novedad / Disponibilidad</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-toggle-on input-icon"></i>
+                            <select class="form-select" id="editEstado">
+                                <optgroup label="--- ESTADOS BÁSICOS ---">
+                                    <option value="ACTIVO">ACTIVO</option>
+                                    <option value="INACTIVO">INACTIVO</option>
+                                    <option value="ALMUERZO">ALMUERZO</option>
+                                    <option value="BREAK MAÑANA">BREAK MAÑANA</option>
+                                    <option value="BREAK TARDE">BREAK TARDE</option>
+                                    <option value="BAÑO">BAÑO</option>
+                                </optgroup>
+                                <optgroup label="--- FALLAS TÉCNICAS Y SOPORTE ---">
+                                    <option value="FALLA DE COMPUTADOR">Falla de Computador</option>
+                                    <option value="FALLA DE DATACREDITO">Falla de Datacrédito</option>
+                                    <option value="FALLA DE INFOBIP">Falla de Infobip</option>
+                                    <option value="FALLA DE LINPHONE">Falla de Linphone</option>
+                                    <option value="FALLA DE SAI">Falla de SAI</option>
+                                    <option value="FALLA DE V.P.N.">Falla de V.P.N.</option>
+                                    <option value="FALLA VISTA">Falla vista</option>
+                                    <option value="FALLAS DE INTERNET">Fallas de Internet</option>
+                                    <option value="FALLA ITBX">Falla ITBX</option>
+                                    <option value="PROBLEMAS DE ENERGIA ELECTRICA">Problemas de energía eléctrica</option>
+                                    <option value="ACTUALIZACION PC">Actualización PC</option>
+                                    <option value="SOPORTE DE BOLIVAR">Soporte de Bolívar</option>
+                                    <option value="SOPORTE DIVA">Soporte Diva</option>
+                                    <option value="SOPORTE TECNICO OPERADOR DE INTERNET">Soporte Técnico Operador De Internet</option>
+                                </optgroup>
+                                <optgroup label="--- AUSENCIAS Y PERMISOS ---">
+                                    <option value="AUSENCIA JUSTIFICADA">Ausencia justificada</option>
+                                    <option value="CALAMIDAD">Calamidad</option>
+                                    <option value="CITA MEDICA">Cita Médica</option>
+                                    <option value="DIA CIVICO">Día Cívico</option>
+                                    <option value="DIA FAMILIAR">Día Familiar</option>
+                                    <option value="EXAMEN OCUPACIONAL">Exámen ocupacional</option>
+                                    <option value="INCAPACIDAD">Incapacidad</option>
+                                    <option value="LICENCIA DE MATERNIDAD">Licencia de Maternidad</option>
+                                    <option value="PERMISO PERSONAL">Permiso personal</option>
+                                    <option value="VACACIONES">Vacaciones</option>
+                                </optgroup>
+                                <optgroup label="--- REUNIONES Y FORMACIÓN ---">
+                                    <option value="CAPACITACION">Capacitación</option>
+                                    <option value="CURSOS XPLORA">Cursos Xplora</option>
+                                    <option value="ENTREVISTA CON BOLIVAR">Entrevista con Bolívar</option>
+                                    <option value="REUNION DEL AREA">Reunión del área</option>
+                                    <option value="REUNION BRIGADA">Reunión Brigada</option>
+                                    <option value="FEEDBACK">Feedback</option>
+                                    <option value="EVENTO SEGUROS BOLIVAR">Evento Seguros Bolívar</option>
+                                    <option value="AUTOEVALUACION">Autoevaluación</option>
+                                </optgroup>
+                                <optgroup label="--- OTRAS ACTIVIDADES OPERATIVAS ---">
+                                    <option value="ACTIVIDADES DE OFICINA">Actividades de Oficina</option>
+                                    <option value="ANALISTA DESPLAZAMIENTO">Analista Desplazamiento</option>
+                                    <option value="ASIGNACION REESTUDIOS">Asignación Reestudios</option>
+                                    <option value="GESTION CDT EN OFICINA">Gestión CDT en Oficina</option>
+                                    <option value="RECOGE ELEMENTO EN SEGUROS BOLIVAR">Recoge elemento en Seguros Bolívar</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-1">
+                        <label class="small fw-bold mb-2">Permisos de Acceso</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-shield input-icon"></i>
+                            <select class="form-select" id="editRol">
+                                <option value="ASESOR">ASESOR</option>
+                                <option value="ADMIN">ADMIN</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer d-flex">
+                    <button type="button" class="btn-modal-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" onclick="guardarCambiosUsuario()" class="btn-modal-primary">
+                        <i class="bi bi-check-lg"></i> Actualizar Analista
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNuevoUsuario" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-header-inner rojo" style="width:100%;">
+                    <div class="modal-header-title">
+                        <div class="modal-header-icon"><i class="bi bi-person-plus-fill"></i></div>
+                        <div>
+                            <div class="modal-title">Nuevo Analista</div>
+                            <div class="modal-subtitle">Registra un nuevo perfil en el sistema</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" style="position:relative;z-index:1;"></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <form id="formNuevoUsuario">
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Nombre</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-person input-icon"></i>
+                            <input type="text" id="nu_nombre" class="form-control" placeholder="Ej: Juan Perez" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Documento</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-card-text input-icon"></i>
+                            <input type="text" id="nu_documento" class="form-control" placeholder="ID de Identificacion" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold mb-2">Correo</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-envelope input-icon"></i>
+                            <input type="email" id="nu_correo" class="form-control" placeholder="email@empresa.com" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="small fw-bold mb-2">Especialidad</label>
+                            <div class="input-group-icon">
+                                <i class="bi bi-briefcase input-icon"></i>
+                                <select id="nu_especialidad" class="form-select">
+                                    <option value="ESTUDIO DIGITAL">ESTUDIO DIGITAL</option>
+                                    <option value="PENDIENTE_BIOMETRIA">DESAPLAZAMIENTO</option>
+                                    <option value="TRASLADOS">TRASLADOS</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="small fw-bold mb-2">Rol</label>
+                            <div class="input-group-icon">
+                                <i class="bi bi-shield input-icon"></i>
+                                <select id="nu_rol" class="form-select">
+                                    <option value="ASESOR">ASESOR</option>
+                                    <option value="ADMIN">ADMIN</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="small fw-bold mb-2">Capacidad de Gestion</label>
+                        <div class="input-group-icon">
+                            <i class="bi bi-speedometer2 input-icon"></i>
+                            <input type="number" id="nu_capacidad" class="form-control" value="20">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer d-flex">
+                <button type="button" class="btn-modal-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" onclick="guardarNuevoUsuario()" class="btn-modal-primary" style="background:var(--grad-rojo);box-shadow:0 4px 14px rgba(189,15,20,0.3);">
+                    <i class="bi bi-person-check"></i> Registrar Analista
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+function badgeEspecialidad(v) {
+    if (v === 'ESTUDIO DIGITAL')     return '<span class="badge-pill badge-esp-digital"><i class="bi bi-laptop"></i> ' + v + '</span>';
+    if (v === 'PENDIENTE_BIOMETRIA') return '<span class="badge-pill badge-esp-desplaz"><i class="bi bi-fingerprint"></i> ' + v + '</span>';
+    if (v === 'TRASLADOS')           return '<span class="badge-pill badge-esp-traslado"><i class="bi bi-arrow-left-right"></i> ' + v + '</span>';
+    return '<span class="badge-pill badge-est-default">' + v + '</span>';
+}
+
+function badgeEstado(v) {
+    let cls = 'badge-est-default';
+    let ico = 'bi-circle';
+    if (v === 'ACTIVO')          { cls = 'badge-est-activo';     ico = 'bi-circle-fill'; }
+    else if (v === 'ALMUERZO')   { cls = 'badge-est-almuerzo';   ico = 'bi-cup-hot'; }
+    else if (v === 'BREAK MAÑANA'){ cls = 'badge-est-breakm';    ico = 'bi-sunrise'; }
+    else if (v === 'BREAK TARDE') { cls = 'badge-est-breakt';    ico = 'bi-sunset'; }
+    else if (v === 'BREAK BAÑO')  { cls = 'badge-est-breakb';    ico = 'bi-droplet'; }
+    else if (v === 'IMPREVISTO')  { cls = 'badge-est-imprevisto';ico = 'bi-exclamation-triangle'; }
+    else if (v === 'INACTIVO')    { cls = 'badge-est-inactivo';  ico = 'bi-dash-circle'; }
+    return '<span class="badge-pill ' + cls + '"><i class="bi ' + ico + '"></i> ' + v + '</span>';
+}
+
+function badgeRol(v) {
+    if (v === 'ADMIN') return '<span class="badge-pill badge-rol-admin"><i class="bi bi-shield-fill"></i> ADMIN</span>';
+    return '<span class="badge-pill badge-rol-asesor"><i class="bi bi-person"></i> ASESOR</span>';
+}
+
+function ocultarLoader() {
+    let loader = document.getElementById('loader-container');
+    if (loader) {
+        loader.classList.add('loader-hidden');
+        setTimeout(function() { loader.style.display = 'none'; }, 800);
+    }
+}
+window.onload = function() {
+    google.script.run.withSuccessHandler(function(email) {
+        document.getElementById('adminEmail').innerText = email;
+    }).getEmailUsuario();
+        google.script.run.withSuccessHandler(function(res) {
+        document.querySelectorAll('.seg-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.getAttribute('data-value') === res) btn.classList.add('active');
+        });
+    }).admin_getPrioridadGlobal();
+
+    refrescarDashboard();
+};
+// ==============================================================
+// CONTROL DE PRIORIDAD (FRONTEND - SEGMENTED BUTTONS)
+// ==============================================================
+
+function seleccionarPrioridad(botonClick) {
+    // 1. Obtenemos los datos del botón presionado
+    const nuevaPrioridad = botonClick.getAttribute('data-value');
+    const textoPrioridad = botonClick.innerText.trim();
+
+    // Si el administrador hace clic en el botón que ya está activo, no hacemos nada
+    if (botonClick.classList.contains('active')) return;
+
+    Swal.fire({
+        title: '¿Cambiar la Prioridad?',
+        text: `El motor de asignación empezará a entregar primero: ${textoPrioridad}`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#253150',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sí, aplicar cambio'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ 
+                title: 'Actualizando Motor...', 
+                allowOutsideClick: false, 
+                didOpen: () => Swal.showLoading() 
+            });
+            
+            // 2. Enviamos la orden a tu función del backend
+            google.script.run
+                .withSuccessHandler(function(res) {
+                    if(res && res.success) {
+                        Swal.fire('¡Prioridad Actualizada!', 'La nueva regla de asignación ya está activa para todo el equipo.', 'success');
+                        
+                        // 3. Magia visual: Quitamos la clase 'active' de todos los botones y se la ponemos al elegido
+                        document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(btn => {
+                            btn.classList.remove('active');
+                        });
+                        botonClick.classList.add('active');
+
+                    } else {
+                        Swal.fire('Error', res.message || 'Error desconocido', 'error');
+                        cargarPrioridadActual(); // Revertimos visualmente en caso de fallo
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire('Error de conexión', err.message, 'error');
+                    cargarPrioridadActual();
+                })
+                .admin_setPrioridadGlobal(nuevaPrioridad);
+        }
+    });
+}
+
+function cargarPrioridadActual() {
+    // Busca en el servidor cuál es la prioridad real guardada para sincronizar la vista al cargar la página
+    google.script.run.withSuccessHandler(function(prioridadGuardada) {
+        if (prioridadGuardada) {
+            document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(btn => {
+                if (btn.getAttribute('data-value') === prioridadGuardada) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+    }).admin_getPrioridadGlobal();
+}
+
+// Cargar la posición correcta del botón apenas se abra el dashboard
+document.addEventListener("DOMContentLoaded", function() {
+    cargarPrioridadActual();
+});
+
+function mostrarSeccion(id, e) {
+    if (e) e.preventDefault();
+    $('.seccion-admin').hide();
+    $('#seccion-' + id).fadeIn(240);
+    $('.nav-link-admin').removeClass('active');
+    $('#link-' + id).addClass('active');
+    if (id === 'usuarios') cargarUsuarios();
+    if (id === 'dashboard') refrescarDashboard();
+}
+
+function refrescarDashboard() {
+    google.script.run.withSuccessHandler(function(res) {
+        let totalAplazadas = 0;
+        if (res.listaGestion && res.listaGestion.length > 0) {
+            for (let j = 0; j < res.listaGestion.length; j++) {
+                let est = String(res.listaGestion[j].estado || "").toUpperCase().trim();
+                if (est === "APLAZADA" || (est.includes("APLAZADA") && !est.includes("NUBE"))) {
+                    totalAplazadas++;
+                }
+            }
+        }
+
+        document.getElementById('countNube').innerText     = totalAplazadas;
+        document.getElementById('countActivos').innerText  = res.activos || 0;
+        document.getElementById('countInactivos').innerText= res.inactivos || 0;
+
+        let badge = document.getElementById('sidebar-badge-count');
+        if (totalAplazadas > 0) {
+            badge.style.display = '';
+            badge.textContent = totalAplazadas;
+        } else {
+            badge.style.display = 'none';
+        }
+
+        if ($.fn.DataTable.isDataTable('#tablaMonitoreo')) {
+            $('#tablaMonitoreo').DataTable().destroy();
+        }
+
+        let html = '';
+        if (res.listaGestion && res.listaGestion.length > 0) {
+            for (let i = 0; i < res.listaGestion.length; i++) {
+                let item = res.listaGestion[i];
+
+                if (!item.correo || item.correo === "Sin analista" || item.correo.trim() === "") continue;
+
+                let estadoTexto = item.estado;
+                let detalleHora = '';
+                if (estadoTexto && estadoTexto.toString().indexOf('[') === 0) {
+                    try {
+                        let historial = JSON.parse(estadoTexto);
+                        if (historial.length > 0) {
+                            let ult = historial[historial.length - 1];
+                            estadoTexto = ult.estado;
+                            if (ult.fecha) {
+                                let partes = ult.fecha.split(' ');
+                                detalleHora = '<br><small style="font-size:0.68rem;color:#64748b">' + (partes[1] || '') + '</small>';
+                            }
+                        }
+                    } catch(err) {}
+                }
+                let analista = item.correo ? item.correo.split('@')[0] : '---';
+                
+                html += '<tr>';
+                html += '<td class="fw-bold text-info">' + item.id + '</td>';
+                html += '<td>' + item.poliza + '</td>';
+                html += '<td>' + badgeEstado(estadoTexto) + detalleHora + '</td>';
+                html += '<td><span style="font-size:0.85rem">' + item.asesor + '</span></td>';
+                
+                html += '<td class="text-center">';
+                html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacion(\'' + item.id + '\')" title="Devolver a la nube">';
+                html += '<i class="bi bi-arrow-return-left"></i> Quitar';
+                html += '</button>';
+                html += '</td>';
+                
+                html += '</tr>';
+            }
+        }
+
+        $('#cuerpoMonitoreo').html(html);
+        $('#tablaMonitoreo').DataTable({
+            language: { 
+                url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json',
+                lengthMenu: "Mostrar _MENU_ registros"
+            },
+            pageLength: 10,
+            lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "Todos"]],
+            order: [[0, 'desc']],
+            responsive: true,
+            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
+        });
+
+        ocultarLoader();
+    }).obtenerDatosDashboard();
+}
+
+function cargarUsuarios() {
+    google.script.run.withSuccessHandler(function(usuarios) {
+        if ($.fn.DataTable.isDataTable('#tablaCRUD')) {
+            $('#tablaCRUD').DataTable().destroy();
+        }
+        let html = '';
+        for (let i = 0; i < usuarios.length; i++) {
+            let u = usuarios[i];
+            let ultimoEstado = 'INACTIVO';
+            try {
+                if (u.estado && u.estado.toString().indexOf('[') === 0) {
+                    let h = JSON.parse(u.estado);
+                    ultimoEstado = h[h.length - 1].estado;
+                } else {
+                    ultimoEstado = u.estado || 'INACTIVO';
+                }
+            } catch(e) {
+                ultimoEstado = u.estado || 'INACTIVO';
+            }
+            let horaDesde = u.desde || '---';
+            let rol = u.rol || 'ASESOR';
+            let cap = u.capacidad || 0;
+            let correoEsc = u.correo.replace(/'/g, "\\'");
+            let espEsc    = u.especialidad.replace(/'/g, "\\'");
+            let estEsc    = ultimoEstado.replace(/'/g, "\\'");
+            let rolEsc    = rol.replace(/'/g, "\\'");
+
+            html += '<tr>';
+            html += '<td class="fw-bold">' + u.nombreComercial + '</td>';
+            html += '<td><span class="badge-pill badge-cap">' + cap + '</span></td>';
+            html += '<td>' + badgeEspecialidad(u.especialidad) + '</td>';
+            html += '<td>' + badgeEstado(ultimoEstado) + '</td>';
+            html += '<td><span class="badge-hora"><i class="bi bi-clock"></i> ' + horaDesde + '</span></td>';
+            html += '<td>' + badgeRol(rol) + '</td>';
+            html += '<td><a class="btn-action" onclick="abrirEditar(\'' + correoEsc + '\',\'' + espEsc + '\',\'' + estEsc + '\',\'' + rolEsc + '\',' + cap + ')" title="Editar"><i class="bi bi-pencil-square"></i></a></td>';
+            html += '</tr>';
+        }
+        $('#cuerpoUsuarios').html(html);
+        $('#tablaCRUD').DataTable({
+            language: { 
+                url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json',
+                lengthMenu: "Mostrar _MENU_ registros"
+            },
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
+            order: [[3, 'asc']],
+            responsive: true,
+            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
+        });
+    }).admin_obtenerUsuariosGestion();
+}
+
+function abrirEditar(correo, especialidad, estado, rol, capacidad) {
+    document.getElementById('editCorreo').value     = correo;
+    document.getElementById('editEspecialidad').value = especialidad;
+    document.getElementById('editEstado').value     = estado;
+    document.getElementById('editRol').value        = rol;
+    document.getElementById('editCapacidad').value  = capacidad || 0;
+    new bootstrap.Modal(document.getElementById('modalUsuario')).show();
+}
+
+function guardarCambiosUsuario() {
+    let correo = document.getElementById('editCorreo').value;
+    let datos = {
+        especialidad: document.getElementById('editEspecialidad').value,
+        estado:       document.getElementById('editEstado').value,
+        rol:          document.getElementById('editRol').value,
+        capacidad:    document.getElementById('editCapacidad').value
+    };
+    if (!correo) return;
+    Swal.fire({ title: 'Actualizando analista...', didOpen: function() { Swal.showLoading(); } });
+    google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+            Swal.fire('Actualizado', res.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('modalUsuario')).hide();
+            cargarUsuarios();
+        } else {
+            Swal.fire('Error', res.message, 'error');
+        }
+    }).admin_actualizarAnalista(correo, datos);
+}
+
+function abrirModalNuevoUsuario() {
+    document.getElementById('formNuevoUsuario').reset();
+    new bootstrap.Modal(document.getElementById('modalNuevoUsuario')).show();
+}
+
+function guardarNuevoUsuario() {
+    let datos = {
+        nombre:       document.getElementById('nu_nombre').value.trim(),
+        documento:    document.getElementById('nu_documento').value.trim(),
+        correo:       document.getElementById('nu_correo').value.trim(),
+        especialidad: document.getElementById('nu_especialidad').value,
+        rol:          document.getElementById('nu_rol').value,
+        capacidad:    document.getElementById('nu_capacidad').value
+    };
+    if (!datos.nombre || !datos.correo || !datos.documento) {
+        Swal.fire('Campos incompletos', 'Por favor llena la informacion requerida', 'warning');
+        return;
+    }
+    Swal.fire({ title: 'Creando perfil...', didOpen: function() { Swal.showLoading(); } });
+    google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+            Swal.fire('Usuario creado', res.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('modalNuevoUsuario')).hide();
+            cargarUsuarios();
+        } else {
+            Swal.fire('Error', res.message, 'error');
+        }
+    }).admin_crearUsuario(datos);
+}
+
+function confirmarDesasignacion(idSolicitud) {
+    Swal.fire({
+        title: 'Devolver a la cola',
+        text: `Vas a quitarle la asignación de la solicitud ${idSolicitud} al asesor actual.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#BD0F14',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sí, desasignar',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+            
+            google.script.run.withSuccessHandler(function(res) {
+                if (res.success) {
+                    Swal.fire('¡Hecho!', res.message, 'success');
+                    refrescarDashboard(); 
+                } else{
+                  Swal.fire('Error', res.message, 'Error');
+                  refrescarDashboard();
+                }
+            }).desasignarSolicitud(idSolicitud);
+        }
+    });
+}
+function ejecutarPanicoGlobal() {
+    Swal.fire({
+        title: '¿ESTÁS SEGURO?',
+        text: "Pondrás a TODOS los analistas en INACTIVO inmediatamente. Esto detendrá la asignación automática de casos.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e11d48', 
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'SÍ, PAUSAR TODO',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ 
+                title: 'Pausando sistema...', 
+                html: 'Cambiando estados en la base de datos',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading() 
+            });
+
+            google.script.run
+                .withSuccessHandler(function(res) {
+                    if(res.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Sistema Pausado',
+                            text: res.message,
+                            confirmButtonColor: '#253150'
+                        });
+                        refrescarDashboard(); 
+                    } else {
+                        Swal.fire('Error', res.message, 'error');
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire('Error Crítico', err.message, 'error');
+                })
+                .admin_desactivarTodosAsesores(); 
+        }
+    });
+}
+
+
+</script>
+</body>
+</html>

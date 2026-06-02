@@ -1,0 +1,537 @@
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+
+<script>
+let datosGlobales = [];
+let yaSeIntentoAsignar = false; 
+let estadoGlobalAsesor = "INACTIVO"; 
+
+$(document).ready(function () {
+
+  sincronizarEstadoInicial(true);
+
+  $('#btnGuardarCambios')
+    .off('click')
+    .on('click', manejarGuardarCambios);
+
+  $('#d_estado_q')
+    .on('change', actualizarCamposGestion);
+
+});
+function actualizarCamposGestion() {
+
+  const estado = ($('#d_estado_q').val() || '').toUpperCase();
+
+  const contAplaz = $('#contenedor_aplazamiento');
+  const contNeg = $('#contenedor_negacion');
+
+  const selectAplaz = $('#d_motivo_aplazamiento');
+  const selectNeg = $('#d_motivo_negacion');
+
+  contAplaz.addClass('d-none');
+  contNeg.addClass('d-none');
+
+  selectAplaz.prop('required', false);
+  selectNeg.prop('required', false);
+
+  if (estado.includes('APLAZ')) {
+
+    contAplaz
+      .removeClass('d-none')
+      .hide()
+      .fadeIn(200);
+
+    selectAplaz.prop('required', true);
+    selectNeg.val('');
+  }
+
+  else if (
+    estado.includes('NEGAD') ||
+    estado.includes('RECHAZ')
+  ) {
+
+    contNeg
+      .removeClass('d-none')
+      .hide()
+      .fadeIn(200);
+
+    selectNeg.prop('required', true);
+
+    selectAplaz.val('');
+  }
+
+  else {
+
+    selectAplaz.val('');
+    selectNeg.val('');
+  }
+}
+
+function sincronizarEstadoInicial(debeCargarTabla = false) {
+  google.script.run
+    .withSuccessHandler(function(estadoReal) {
+      if (estadoReal && estadoReal !== "ERROR") {
+        estadoGlobalAsesor = estadoReal.toUpperCase();
+        
+        const statusText = $('#currentStatusText');
+        const statusDot = $('#statusDot');
+        const card = $('#statusIndicatorCard');
+
+        if (statusText.length) statusText.text(estadoGlobalAsesor);
+        
+        if (estadoGlobalAsesor === 'ACTIVO') {
+          statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
+          card.css('border-color', '#22c55e');
+        } else {
+          statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+          card.css('border-color', '#e2e8f0');
+        }
+        console.log("Sincronizado con DB: " + estadoGlobalAsesor);
+      }
+      
+      if (debeCargarTabla) {
+        cargarDatos();
+      }
+    })
+    .obtenerMiEstadoActual(); 
+}
+
+function cargarDatos() {
+  const loader = document.getElementById('loader-container');
+  if (loader) {
+    loader.classList.remove('loader-hidden');
+    loader.style.display = 'flex'; 
+  }
+
+  google.script.run
+    .withSuccessHandler(function (response) {
+
+      renderizarTabla(response.tabla);
+      
+      if (response.stats) {
+        if (typeof animarNumero === "function") {
+          animarNumero("countHoy", response.stats.hoy);
+          animarNumero("countTotal", response.stats.total);
+        }
+      }
+
+      const tablaRealmenteVacia = !response.tabla || response.tabla.length <= 1;
+      const estadoParaValidar = (typeof estadoGlobalAsesor !== 'undefined' ? estadoGlobalAsesor : ($('#selectEstadoAsesor').val() || "INACTIVO")).toUpperCase();
+
+      if (tablaRealmenteVacia && !yaSeIntentoAsignar && estadoParaValidar === "ACTIVO") {
+        yaSeIntentoAsignar = true; 
+        console.log("Detectado: Tabla vacía y asesor ACTIVO. Solicitando asignación...");
+
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res.success && res.nueva) {
+              Swal.fire({
+                icon: 'info',
+                title: 'Nueva Solicitud',
+                text: 'Se te ha asignado un nuevo registro.',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 4000,
+                timerProgressBar: true
+              });
+              setTimeout(() => { 
+                yaSeIntentoAsignar = false; 
+                cargarDatos(); 
+              }, 3000);
+            } else {
+              console.warn("Asignación omitida: " + res.message);
+            }
+          })
+          .withFailureHandler(function(err) {
+            console.error("Error en autoAsignarAlEntrar:", err);
+            yaSeIntentoAsignar = false; 
+          })
+          .autoAsignarAlEntrar();
+
+      } else {
+        if (!tablaRealmenteVacia) console.log("Asignación omitida: La tabla ya tiene datos.");
+        if (estadoParaValidar !== "ACTIVO") console.log("Asignación omitida: El asesor está en estado " + estadoParaValidar);
+      }
+    })
+    .withFailureHandler(function (e) {
+      if (loader) {
+        loader.classList.add('loader-hidden');
+        setTimeout(() => loader.style.display = 'none', 800);
+      }
+      console.error("Error crítico en getTableData:", e);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error de Conexión',
+        text: 'No se pudieron cargar los datos de la tabla.',
+        confirmButtonColor: '#253150' 
+      });
+    })
+    .getTableData();
+}
+
+function renderizarTabla(data) {
+  if (!Array.isArray(data)) data = [];
+  datosGlobales = data;
+
+  if ($.fn.DataTable.isDataTable('#miTabla')) {
+    $('#miTabla').DataTable().destroy();
+    $('#miTabla').empty();
+  }
+
+  const registros = data.slice(1);
+
+  $('#miTabla').DataTable({
+    data: registros,
+    columns: [
+      { title: "Solicitud", data: 0}, 
+
+      {
+        title: "Tipo",
+        data: null,
+        render: (d, t, r) => {
+          const estado = String(r[16] || '').toUpperCase();
+          const clase = String(r[20] || '').toUpperCase();
+          
+          if (estado.includes('BIOMETRIA')) {
+            return `<span class="badge shadow-sm" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Biometría</span>`;
+          } else if (clase.includes('INDUCCI') || clase === 'IND') {
+            return `<span class="badge shadow-sm" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
+          } else {
+            return `<span class="badge shadow-sm" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:5px 10px; border-radius:8px;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
+          }
+        }
+      },
+      { title: "Póliza", data: 1 },
+      { title: "Inquilino", data: 4 },
+      { title: "Canon", data: 9 },
+      {
+        title: "Estado",
+        data: 16,
+        render: d => {
+          const s = String(d || '').toUpperCase();
+          if (s.includes('APLAZ')) return `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:5px 10px; border-radius:8px;">Aplazado</span>`;
+          if (s.includes('APROB')) return `<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:5px 10px; border-radius:8px;">Aprobado</span>`;
+          return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:8px;">${d || ''}</span>`;
+        }
+      },
+      {
+        title: "Acciones",
+        data: null,
+        orderable: false,
+        className: "text-center",
+        render: (d, t, r, meta) => `
+          <button class="btn-action btn-detalle" data-index="${meta.row}" title="Ver Detalles">
+            <i class="bi bi-eye"></i>
+          </button>`
+      }
+    ],
+    language: { url: "//cdn.datatables.net/plug-ins/1.13.7/i18n/es-ES.json" },
+    pageLength: 10,
+    responsive: true,
+    initComplete: function(settings, json) {
+      const loader = document.getElementById('loader-container');
+      if (loader) {
+        loader.classList.add('loader-hidden');
+        setTimeout(() => loader.style.display = 'none', 800);
+      }
+    }
+  });
+
+  $('#miTabla tbody').off('click', '.btn-detalle').on('click', '.btn-detalle', function () {
+    const rowIndex = $(this).data('index');
+    const fila = datosGlobales[rowIndex + 1];
+    if (!fila) return;
+
+    const solicitudId = fila[0];
+    const container = document.getElementById("accordionResultados");
+    if (container) container.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-3 text-muted">Consultando datos en tiempo real...</p></div>`;
+
+
+    const estadoFila = String(fila[16] || '').toUpperCase();
+    const claseFila = String(fila[20] || '').toUpperCase();
+    let tipoBadgeModal = '';
+    
+    if (estadoFila.includes('BIOMETRIA')) {
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-fingerprint me-1"></i>Biometría</span>`;
+    } else if (claseFila.includes('INDUCCI') || claseFila === 'IND') {
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
+    } else {
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
+    }
+
+
+    $('#s_sidebar_solicitud').html(`${fila[0] || ''} ${tipoBadgeModal}`);
+
+ 
+    const polizaText = fila[1] || '';
+    const categoriaScore = fila[fila.length - 1] ? String(fila[fila.length - 1]).toUpperCase() : '';
+    
+    if (categoriaScore.includes('VIP')) {
+      $('#d_poliza').html(`<span class="badge shadow-sm" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:6px 12px; border-radius:8px;"><i class="bi bi-star-fill me-1"></i>${polizaText} (VIP)</span>`);
+    } 
+    else if (categoriaScore.includes('NEGAR') || categoriaScore.includes('NEGAD') || categoriaScore.includes('RECHAZ')) {
+      $('#d_poliza').html(`<span class="badge shadow-sm" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:6px 12px; border-radius:8px;"><i class="bi bi-x-octagon-fill me-1"></i>${polizaText} (NEGADA)</span>`);
+    } 
+    else {
+      $('#d_poliza').html(`<span class="fw-bold text-dark fs-6">${polizaText}</span>`);
+    }
+
+    $('#d_identificacionInquilino').text(fila[2] || '');
+    $('#d_tipoIdentificacion').text(fila[3] || '');
+    $('#d_nombreInquilino').text(fila[4] || '');
+    $('#d_correoInquilino').text(fila[5] || '');
+    $('#d_telefonoInquilino').text(fila[6] || '');
+    $('#d_ingresos').text(formatearMiles(fila[7]));
+    $('#d_fechaExpedicion').text(fila[8] || '');
+    $('#d_canon').text(formatearMiles(fila[9]));
+    $('#d_cuota').text(formatearMiles(fila[10]));
+    $('#d_direccionInmueble').text(fila[11] || '');
+    $('#d_destinoInmueble').text(fila[12] || '');
+    $('#d_ciudadInmueble').text(fila[13] || '');
+    $('#d_nombreAsesor').text(fila[14] || '');
+    $('#d_correoAsesor').text(fila[15] || '');
+    $('#d_estadoGeneral').html(renderEstadoBadge(fila[16]));
+    $('#d_fechaRadicacion').text(fila[17] || '');
+    $('#d_fechaResultado').text(fila[18] || '');
+    
+    $('#d_biometria').val(fila[23] || '');
+    $('#d_comentarios_gestion').val(fila[24] || '');
+    
+    $('#d_estado_q').val(fila[16] || '').trigger('change');
+    
+    setTimeout(() => {
+      if(fila[31]) $('#d_motivo_aplazamiento').val(fila[31]);
+      if(fila[32]) $('#d_motivo_negacion').val(fila[32]);
+    }, 10);      
+
+    $('#btnGuardarCambios').attr('data-solicitud-id', solicitudId);
+    new bootstrap.Modal('#modalDetalles').show();
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (res && res.success) {
+          renderResultadosPorTipo(res.resultados);
+        } else {
+          if (container) container.innerHTML = `<p class="text-center text-danger mt-4"><i class="bi bi-exclamation-triangle me-2"></i>${res.message || "Error consultando datos"}</p>`;
+        }
+      })
+      .getDataUniqueForSolicitud(solicitudId);
+  });
+}
+function renderResultadosPorTipo(resultados) {
+  const container = document.getElementById("accordionResultados");
+  if (!container || !resultados) return;
+  container.innerHTML = ""; 
+
+  let idx = 0;
+  Object.entries(resultados).forEach(([tipo, items]) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    idx++;
+    const collapseId = `collapse-${idx}`;
+    const registrosUnicos = [];
+    const llavesVistas = new Set();
+
+    items.forEach(item => {
+
+      const llave = `${item.nombre}-${item.descripcionResultado}-${item.estadoEstudio}`.toLowerCase().trim();
+      if (!llavesVistas.has(llave)) {
+        llavesVistas.add(llave);
+        registrosUnicos.push(item);
+      }
+    });
+
+    let contenido = registrosUnicos.map(item => `
+        <div class="mb-3 border-bottom pb-2">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <div class="fw-bold text-dark me-2">
+              ${item.nombre || "N/A"} ${item.identificacion ? `(${item.identificacion})` : ""}
+            </div>
+            <span class="badge shadow-sm text-nowrap" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; font-size: 0.75rem;">
+              ${item.estadoEstudio || "Sin estado"}
+            </span>
+          </div>
+          <div class="small text-muted">
+            <i class="bi bi-info-circle me-1"></i>${item.descripcionResultado || "Sin descripción"}
+          </div>
+        </div>`).join("");
+
+    container.innerHTML += `
+      <div class="accordion-item mb-2 border rounded-3 overflow-hidden">
+        <h2 class="accordion-header">
+          <button class="accordion-button collapsed fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" style="background-color: #f8fafc; color: #253150;">
+            ${tipo} (${registrosUnicos.length})
+          </button>
+        </h2>
+        <div id="${collapseId}" class="accordion-collapse collapse">
+          <div class="accordion-body bg-white">${contenido}</div>
+        </div>
+      </div>`;
+  });
+}
+
+function manejarGuardarCambios() {
+  const btn = $('#btnGuardarCambios');
+  const solId = btn.attr('data-solicitud-id'); 
+  if (!solId) {
+    Swal.fire({
+      title: 'Error', 
+      text: 'ID de solicitud no detectado.', 
+      icon: 'error',
+      confirmButtonColor: '#253150'
+    });
+    return;
+  }
+
+  const datos = {
+    solicitudId: solId,
+    biometria: $('#d_biometria').val(),
+    comentarios_gestion: $('#d_comentarios_gestion').val(),
+    estado_q: $('#d_estado_q').val(),
+    motivo_aplazamiento: $('#d_motivo_aplazamiento').val().trim(),
+    motivo_negacion: $('#d_motivo_negacion').val().trim()
+  };
+
+  if (!datos.estado_q || !datos.biometria) {
+    Swal.fire({
+      title: 'Atención', 
+      text: 'Por favor completa todos los campos obligatorios (Estado Final y Biometría).', 
+      icon: 'warning',
+      confirmButtonColor: '#253150'
+    });
+    return;
+  }
+
+  const estadoUpper = datos.estado_q.toUpperCase();
+  if (estadoUpper.includes('APLAZ') && !datos.motivo_aplazamiento) {
+    Swal.fire({
+      title: 'Atención', 
+      text: 'El motivo de aplazamiento es obligatorio.', 
+      icon: 'warning',
+      confirmButtonColor: '#253150'
+    });
+    return;
+  } 
+  if ((estadoUpper.includes('NEGAD') || estadoUpper.includes('RECHAZ')) && !datos.motivo_negacion) {
+    Swal.fire({
+      title: 'Atención', 
+      text: 'El motivo de negación es obligatorio.', 
+      icon: 'warning',
+      confirmButtonColor: '#253150'
+    });
+    return;
+  }
+
+  Swal.fire({ 
+    title: 'Procesando...', 
+    html: 'Guardando gestión y buscando nueva asignación...',
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading() 
+  });
+
+  google.script.run
+    .withSuccessHandler(r => {
+      if (r.success) {
+        Swal.fire({
+          icon: 'success',
+          title: '¡Operación Exitosa!',
+          html: r.message.replace(/\n/g, '<br>'),
+          confirmButtonColor: '#253150'
+        }).then(() => {
+          const modalElement = document.getElementById('modalDetalles');
+          const modalInstance = bootstrap.Modal.getInstance(modalElement);
+          if (modalInstance) modalInstance.hide();
+          cargarDatos(); 
+        });
+      } else {
+        Swal.fire({
+          title: 'Atención', 
+          text: r.message, 
+          icon: 'warning',
+          confirmButtonColor: '#253150'
+        });
+      }
+    })
+    .withFailureHandler(e => {
+      Swal.fire({
+        title: 'Error Crítico', 
+        text: 'Fallo de conexión: ' + e.message, 
+        icon: 'error',
+        confirmButtonColor: '#BD0F14'
+      });
+    })
+    .guardarCambiosInternos(datos);
+}
+
+function renderEstadoBadge(d) {
+  const s = String(d || '').toUpperCase();
+  if (s.includes('APLAZ')) return `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:6px 12px; border-radius:8px;">${d}</span>`;
+  if (s.includes('APROB')) return `<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:6px 12px; border-radius:8px;">${d}</span>`;
+  return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:6px 12px; border-radius:8px;">${d || 'Sin estado'}</span>`;
+}
+
+function formatearMiles(valor) {
+  if (valor === undefined || valor === null || valor === '') return '$ 0';
+  const n = parseInt(valor.toString().replace(/\D/g, ''), 10);
+  return isNaN(n) ? valor : '$ ' + n.toLocaleString('es-CO');
+}
+
+function animarNumero(id, valorFinal) {
+  const elemento = $(`#${id}`);
+  const valorActual = parseInt(elemento.text()) || 0;
+  $({ countNum: valorActual }).animate({ countNum: valorFinal }, {
+    duration: 1000,
+    easing: 'swing',
+    step: function() { elemento.text(Math.ceil(this.countNum)); },
+    complete: function() { elemento.text(this.countNum); }
+  });
+}
+
+function cambiarMiEstado(nuevoEstado) {
+  estadoGlobalAsesor = nuevoEstado.toUpperCase(); 
+  
+  const statusText = $('#currentStatusText');
+  const statusDot = $('#statusDot');
+  const card = $('#statusIndicatorCard');
+
+  if (statusText.length) statusText.text(estadoGlobalAsesor);
+  
+  if (estadoGlobalAsesor === 'ACTIVO') {
+    statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
+    card.css('border-color', '#22c55e');
+    yaSeIntentoAsignar = false; 
+  } else {
+    statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+    card.css('border-color', '#e2e8f0');
+  }
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response && response.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Estado: ' + estadoGlobalAsesor,
+          toast: true,
+          position: 'top-end',
+          timer: 2000,
+          showConfirmButton: false
+        });
+        if (estadoGlobalAsesor === 'ACTIVO') {
+          cargarDatos(); 
+        }
+      }
+    })
+    .actualizarEstadoPropio(nuevoEstado);
+}
+
+function abrirModalNovedades() {
+    const modal = new bootstrap.Modal(document.getElementById('modalNovedades'));
+    modal.show();
+}
+
+function seleccionarNovedad(novedad) {
+    bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+    cambiarMiEstado(novedad);
+}
+</script>

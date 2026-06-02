@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Reestudios</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --color-primario:   #BD0F14;
+            --color-secundario: #253150;
+            --azul-mid:         #3a4d7a;
+            --bg-page:          #F4F5F8;
+            --bg-card:          #FFFFFF;
+            --text-main:        #111827;
+            --text-muted:       #64748b;
+            --border:           #e5e7eb;
+            --grad-azul:        linear-gradient(135deg, #161e33 0%, #253150 60%, #3a4d7a 100%);
+            --grad-rojo:        linear-gradient(135deg, #8b0a0e 0%, #BD0F14 55%, #e05555 100%);
+            --shadow:           0 2px 12px rgba(37,49,80,0.08);
+        }
+
+        body { font-family: 'Manrope', sans-serif; color: var(--text-main); background-color: var(--bg-page); margin: 0; overflow-x: hidden; min-height: 100vh; padding-top: 105px; }
+        #particles-js { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -2; }
+
+        .navbar-glass {
+            position: fixed; top: 20px; left: 24px; right: 24px; z-index: 1000;
+            background: rgba(37, 49, 80, 0.85); backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px;
+            padding: 12px 28px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .navbar-glass-brand { display: flex; align-items: center; gap: 12px; color: white; font-weight: 800; font-size: 1.25rem; }
+        .brand-icon { width: 40px; height: 40px; background: var(--grad-rojo); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+
+        #loader-container { position:fixed; inset:0; z-index:99999; display:flex; align-items:center; justify-content:center; background-color: #0b0f19; transition:opacity 0.8s ease, visibility 0.8s; }
+        .loader-hidden { opacity:0 !important; visibility:hidden !important; }
+        .l-bg { position:absolute; inset:0; overflow: hidden; z-index: 1; }
+        .l-bg::before, .l-bg::after { content: ''; position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.45; animation: lPremiumDrift 12s infinite alternate ease-in-out; }
+        .l-bg::before { width: 60vw; height: 60vw; background: var(--color-primario); top: -20%; left: -10%; }
+        .l-bg::after { width: 50vw; height: 50vw; background: var(--azul-mid); bottom: -10%; right: -10%; animation-delay: -6s; }
+        @keyframes lPremiumDrift { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(8%, 12%) scale(1.15); } }
+        .l-card { position:relative; z-index:3; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:28px; padding:52px 60px; gap:30px; box-shadow:0 40px 100px rgba(0,0,0,0.6); backdrop-filter:blur(25px); }
+        .l-logo-wrap { position:relative; width:100px; height:100px; display:flex; align-items:center; justify-content:center; }
+        .l-ring { position:absolute; border-radius:50%; border:2px solid transparent; }
+        .l-ring-1 { inset:0; border-top-color:rgba(189,15,20,0.9); animation:lSpin 1.2s linear infinite; }
+        .l-ring-2 { inset:10px; border-top-color:rgba(255,120,120,0.7); animation:lSpin 1.8s linear infinite reverse; }
+        @keyframes lSpin { to { transform:rotate(360deg); } }
+        .l-logo-inner { width:52px; height:52px; background:linear-gradient(135deg, rgba(189,15,20,0.2), rgba(37,49,80,0.3)); border:1px solid rgba(255,255,255,0.15); border-radius:14px; display:flex; align-items:center; justify-content:center; }
+        .l-logo-inner img { width:34px; height:34px; object-fit:contain; filter:brightness(10); }
+        .l-title { font-size:1.5rem; font-weight:800; color:white; margin-bottom:6px; }
+        .l-title span { color:#f87171; }
+        .l-sub { font-size:0.82rem; color:rgba(255,255,255,0.5); }
+        .l-bar-wrap { width:260px; height:4px; background:rgba(255,255,255,0.1); border-radius:99px; overflow:hidden; }
+        .l-bar { height:100%; width:0%; background:linear-gradient(90deg, var(--color-secundario), var(--color-primario), #ff6b6b); animation:lBarFill 2.8s cubic-bezier(0.4,0,0.2,1) forwards; }
+        @keyframes lBarFill { 0% { width:0%; } 100% { width:95%; } }
+
+        .main-tabs-wrapper { display: flex; justify-content: center; margin-bottom: 25px; }
+        .main-nav-pills { background: var(--bg-card); padding: 6px; border-radius: 16px; box-shadow: var(--shadow); border: 1px solid var(--border); display: inline-flex; gap: 5px; }
+        .main-nav-pills .nav-link { font-weight: 700; color: var(--text-muted); border-radius: 12px; padding: 10px 30px; transition: all 0.3s; }
+        .main-nav-pills .nav-link.active { background: var(--color-secundario); color: white; box-shadow: 0 4px 12px rgba(37,49,80,0.2); }
+
+        .table-container { background: var(--bg-card); border-radius: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); padding: 28px; }
+        table.dataTable thead th { background: var(--bg-page) !important; color: var(--text-muted) !important; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; border: none !important; padding: 12px 14px; }
+        .table tbody tr { background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border); transition: background 0.2s; }
+        .table tbody tr td { vertical-align: middle; border-bottom: 1px solid var(--border); padding: 12px 14px; font-size: 0.875rem; color: var(--text-main); }
+        .table tbody tr:hover td { background: #fafbff !important; }
+        .btn-action { width: 36px !important; height: 36px !important; border-radius: 12px !important; border: 1.5px solid var(--border) !important; background: var(--bg-card) !important; color: var(--color-secundario) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; transition: all 0.2s ease !important; }
+        .btn-action:hover { background: var(--color-secundario) !important; color: white !important; transform: translateY(-2px) !important; box-shadow: 0 4px 12px rgba(37, 49, 80, 0.2) !important; }
+
+        .data-view-card { background: #ffffff; border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; height: 100%; }
+        .data-view-label { font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; }
+        .data-view-value { font-size: 0.88rem; font-weight: 600; color: var(--color-secundario); margin-top: 2px; word-break: break-all; }
+
+        .modal-content { border-radius: 20px !important; border: none !important; background: var(--bg-page) !important; box-shadow: 0 30px 80px rgba(0,0,0,0.15); }
+        .modal-header-inner { background: var(--grad-azul); padding: 24px 28px; display: flex; align-items: center; justify-content: space-between; border-radius: 20px 20px 0 0; position: relative; overflow: hidden; }
+        .modal-header-inner::before { content: ''; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; background: radial-gradient(circle, rgba(189, 15, 20, 0.3), transparent 70%); border-radius: 50%; }
+        .nav-tabs-modern { background: var(--border); padding: 4px; border-radius: 12px; margin: 20px 28px 10px; border: none; display: flex; gap: 4px; }
+        .nav-tabs-modern .nav-link { flex: 1; text-align: center; border-radius: 10px !important; color: var(--text-muted); font-weight: 700; padding: 10px; border: none !important; }
+        .nav-tabs-modern .nav-link.active { background: var(--bg-card) !important; color: var(--color-secundario) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .form-select, .form-control { border-radius: 10px !important; font-size: 0.875rem; padding: 10px 14px !important; border: 1.5px solid var(--border) !important; }
+        .form-select:focus, .form-control:focus { border-color: var(--azul-mid) !important; box-shadow: 0 0 0 3px rgba(37,49,80,0.1) !important; }
+        .modal-body label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; display: block; }
+    </style>
+</head>
+
+<body>
+
+<div id="loader-container">
+    <div class="l-bg"></div>
+    <div class="l-card">
+        <div class="l-logo-wrap">
+            <div class="l-ring l-ring-1"></div>
+            <div class="l-ring l-ring-2"></div>
+            <div class="l-logo-inner">
+                <img src="https://www.ellibertador.co/assets/img/logo.svg" alt="Logo">
+            </div>
+        </div>
+        <div class="l-text">
+            <div class="l-title">Módulo <span>Reestudios</span></div>
+            <div class="l-sub">Sincronizando bandejas de trabajo...</div>
+        </div>
+        <div class="l-bar-wrap"><div class="l-bar"></div></div>
+    </div>
+</div>
+
+<div id="particles-js"></div>
+
+<nav class="navbar-glass">
+    <div class="navbar-glass-brand">
+        <div class="brand-icon"><i class="bi bi-layers-fill text-white"></i></div>
+        Módulo Operativo Reestudios
+    </div>
+    <div class="nav-glass-profile" style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 50px; padding: 5px 16px 5px 5px; color: white;">
+        <div style="width: 36px; height: 36px; background: var(--grad-azul); border-radius: 50%; display: flex; align-items: center; justify-content: center;"><i class="bi bi-person-fill"></i></div>
+        <div style="display: flex; flex-direction: column; max-width: 150px;">
+            <span id="userEmailNav" style="font-size: 0.8rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Cargando...</span>
+            <span style="font-size: 0.65rem; color: rgba(255,255,255,0.6); font-weight: 600;">Analista</span>
+        </div>
+    </div>
+</nav>
+
+<div class="container" style="margin-top: 30px;">
+    <div class="main-tabs-wrapper">
+        <ul class="nav main-nav-pills" role="tablist">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-victoria" type="button" onclick="cargarVictoria()">
+                    <i class="bi bi-shield-check me-2"></i>Bandeja Victoria
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-correo" type="button" onclick="cargarCorreo()">
+                    <i class="bi bi-envelope-paper me-2"></i>Bandeja Correo
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-victoria">
+            <div class="table-container mb-5">
+                <h5 class="fw-bold mb-4 text-dark"><i class="bi bi-shield-check text-danger me-2"></i>Histórico y Pendientes Victoria</h5>
+                <div class="table-responsive">
+                    <table id="tablaVictoria" class="table align-middle w-100">
+                        <thead>
+                            <tr>
+                                <th>Estado</th>
+                                <th>Nro Solicitud</th>
+                                <th>Tipo Doc</th>
+                                <th>Nro Doc</th>
+                                <th>Celular</th>
+                                <th>Repetida</th>
+                                <th class="text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoVictoria"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-correo">
+            <div class="table-container mb-5">
+                <h5 class="fw-bold mb-4 text-dark"><i class="bi bi-envelope-paper text-primary me-2"></i>Correos Pendientes por Evaluar</h5>
+                <div class="table-responsive">
+                    <table id="tablaCorreo" class="table align-middle w-100">
+                        <thead>
+                            <tr>
+                                <th>ID Registro</th>
+                                <th>Nro Solicitud</th>
+                                <th>Tipo Proceso</th>
+                                <th>Fecha Llegada</th>
+                                <th class="text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoCorreo"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalVictoria" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header-inner">
+                <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+                    <div class="p-2 rounded-3 me-3" style="background: rgba(255,255,255,0.15);"><i class="bi bi-shield-check fs-4 text-white"></i></div>
+                    <div><h5 class="fw-bold text-white mb-0">Gestión Victoria #<span id="v_tit_solicitud"></span></h5></div>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <ul class="nav nav-tabs-modern" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#v-tab-ver" type="button">Visualización</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#v-tab-gestionar" type="button">Gestión</button></li>
+            </ul>
+            <div class="modal-body p-4">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="v-tab-ver">
+                        <div class="row g-3">
+                            <div class="col-md-4"><div class="data-view-card"><div class="data-view-label">Nro Solicitud</div><div class="data-view-value" id="v_solicitud">---</div></div></div>
+                            <div class="col-md-4"><div class="data-view-card"><div class="data-view-label">Tipo Documento ID</div><div class="data-view-value" id="v_tipo_doc">---</div></div></div>
+                            <div class="col-md-4"><div class="data-view-card"><div class="data-view-label">Nro Documento ID</div><div class="data-view-value" id="v_nro_doc">---</div></div></div>
+                            <div class="col-md-4"><div class="data-view-card"><div class="data-view-label">Celular Utilizado</div><div class="data-view-value" id="v_celular">---</div></div></div>
+                            <div class="col-md-8"><div class="data-view-card"><div class="data-view-label">Correo Electrónico</div><div class="data-view-value" id="v_correo">---</div></div></div>
+                            <div class="col-12"><div class="data-view-card"><div class="data-view-label">Link Documento Adjunto</div><div class="data-view-value" id="v_link_doc">---</div></div></div>
+                            <div class="col-12"><div class="data-view-card" style="border-left: 4px solid var(--color-secundario);"><div class="data-view-label">Detalles del Caso</div><div class="data-view-value" id="v_detalles" style="white-space: pre-wrap;">---</div></div></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="v-tab-gestionar">
+                        <input type="hidden" id="v_formFilaReal">
+                        <div class="row g-3 bg-white p-3 border rounded-4">
+                            <div class="col-md-6">
+                                <label>Estado / Razón (Aprobada o Negada)</label>
+                                <select id="v_estadoSolicitud" class="form-select fw-bold">
+                                    <option value="" disabled selected>Seleccione el estado...</option>
+                                    <option value="Radicación duplicada">Radicación duplicada</option>
+                                    <option value="Adjunta nuevo deudor solidario">Adjunta nuevo deudor solidario</option>
+                                    <option value="Novedad en pago de estudio">Novedad en pago de estudio</option>
+                                    <option value="Documentación no requerida">Documentación no requerida</option>
+                                    <option value="Inconsistencia en número de radicado">Inconsistencia en número de radicado</option>
+                                    <option value="Información/Documentación incompleta">Información/Documentación incompleta</option>
+                                    <option value="Solicitud fuera de vigencia">Solicitud fuera de vigencia</option>
+                                    <option value="Solicitud aprobada" class="text-success fw-bold">Solicitud aprobada</option>
+                                    <option value="Solicitud Negada" class="text-danger fw-bold">Solicitud Negada</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label>Tipo de Documento Presentado</label>
+                                <select id="v_tipoDocPresentado" class="form-select fw-bold">
+                                    <option value="" disabled selected>Seleccione...</option>
+                                    <option value="EXTRACTOS">EXTRACTOS BANCARIOS</option>
+                                    <option value="CEDULA">CEDULA DE CIUDADANÍA</option>
+                                    <option value="CERTIFICADO LABORAL">CERTIFICADO LABORAL</option>
+                                    <option value="RUT / CAMARA">RUT / CÁMARA DE COMERCIO</option>
+                                    <option value="OTROS">OTROS DOCUMENTOS</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer p-4 border-0" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
+                <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn text-white px-5 fw-bold" onclick="enviarVictoria()" style="background: var(--color-primario);">Guardar y Enviar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalCorreo" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header-inner">
+                <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+                    <div class="p-2 rounded-3 me-3" style="background: rgba(255,255,255,0.15);"><i class="bi bi-envelope-paper fs-4 text-white"></i></div>
+                    <div><h5 class="fw-bold text-white mb-0">Evaluación de Correo #<span id="c_tit_solicitud"></span></h5></div>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+                </div>
+            </div>
+            <ul class="nav nav-tabs-modern" role="tablist">
+                <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#c-tab-ver" type="button">Visualización</button></li>
+                <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#c-tab-gestionar" type="button">Gestión Evaluador</button></li>
+            </ul>
+            <div class="modal-body p-4">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="c-tab-ver">
+                        <div class="row g-3">
+                            <div class="col-md-3"><div class="data-view-card"><div class="data-view-label">ID Registro</div><div class="data-view-value" id="c_id_registro">---</div></div></div>
+                            <div class="col-md-3"><div class="data-view-card"><div class="data-view-label">Nro Solicitud</div><div class="data-view-value" id="c_solicitud">---</div></div></div>
+                            <div class="col-md-3"><div class="data-view-card"><div class="data-view-label">Nro Póliza</div><div class="data-view-value" id="c_poliza">---</div></div></div>
+                            <div class="col-md-3"><div class="data-view-card"><div class="data-view-label">Tipo Proceso</div><div class="data-view-value" id="c_proceso">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Fecha Llegada Correo</div><div class="data-view-value" id="c_fecha_llegada">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Fecha Registro</div><div class="data-view-value" id="c_fecha_registro">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Registrado Por</div><div class="data-view-value" id="c_registrado">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Email Asignador</div><div class="data-view-value" id="c_asignador">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Carpeta URL</div><div class="data-view-value" id="c_url">---</div></div></div>
+                            <div class="col-md-6"><div class="data-view-card"><div class="data-view-label">Archivos Adjuntos</div><div class="data-view-value" id="c_adjuntos">---</div></div></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="c-tab-gestionar">
+                        <input type="hidden" id="c_formFilaReal">
+                        <div class="row g-3 bg-white p-3 border rounded-4">
+                            <div class="col-md-12">
+                                <label>Nombre Evaluador</label>
+                                <input type="text" id="c_nombreEvaluador" class="form-control text-primary fw-bold bg-light" readonly>
+                            </div>
+                            <div class="col-md-12 pt-2">
+                                <label>Estado Evaluación</label>
+                                <select id="c_estadoEvaluacion" class="form-select fw-bold" onchange="toggleDevolucionCorreo()">
+                                    <option value="" disabled selected>Seleccione el estado...</option>
+                                    <option value="APROBADO PARA ASIGNAR" class="text-success fw-bold">APROBADO PARA ASIGNAR</option>
+                                    <option value="NO APROBADO PARA ASIGNAR" class="text-danger fw-bold">NO APROBADO PARA ASIGNAR</option>
+                                </select>
+                            </div>
+                            <div class="col-md-12 pt-2" id="c_wrapperMotivo">
+                                <label class="text-danger">Motivo de Devolución</label>
+                                <select id="c_motivoDevolucion" class="form-select border-danger fw-bold">
+                                    <option value="" disabled selected>Seleccione el motivo de rechazo...</option>
+                                    <option value="Radicación duplicada">Radicación duplicada</option>
+                                    <option value="Adjunta nuevo deudor solidario">Adjunta nuevo deudor solidario</option>
+                                    <option value="Novedad en pago de estudio">Novedad en pago de estudio</option>
+                                    <option value="Documentación no requerida">Documentación no requerida</option>
+                                    <option value="Inconsistencia en número de radicado">Inconsistencia en número de radicado</option>
+                                    <option value="Información/Documentación incompleta">Información/Documentación incompleta</option>
+                                    <option value="Solicitud fuera de vigencia">Solicitud fuera de vigencia</option>
+                                    <option value="Solicitud Negada">Solicitud Negada</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer p-4 border-0" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
+                <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn text-white px-5 fw-bold" onclick="enviarCorreo()" style="background: var(--color-secundario);">Guardar Evaluación</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+
+<script>
+    let cacheVictoria = [];
+    let cacheCorreo = [];
+
+    function hideLoader() {
+        $('#loader-container').addClass('loader-hidden');
+        setTimeout(() => $('#loader-container').css('display', 'none'), 800);
+    }
+
+    function showLoader() {
+        $('#loader-container').css('display', 'flex').removeClass('loader-hidden');
+    }
+
+    $(document).ready(function() {
+        google.script.run.withSuccessHandler(email => {
+            if(email) {
+                window.currentUserEmail = email;
+                let prefijo = email.split('@')[0];
+                window.currentUserName = prefijo.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                $('#userEmailNav').text(window.currentUserName);
+            }
+        }).getEmailUsuario();
+
+        particlesJS("particles-js", { particles: { number: { value: 40 }, color: { value: ["#BD0F14", "#253150"] }, opacity: { value: 0.25 }, size: { value: 3, random: true }, line_linked: { enable: true, distance: 150, color: "#94a3b8", opacity: 0.15, width: 1 }, move: { enable: true, speed: 1.5 } } });
+        
+        cargarVictoria();
+    });
+
+    function cargarVictoria() {
+        showLoader();
+        google.script.run
+            .withSuccessHandler(res => {
+                if (res.success) {
+                    cacheVictoria = res.data;
+                    let html = "";
+                    cacheVictoria.forEach((item, index) => {
+                        let badgeEstado = item.estadoColJ ? '<span class="badge bg-success">Gestionada</span>' : '<span class="badge bg-warning text-dark">Pendiente</span>';
+                        let classBadgeRepetida = item.repetida === 'SI' ? 'bg-danger' : 'bg-secondary';
+                        
+                        html += '<tr>' +
+                            '<td>' + badgeEstado + '</td>' +
+                            '<td class="fw-bold text-primary">' + item.nro_solicitud + '</td>' +
+                            '<td>' + item.tipo_documento + '</td>' +
+                            '<td>' + item.nro_documento + '</td>' +
+                            '<td>' + item.celular + '</td>' +
+                            '<td><span class="badge ' + classBadgeRepetida + '">' + item.repetida + '</span></td>' +
+                            '<td class="text-center"><button class="btn-action" onclick="abrirVictoria(' + index + ')"><i class="bi bi-pencil-square"></i></button></td>' +
+                        '</tr>';
+                    });
+
+                    if ($.fn.DataTable.isDataTable('#tablaVictoria')) $('#tablaVictoria').DataTable().destroy();
+                    $('#cuerpoVictoria').html(html);
+                    $('#tablaVictoria').DataTable({ language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json' }});
+                } else {
+                    Swal.fire('Error', res.message, 'error');
+                }
+                hideLoader();
+            })
+            .withFailureHandler(err => {
+                hideLoader();
+                Swal.fire('Error de Conexión', err.message, 'error');
+            })
+            .getDatosVictoria();
+    }
+
+    function abrirVictoria(index) {
+        const item = cacheVictoria[index];
+        new bootstrap.Tab(document.querySelector('#modalVictoria button[data-bs-target="#v-tab-ver"]')).show();
+        
+        $('#v_tit_solicitud, #v_solicitud').text(item.nro_solicitud);
+        $('#v_tipo_doc').text(item.tipo_documento);
+        $('#v_nro_doc').text(item.nro_documento);
+        $('#v_celular').text(item.celular);
+        $('#v_correo').text(item.correo);
+        $('#v_detalles').text(item.detalles);
+        
+        let linkHtml = item.documento_adjunto ? '<a href="' + item.documento_adjunto + '" target="_blank" class="btn btn-sm btn-outline-danger">Ver Archivo</a>' : 'Sin archivo';
+        $('#v_link_doc').html(linkHtml);
+
+        $('#v_formFilaReal').val(item.filaReal);
+        $('#v_estadoSolicitud, #v_tipoDocPresentado').val(''); 
+
+        new bootstrap.Modal(document.getElementById('modalVictoria')).show();
+    }
+
+    function enviarVictoria() {
+        const datos = {
+            filaReal: $('#v_formFilaReal').val(),
+            nroSolicitud: $('#v_solicitud').text(),
+            estadoSolicitud: $('#v_estadoSolicitud').val(),
+            tipoDocPresentado: $('#v_tipoDocPresentado').val()
+        };
+
+        if (!datos.estadoSolicitud || !datos.tipoDocPresentado) {
+            Swal.fire('Atención', 'Por favor selecciona el Estado y el Tipo de Documento.', 'warning');
+            return;
+        }
+
+        Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        google.script.run.withSuccessHandler(res => {
+            if (res.success) { Swal.fire('Éxito', res.message, 'success'); bootstrap.Modal.getInstance(document.getElementById('modalVictoria')).hide(); cargarVictoria(); } 
+            else { Swal.fire('Error', res.message, 'error'); }
+        }).withFailureHandler(err => Swal.fire('Error', err.message, 'error')).guardarGestionVictoria(datos);
+    }
+
+    function cargarCorreo() {
+        showLoader();
+        google.script.run
+            .withSuccessHandler(res => {
+                if (res.success) {
+                    cacheCorreo = res.data;
+                    let html = "";
+                    cacheCorreo.forEach((item, index) => {
+                        html += '<tr>' +
+                            '<td class="fw-bold">' + item.id_registro + '</td>' +
+                            '<td class="text-danger fw-bold">' + item.nro_solicitud + '</td>' +
+                            '<td><span class="badge bg-secondary">' + item.tipo_proceso + '</span></td>' +
+                            '<td>' + item.fecha_llegada + '</td>' +
+                            '<td class="text-center"><button class="btn-action" onclick="abrirCorreo(' + index + ')"><i class="bi bi-ui-checks"></i></button></td>' +
+                        '</tr>';
+                    });
+
+                    if ($.fn.DataTable.isDataTable('#tablaCorreo')) $('#tablaCorreo').DataTable().destroy();
+                    $('#cuerpoCorreo').html(html);
+                    $('#tablaCorreo').DataTable({ language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json' }});
+                } else {
+                    Swal.fire('Error', res.message, 'error');
+                }
+                hideLoader();
+            })
+            .withFailureHandler(err => {
+                hideLoader();
+                Swal.fire('Error de Conexión', err.message, 'error');
+            })
+            .getDatosCorreo();
+    }
+
+    function abrirCorreo(index) {
+        const item = cacheCorreo[index];
+        new bootstrap.Tab(document.querySelector('#modalCorreo button[data-bs-target="#c-tab-ver"]')).show();
+        
+        $('#c_tit_solicitud, #c_solicitud').text(item.nro_solicitud);
+        $('#c_id_registro').text(item.id_registro);
+        $('#c_poliza').text(item.nro_poliza);
+        $('#c_proceso').text(item.tipo_proceso);
+        $('#c_fecha_llegada').text(item.fecha_llegada);
+        $('#c_fecha_registro').text(item.fecha_registro);
+        $('#c_registrado').text(item.registrado_por);
+        $('#c_asignador').text(item.email_asignador);
+        
+        let linkAdj = item.adjuntos ? '<a href="' + item.adjuntos + '" target="_blank" class="text-danger fw-bold">Ver Adjuntos</a>' : 'N/A';
+        let linkUrl = item.url_carpeta ? '<a href="' + item.url_carpeta + '" target="_blank" class="text-primary fw-bold">Ver Carpeta</a>' : 'N/A';
+        
+        $('#c_adjuntos').html(linkAdj);
+        $('#c_url').html(linkUrl);
+
+        $('#c_formFilaReal').val(item.filaReal);
+        $('#c_estadoEvaluacion, #c_motivoDevolucion').val('');
+        
+        $('#c_nombreEvaluador').val(window.currentUserName || 'Analista');
+        
+        toggleDevolucionCorreo();
+        new bootstrap.Modal(document.getElementById('modalCorreo')).show();
+    }
+
+    function toggleDevolucionCorreo() {
+        if ($('#c_estadoEvaluacion').val() === 'NO APROBADO PARA ASIGNAR') {
+            $('#c_wrapperMotivo').show().find('select').prop('required', true);
+        } else {
+            $('#c_wrapperMotivo').hide().find('select').prop('required', false).val('');
+        }
+    }
+
+    function enviarCorreo() {
+        const datos = {
+            filaReal: $('#c_formFilaReal').val(),
+            nroSolicitud: $('#c_solicitud').text(), 
+            nombreEvaluador: $('#c_nombreEvaluador').val(),
+            estadoEvaluacion: $('#c_estadoEvaluacion').val(),
+            motivoDevolucion: $('#c_motivoDevolucion').val()
+        };
+
+        if (!datos.estadoEvaluacion || (datos.estadoEvaluacion === 'NO APROBADO PARA ASIGNAR' && !datos.motivoDevolucion)) {
+            Swal.fire('Atención', 'Selecciona el estado y el motivo de devolución.', 'warning'); return;
+        }
+
+        Swal.fire({ title: 'Guardando Evaluación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        google.script.run.withSuccessHandler(res => {
+            if (res.success) { Swal.fire('Éxito', res.message, 'success'); bootstrap.Modal.getInstance(document.getElementById('modalCorreo')).hide(); cargarCorreo(); } 
+            else { Swal.fire('Error', res.message, 'error'); }
+        }).withFailureHandler(err => Swal.fire('Error', err.message, 'error')).guardarGestionCorreo(datos);
+    }
+</script>
+</body>
+</html>
