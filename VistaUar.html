@@ -1,9 +1,933 @@
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <base target="_top">
-  </head>
-  <body>
-    <h1>Vista de uar</h1>
-  </body>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión UAR</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/limonte-sweetalert2/11.10.1/sweetalert2.all.min.js"></script>
+
+    <style>
+        :root {
+            --color-primario:   #BD0F14;
+            --rojo-dark:        #8b0a0e;
+            --color-secundario: #253150;
+            --azul-mid:         #3a4d7a;
+            --azul-light:       #e8edf6;
+            --bg-page:          #F4F5F8;
+            --bg-card:          #FFFFFF;
+            --text-main:        #111827;
+            --text-muted:       #64748b;
+            --border:           #e5e7eb;
+            --grad-azul:        linear-gradient(135deg, #161e33 0%, #253150 60%, #3a4d7a 100%);
+            --grad-rojo:        linear-gradient(135deg, #8b0a0e 0%, #BD0F14 55%, #e05555 100%);
+            --shadow:           0 2px 12px rgba(37,49,80,0.08);
+            --shadow-md:        0 8px 28px rgba(37,49,80,0.14);
+        }
+
+        body {
+            font-family: 'Manrope', sans-serif;
+            color: var(--text-main);
+            background-color: var(--bg-page);
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            min-height: 100vh;
+            padding-top: 105px;
+        }
+
+        #particles-js { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -2; }
+
+        /* NAVBAR PREMIUM GLASSMORPHISM */
+        .navbar-glass {
+            position: fixed; top: 20px; left: 24px; right: 24px; z-index: 1000;
+            background: rgba(37, 49, 80, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px;
+            padding: 12px 28px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease;
+        }
+
+        .navbar-glass-brand {
+            display: flex; align-items: center; gap: 12px; color: white;
+            font-weight: 800; font-size: 1.25rem; letter-spacing: -0.5px; text-decoration: none;
+        }
+
+        .navbar-glass-brand .brand-icon {
+            width: 40px; height: 40px; background: linear-gradient(135deg, rgba(189,15,20,0.9), rgba(189,15,20,0.6));
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            font-size: 1.2rem; box-shadow: 0 4px 12px rgba(189,15,20,0.4); border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .navbar-glass-right { display: flex; align-items: center; gap: 16px; }
+
+        .nav-glass-profile {
+            display: flex; align-items: center; gap: 10px; background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 50px; padding: 5px 16px 5px 5px;
+            color: white; cursor: default;
+        }
+        .nav-glass-profile .avatar {
+            width: 36px; height: 36px; background: var(--grad-azul); border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem;
+        }
+        .nav-glass-profile .info { display: flex; flex-direction: column; justify-content: center; max-width: 130px; }
+        .nav-glass-profile .name { font-size: 0.8rem; font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: white !important; }
+        .nav-glass-profile .role { font-size: 0.65rem; color: rgba(255,255,255,0.6); font-weight: 600; text-transform: uppercase; }
+
+        /* LOADER */
+        #loader-container { position:fixed; inset:0; z-index:99999; display:flex; align-items:center; justify-content:center; overflow:hidden; transition:opacity 0.8s ease, visibility 0.8s; background-color: #0b0f19; }
+        .loader-hidden { opacity:0 !important; visibility:hidden !important; }
+        .l-bg { position:absolute; inset:0; overflow: hidden; z-index: 1; }
+        .l-bg::before, .l-bg::after { content: ''; position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.45; animation: lPremiumDrift 12s infinite alternate ease-in-out; }
+        .l-bg::before { width: 60vw; height: 60vw; background: var(--color-primario); top: -20%; left: -10%; }
+        .l-bg::after { width: 50vw; height: 50vw; background: var(--azul-mid); bottom: -10%; right: -10%; animation-delay: -6s; }
+        @keyframes lPremiumDrift { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(8%, 12%) scale(1.15); } }
+        .l-orb { position:absolute; z-index: 2; width:320px; height:320px; background:radial-gradient(circle, rgba(189,15,20,0.15) 0%, transparent 70%); border-radius:50%; top:50%; left:50%; transform:translate(-50%,-50%); animation:lOrbPulse 3s ease-in-out infinite; }
+        @keyframes lOrbPulse { 0%,100% { transform:translate(-50%,-50%) scale(1); opacity:0.6; } 50% { transform:translate(-50%,-50%) scale(1.3); opacity:1; } }
+        .l-card { position:relative; z-index:3; display:flex; flex-direction:column; align-items:center; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:28px; padding:52px 60px; gap:30px; box-shadow:0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05); min-width:360px; animation:lCardIn 0.6s cubic-bezier(0.34,1.4,0.64,1) both; backdrop-filter:blur(25px); -webkit-backdrop-filter:blur(25px); }
+        @keyframes lCardIn { from { transform:scale(0.8) translateY(30px); opacity:0; } to { transform:scale(1) translateY(0); opacity:1; } }
+        .l-logo-wrap { position:relative; width:100px; height:100px; display:flex; align-items:center; justify-content:center; }
+        .l-ring { position:absolute; border-radius:50%; border:2px solid transparent; }
+        .l-ring-1 { inset:0; border-top-color:rgba(189,15,20,0.9); border-right-color:rgba(189,15,20,0.2); animation:lSpin 1.2s linear infinite; }
+        .l-ring-2 { inset:10px; border-top-color:rgba(255,120,120,0.7); border-left-color:rgba(255,120,120,0.15); animation:lSpin 1.8s linear infinite reverse; }
+        .l-ring-3 { inset:20px; border-top-color:rgba(37,49,80,0.8); border-right-color:rgba(37,49,80,0.15); animation:lSpin 2.8s linear infinite; }
+        @keyframes lSpin { to { transform:rotate(360deg); } }
+        .l-logo-inner { width:52px; height:52px; background:linear-gradient(135deg, rgba(189,15,20,0.2), rgba(37,49,80,0.3)); border:1px solid rgba(255,255,255,0.15); border-radius:14px; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(8px); }
+        .l-logo-inner img { width:34px; height:34px; object-fit:contain; filter:brightness(10); }
+        .l-orbit-dot { position:absolute; inset:-8px; border-radius:50%; animation:lSpin 3s linear infinite; }
+        .l-orbit-dot::before { content:''; position:absolute; top:0; left:50%; width:8px; height:8px; margin-left:-4px; margin-top:-4px; background:var(--color-primario); border-radius:50%; box-shadow:0 0 12px rgba(189,15,20,0.8), 0 0 24px rgba(189,15,20,0.4); }
+        .l-text { text-align:center; }
+        .l-title { font-size:1.5rem; font-weight:800; color:white; letter-spacing:-0.4px; line-height:1.2; margin-bottom:6px; }
+        .l-title span { color:#f87171; }
+        .l-sub { font-size:0.82rem; color:rgba(255,255,255,0.5); font-weight:500; }
+        .l-bar-wrap { width:260px; height:4px; background:rgba(255,255,255,0.1); border-radius:99px; overflow:hidden; }
+        .l-bar { height:100%; width:0%; background:linear-gradient(90deg, var(--color-secundario), var(--color-primario), #ff6b6b); border-radius:99px; animation:lBarFill 2.8s cubic-bezier(0.4,0,0.2,1) forwards; box-shadow:0 0 12px rgba(189,15,20,0.5); }
+        @keyframes lBarFill { 0% { width:0%; } 30% { width:35%; } 60% { width:70%; } 100% { width:95%; } }
+
+        /* TARJETAS DE MÉTRICAS */
+        .card-metrica {
+            border: 1px solid var(--border); border-radius: 20px; background: var(--bg-card);
+            transition: transform 0.25s, box-shadow 0.25s; box-shadow: var(--shadow);
+        }
+        .card-metrica:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+        .icon-circle-modern {
+            width: 56px; height: 56px; display: flex; align-items: center; justify-content: center;
+            border-radius: 14px; font-size: 1.5rem;
+        }
+        .bg-gradient-hoy { background: var(--grad-azul); color: white; box-shadow: 0 4px 14px rgba(37,49,80,0.3); }
+        .bg-gradient-total { background: var(--grad-rojo); color: white; box-shadow: 0 4px 14px rgba(189,15,20,0.3); }
+        .metric-label-modern { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+        .metric-value-modern { font-size: 2.2rem; font-weight: 800; color: var(--text-main); line-height: 1; letter-spacing: -1px; }
+
+        /* TABLA DATATABLES */
+        .table-container {
+            background: var(--bg-card); border-radius: 20px; box-shadow: var(--shadow);
+            border: 1px solid var(--border); padding: 28px; margin-top: 24px;
+        }
+        .dataTables_wrapper .dataTables_length, .dataTables_wrapper .dataTables_filter, .dataTables_wrapper .dataTables_info { color: var(--text-muted) !important; font-size: 0.8rem; margin-top: 16px; }
+        .dataTables_wrapper .dataTables_filter input {
+            background: var(--bg-page) !important; border: 1.5px solid var(--border) !important;
+            color: var(--text-main) !important; border-radius: 10px !important; padding: 7px 12px !important;
+            outline: none; font-family: 'Manrope', sans-serif; font-size: 0.82rem; transition: border-color 0.2s;
+        }
+        .dataTables_wrapper .dataTables_filter input:focus { border-color: var(--azul-mid) !important; }
+        .dataTables_wrapper .dataTables_length select {
+            background: var(--bg-page) !important; border: 1.5px solid var(--border) !important;
+            border-radius: 8px !important; color: var(--text-main) !important; padding: 4px 8px; font-size: 0.8rem;
+        }
+        .dataTables_wrapper .pagination { margin-top: 20px !important; justify-content: flex-end; gap: 6px; }
+        .dataTables_wrapper .page-item .page-link {
+            border-radius: 8px !important; border: none !important; color: var(--text-muted);
+            background-color: transparent; font-size: 0.85rem; font-weight: 600; min-width: 32px; height: 32px;
+            display: inline-flex; align-items: center; justify-content: center; padding: 0 10px;
+            transition: all 0.2s ease-in-out; box-shadow: none !important;
+        }
+        .dataTables_wrapper .page-item:not(.active):not(.disabled) .page-link:hover {
+            background-color: var(--azul-light) !important; color: var(--color-secundario) !important; transform: translateY(-1px);
+        }
+        .dataTables_wrapper .page-item.active .page-link {
+            background: var(--color-secundario) !important; color: white !important;
+            box-shadow: 0 4px 12px rgba(37, 49, 80, 0.3) !important; transform: scale(1.05);
+        }
+        .dataTables_wrapper .page-item.disabled .page-link { color: #cbd5e1 !important; background: transparent !important; cursor: not-allowed; }
+        .dataTables_wrapper .page-item.previous .page-link, .dataTables_wrapper .page-item.next .page-link { background-color: var(--bg-page); border: 1px solid var(--border) !important; padding: 0 14px; }
+        .dataTables_wrapper .page-item.previous:not(.disabled) .page-link:hover, .dataTables_wrapper .page-item.next:not(.disabled) .page-link:hover { background-color: var(--color-secundario) !important; color: white !important; border-color: transparent !important; }
+
+        table.table { border-collapse: separate !important; border-spacing: 0 6px; }
+        table.dataTable thead th {
+            background: var(--bg-page) !important; color: var(--text-muted) !important;
+            font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            border: none !important; padding: 12px 14px;
+        }
+        table.dataTable thead th:first-child { border-radius: 10px 0 0 10px; }
+        table.dataTable thead th:last-child  { border-radius: 0 10px 10px 0; }
+        .table tbody tr { background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border); box-shadow: none; transition: background 0.2s; }
+        .table tbody tr td { vertical-align: middle; border-bottom: 1px solid var(--border); padding: 12px 14px; font-size: 0.875rem; color: var(--text-main); }
+        .table tbody tr:hover td { background: #fafbff !important; }
+
+        .btn-action {
+            width: 36px !important; height: 36px !important; border-radius: 12px !important;
+            border: 1.5px solid var(--border) !important; background: var(--bg-card) !important;
+            color: var(--color-secundario) !important; display: inline-flex !important;
+            align-items: center !important; justify-content: center !important; font-size: 1rem !important;
+            cursor: pointer !important; transition: all 0.2s ease !important; text-decoration: none !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03) !important; padding: 0 !important;
+        }
+        .btn-action:hover {
+            background: var(--color-secundario) !important; color: white !important;
+            border-color: var(--color-secundario) !important; transform: translateY(-2px) !important;
+            box-shadow: 0 4px 12px rgba(37,49,80,0.2) !important;
+        }
+
+        /* ===== MODALES PREMIUM ===== */
+        .modal-content { border-radius: 20px !important; border: none !important; background-color: var(--bg-page) !important; box-shadow: 0 30px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05); }
+        .modal-header-inner { background: var(--grad-azul); padding: 24px 28px; display: flex; align-items: center; justify-content: space-between; position: relative; overflow: hidden; border-radius: 20px 20px 0 0; }
+        .modal-header-inner::before { content: ''; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; background: radial-gradient(circle, rgba(189,15,20,0.3), transparent 70%); border-radius: 50%; }
+        .modal-header-inner::after { content: ''; position: absolute; bottom: -30px; left: 20px; width: 100px; height: 100px; background: radial-gradient(circle, rgba(255,255,255,0.05), transparent 70%); border-radius: 50%; }
+
+        .nav-tabs-modern { background: var(--border); padding: 4px !important; border-radius: 12px; margin: 20px 28px 10px; border: none; display: flex; gap: 4px; }
+        .nav-tabs-modern .nav-link { flex: 1; text-align: center; border: none !important; border-radius: 10px !important; color: var(--text-muted) !important; font-weight: 700; font-size: 0.82rem; padding: 10px; transition: all 0.2s; }
+        .nav-tabs-modern .nav-link.active { background: var(--bg-card) !important; color: var(--color-secundario) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+        .form-select, .form-control { background: var(--bg-card) !important; border: 1.5px solid var(--border) !important; color: var(--text-main) !important; border-radius: 10px !important; font-size: 0.875rem; padding: 10px 14px !important; transition: all 0.2s; cursor: pointer; }
+        .form-select:focus, .form-control:focus { border-color: var(--azul-mid) !important; box-shadow: 0 0 0 3px rgba(37,49,80,0.1) !important; }
+        .modal-body label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .modal-body { padding-bottom: 30px !important; }
+        .form-control:disabled, .form-control[readonly] { background-color: var(--border) !important; color: var(--text-muted) !important; opacity: 0.8; }
+
+        .data-view-card { background: #ffffff; border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; height: 100%; }
+        .data-view-label { font-size: 0.65rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; }
+        .data-view-value { font-size: 0.88rem; font-weight: 600; color: var(--color-secundario); margin-top: 2px; word-break: break-all; }
+
+        /* ===== ESTILOS CUSTOM MODAL DE NOVEDADES ===== */
+        .nav-pills-custom .nav-link {
+            color: var(--text-muted); font-weight: 700; border-radius: 12px; padding: 14px 20px;
+            margin-bottom: 8px; transition: all 0.3s ease; border: 1px solid transparent;
+            text-align: left; display: flex; align-items: center; gap: 12px; font-size: 0.9rem;
+        }
+        .nav-pills-custom .nav-link:hover { background-color: rgba(37,49,80,0.05); color: var(--color-secundario); }
+        .nav-pills-custom .nav-link.active { background-color: white; color: var(--color-primario); border-color: var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+        .btn-novedad {
+            background: white; border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+            text-align: left; font-weight: 700; color: var(--text-main); display: flex;
+            align-items: center; gap: 12px; transition: all 0.2s ease; width: 100%; font-size: 0.82rem;
+        }
+        .btn-novedad i { font-size: 1.1rem; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; flex-shrink: 0; }
+        .btn-novedad.falla:hover { border-color: var(--color-primario); box-shadow: 0 4px 15px rgba(189,15,20,0.1); transform: translateY(-2px); color: var(--color-primario); }
+        .btn-novedad.falla i { background: rgba(189,15,20,0.1); color: var(--color-primario); }
+        .btn-novedad.ausencia:hover { border-color: #3b82f6; box-shadow: 0 4px 15px rgba(59,130,246,0.1); transform: translateY(-2px); color: #3b82f6; }
+        .btn-novedad.ausencia i { background: rgba(59,130,246,0.1); color: #3b82f6; }
+        .btn-novedad.reunion:hover { border-color: #10b981; box-shadow: 0 4px 15px rgba(16,185,129,0.1); transform: translateY(-2px); color: #10b981; }
+        .btn-novedad.reunion i { background: rgba(16,185,129,0.1); color: #10b981; }
+        .btn-novedad.operativa:hover { border-color: var(--color-secundario); box-shadow: 0 4px 15px rgba(37,49,80,0.1); transform: translateY(-2px); color: var(--color-secundario); }
+        .btn-novedad.operativa i { background: rgba(37,49,80,0.1); color: var(--color-secundario); }
+
+        .scroll-premium::-webkit-scrollbar { width: 6px; }
+        .scroll-premium::-webkit-scrollbar-track { background: transparent; }
+        .scroll-premium::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        /* BOTÓN MI ESTADO */
+        .btn-glass-dropdown {
+            background: rgba(255, 255, 255, 0.08) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            color: white !important; border-radius: 14px; padding: 8px 20px;
+            font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; transition: all 0.2s;
+        }
+        .btn-glass-dropdown:hover, .btn-glass-dropdown:focus {
+            background: rgba(255, 255, 255, 0.15) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+            color: white !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- LOADER -->
+<div id="loader-container">
+    <div class="l-bg"></div>
+    <div class="l-orb"></div>
+    <div class="l-card">
+        <div class="l-logo-wrap">
+            <div class="l-ring l-ring-1"></div>
+            <div class="l-ring l-ring-2"></div>
+            <div class="l-ring l-ring-3"></div>
+            <div class="l-orbit-dot"></div>
+            <div class="l-logo-inner">
+                <img src="https://www.ellibertador.co/assets/img/logo.svg" alt="Logo Empresa">
+            </div>
+        </div>
+        <div class="l-text">
+            <div class="l-title">Cargando <span>UAR</span></div>
+            <div class="l-sub">Preparando gestión de análisis UAR...</div>
+        </div>
+        <div class="l-bar-wrap">
+            <div class="l-bar"></div>
+        </div>
+    </div>
+</div>
+
+<div id="particles-js"></div>
+
+<!-- NAVBAR GLASSMORPHISM -->
+<nav class="navbar-glass">
+    <div class="navbar-glass-brand">
+        <div class="brand-icon"><i class="bi bi-shield-fill-check"></i></div>
+        Gestión UAR
+    </div>
+
+    <div class="navbar-glass-right">
+        <div id="statusIndicatorCard" class="status-glass-indicator" style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 6px 16px; display: flex; align-items: center; gap: 12px; color: white;">
+            <div id="statusDot" class="rounded-circle" style="width: 10px; height: 10px; background: #94a3b8; box-shadow: 0 0 8px rgba(255,255,255,0.4);"></div>
+            <div style="line-height: 1.1;">
+                <p class="mb-0" style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: rgba(255,255,255,0.6);">Estado Actual</p>
+                <p id="currentStatusText" class="mb-0 fw-bold" style="font-size: 0.85rem;">INACTIVO</p>
+            </div>
+        </div>
+
+        <div class="dropdown">
+            <button class="btn btn-glass-dropdown" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-clock-history"></i> Mi Estado
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark-glass shadow-lg" style="background: rgba(37,49,80,0.95); border-radius: 14px; font-size: 0.85rem; padding: 8px; margin-top: 10px;">
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('ACTIVO'); return false;"><i class="bi bi-check-circle-fill text-success me-2"></i> Activo</a></li>
+                <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.1);"></li>
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('BREAK MAÑANA'); return false;"><i class="bi bi-cup-hot me-2 text-warning"></i> Break Mañana</a></li>
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('ALMUERZO'); return false;"><i class="bi bi-egg-fried me-2 text-warning"></i> Almuerzo</a></li>
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('BREAK TARDE'); return false;"><i class="bi bi-cup-straw me-2 text-warning"></i> Break Tarde</a></li>
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('BAÑO'); return false;"><i class="bi bi-droplet me-2 text-info"></i> Baño</a></li>
+                <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('INACTIVO'); return false;"><i class="bi bi-building-x me-2 text-secondary"></i> Inactivo</a></li>
+                <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.1);"></li>
+                <li>
+                    <a class="dropdown-item py-2 rounded-2 fw-bold" href="#" onclick="abrirModalNovedades(); return false;" style="color: #cbd5e1; background: rgba(255,255,255,0.05);">
+                        <i class="bi bi-three-dots-vertical me-2"></i> Reportar otra Novedad...
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <div class="nav-glass-profile">
+            <div class="avatar"><i class="bi bi-person-fill"></i></div>
+            <div class="info">
+                <span class="name" id="userEmailNav">Cargando...</span>
+                <span class="role">Analista UAR</span>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<!-- MÉTRICAS -->
+<div class="container mb-3">
+    <div class="row g-4 justify-content-center">
+        <div class="col-md-5 col-lg-4">
+            <div class="card card-metrica">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="icon-circle-modern bg-gradient-hoy me-4">
+                            <i class="bi bi-check2-circle"></i>
+                        </div>
+                        <div>
+                            <h6 class="metric-label-modern">Gestionadas Hoy</h6>
+                            <h2 class="metric-value-modern" id="countHoy">0</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-5 col-lg-4">
+            <div class="card card-metrica">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center">
+                        <div class="icon-circle-modern bg-gradient-total me-4">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div>
+                            <h6 class="metric-label-modern">Pendientes de Análisis</h6>
+                            <h2 class="metric-value-modern" id="countPendientes">0</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TABLA PRINCIPAL -->
+<div class="container mb-5">
+    <div class="table-container">
+        <div class="mb-4">
+            <h4 class="fw-bold mb-0" style="color: var(--text-main); font-size: 1.2rem;">
+                <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Solicitudes UAR
+            </h4>
+            <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar la evaluación UAR</p>
+        </div>
+        <div class="table-responsive">
+            <table id="tablaUar" class="table align-middle w-100">
+                <thead>
+                    <tr>
+                        <th>ID Solicitud</th>
+                        <th>Póliza</th>
+                        <th>Inmobiliaria</th>
+                        <th>Fecha Asignación</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaUar"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DE GESTIÓN UAR -->
+<div class="modal fade" id="modalGestionUar" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header-inner">
+                <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+                    <div class="p-2 rounded-3 me-3" style="background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(4px);">
+                        <i class="bi bi-shield-fill-check fs-4 text-white"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.1rem;">Solicitud #<span id="displaySolUar"></span></h5>
+                        <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Gestión de Análisis UAR</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+
+            <ul class="nav nav-tabs-modern" id="tabsUar" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-visualizacion-uar">
+                        <i class="bi bi-eye me-2"></i>Visualización
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-gestion-uar">
+                        <i class="bi bi-pencil-square me-2"></i>Gestión UAR
+                    </button>
+                </li>
+            </ul>
+
+            <div class="modal-body p-4">
+                <div class="tab-content">
+
+                    <!-- TAB VISUALIZACIÓN -->
+                    <div class="tab-pane fade show active" id="tab-visualizacion-uar">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Póliza</div>
+                                    <div class="data-view-value" id="uar_view_poliza">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Inmobiliaria</div>
+                                    <div class="data-view-value" id="uar_view_inmobiliaria">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Ciudad</div>
+                                    <div class="data-view-value" id="uar_view_ciudad">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Dirección</div>
+                                    <div class="data-view-value" id="uar_view_direccion">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Nombre Inquilino</div>
+                                    <div class="data-view-value" id="uar_view_inquilino">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Canon</div>
+                                    <div class="data-view-value" id="uar_view_canon">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Celular</div>
+                                    <div class="data-view-value" id="uar_view_celular">---</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="data-view-card">
+                                    <div class="data-view-label">Fecha Asignación</div>
+                                    <div class="data-view-value" id="uar_view_fecha">---</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Historial de deudores cargado de forma asíncrona -->
+                        <div class="mt-4 bg-white border rounded-4 p-4">
+                            <h6 class="fw-bold text-dark mb-3"><i class="bi bi-people-fill me-2 text-primary"></i>Historial de Deudores</h6>
+                            <div id="loaderDeudoresUar" class="text-center py-4 d-none">
+                                <div class="spinner-border text-danger" role="status"></div>
+                                <p class="small text-muted mt-2">Consultando historial...</p>
+                            </div>
+                            <div id="contenedorDeudoresUar"></div>
+                        </div>
+                    </div>
+
+                    <!-- TAB GESTIÓN UAR -->
+                    <div class="tab-pane fade" id="tab-gestion-uar">
+                        <input type="hidden" id="uar_solicitudId">
+                        <div class="bg-white border rounded-4 p-4" style="border-left: 5px solid #253150 !important;">
+                            <h6 class="fw-bold mb-3 text-dark"><i class="bi bi-clipboard-check me-2 text-primary"></i>Evaluación del Analista</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label>Resultado UAR</label>
+                                    <select id="uar_resultado" class="form-select fw-bold" onchange="toggleMotivoUar()">
+                                        <option value="" disabled selected>Seleccione resultado...</option>
+                                        <option value="APROBADO">APROBADO</option>
+                                        <option value="NEGADO">NEGADO</option>
+                                        <option value="DEVUELTO A MESA">DEVUELTO A MESA</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6" id="wrapperMotivoUar" style="display: none;">
+                                    <label class="text-danger">Motivo de Devolución</label>
+                                    <select id="uar_motivo" class="form-select fw-bold border-danger">
+                                        <option value="" disabled selected>Seleccione motivo...</option>
+                                        <option value="Documentación incompleta">Documentación incompleta</option>
+                                        <option value="Radicación duplicada">Radicación duplicada</option>
+                                        <option value="Solicitud fuera de vigencia">Solicitud fuera de vigencia</option>
+                                        <option value="Error de firma">Error de firma</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label>Observaciones</label>
+                                    <textarea id="uar_observaciones" class="form-control" rows="4" placeholder="Escriba sus observaciones aquí..."></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="modal-footer border-0 p-4" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
+                <button class="btn btn-outline-primary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius: 10px; border-color: var(--border); color: var(--text-main);">Cancelar</button>
+                <button type="button" class="btn text-white px-5 fw-bold shadow-sm" onclick="enviarGestionUar()" style="border-radius: 10px; background: #253150;">
+                    <i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- MODAL DE NOVEDADES -->
+<div class="modal fade" id="modalNovedades" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 24px; border: none; box-shadow: 0 20px 50px rgba(0,0,0,0.25);">
+
+            <div class="modal-header-inner" style="border-radius: 24px 24px 0 0;">
+                <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+                    <div class="p-2 rounded-3 me-3" style="background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(4px);">
+                        <i class="bi bi-ui-radios-grid fs-4 text-white"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.2rem;">Reportar Novedad</h5>
+                        <p class="small mb-0" style="color: rgba(255,255,255,0.7);">Selecciona tu estado actual para pausar la asignación</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+
+            <div class="modal-body p-0 d-flex flex-column flex-md-row" style="background: var(--bg-page); border-radius: 0 0 24px 24px;">
+
+                <div class="nav flex-column nav-pills-custom p-4 border-end" style="width: 300px; min-height: 500px;" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+                    <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#v-fallas" type="button"><i class="bi bi-laptop fs-5"></i> Fallas Técnicas</button>
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-ausencias" type="button"><i class="bi bi-hospital fs-5"></i> Ausencias / Salud</button>
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-reuniones" type="button"><i class="bi bi-people fs-5"></i> Reuniones / Eventos</button>
+                    <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-operativas" type="button"><i class="bi bi-briefcase fs-5"></i> Otras Actividades</button>
+                </div>
+
+                <div class="tab-content p-4 w-100 bg-white scroll-premium" id="v-pills-tabContent" style="max-height: 550px; overflow-y: auto; border-radius: 0 0 24px 0;">
+
+                    <div class="tab-pane fade show active" id="v-fallas">
+                        <div class="d-flex align-items-center mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(189,15,20,0.1); color: var(--color-primario);"><i class="bi bi-exclamation-triangle-fill fs-5"></i></div>
+                            <h6 class="fw-bold mb-0" style="color: var(--color-primario);">Fallas de Sistemas y Soporte</h6>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE COMPUTADOR')"><i class="bi bi-pc-display"></i> Falla de Computador</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE DATACREDITO')"><i class="bi bi-credit-card"></i> Falla de Datacrédito</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE INFOBIP')"><i class="bi bi-chat-dots"></i> Falla de Infobip</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE LINPHONE')"><i class="bi bi-telephone-x"></i> Falla de Linphone</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE SAI')"><i class="bi bi-server"></i> Falla de SAI</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE V.P.N.')"><i class="bi bi-shield-lock"></i> Falla de V.P.N.</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA VISTA')"><i class="bi bi-browser-edge"></i> Falla vista</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLAS DE INTERNET')"><i class="bi bi-wifi-off"></i> Fallas de Internet</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA ITBX')"><i class="bi bi-headset"></i> Falla ITBX</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('PROBLEMAS DE ENERGIA ELECTRICA')"><i class="bi bi-lightning-charge"></i> Prob. Energía Eléctrica</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('ACTUALIZACION PC')"><i class="bi bi-arrow-repeat"></i> Actualización PC</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE DE BOLIVAR')"><i class="bi bi-tools"></i> Soporte de Bolívar</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE DIVA')"><i class="bi bi-robot"></i> Soporte Diva</button></div>
+                            <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE TECNICO OPERADOR DE INTERNET')"><i class="bi bi-router"></i> Soporte Operador de Internet</button></div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="v-ausencias">
+                        <div class="d-flex align-items-center mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(59,130,246,0.1); color: #3b82f6;"><i class="bi bi-calendar-x-fill fs-5"></i></div>
+                            <h6 class="fw-bold mb-0" style="color: #3b82f6;">Permisos e Incapacidades</h6>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
+                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="v-reuniones">
+                        <div class="d-flex align-items-center mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(16,185,129,0.1); color: #10b981;"><i class="bi bi-camera-video-fill fs-5"></i></div>
+                            <h6 class="fw-bold mb-0" style="color: #10b981;">Reuniones y Formación</h6>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('CAPACITACION')"><i class="bi bi-easel"></i> Capacitación</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('CURSOS XPLORA')"><i class="bi bi-mortarboard"></i> Cursos Xplora</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('ENTREVISTA CON BOLIVAR')"><i class="bi bi-person-video2"></i> Entrevista Bolívar</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('REUNION DEL AREA')"><i class="bi bi-microsoft-teams"></i> Reunión del Área</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('REUNION BRIGADA')"><i class="bi bi-shield-check"></i> Reunión Brigada</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('FEEDBACK')"><i class="bi bi-chat-quote"></i> Feedback</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('EVENTO SEGUROS BOLIVAR')"><i class="bi bi-calendar-star"></i> Evento Seguros Bolívar</button></div>
+                            <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('AUTOEVALUACION')"><i class="bi bi-ui-checks"></i> Autoevaluación</button></div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="v-operativas">
+                        <div class="d-flex align-items-center mb-4">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(37,49,80,0.1); color: var(--color-secundario);"><i class="bi bi-briefcase-fill fs-5"></i></div>
+                            <h6 class="fw-bold mb-0" style="color: var(--color-secundario);">Otras Actividades Operativas</h6>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ACTIVIDADES DE OFICINA')"><i class="bi bi-building"></i> Actividades de Oficina</button></div>
+                            <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ANALISTA DESPLAZAMIENTO')"><i class="bi bi-car-front"></i> Analista Desplazamiento</button></div>
+                            <div class="col-md-12"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ASIGNACION REESTUDIOS')"><i class="bi bi-file-earmark-diff"></i> Asignación Reestudios</button></div>
+                            <div class="col-md-12"><button class="btn-novedad operativa" onclick="seleccionarNovedad('GESTION CDT EN OFICINA')"><i class="bi bi-file-earmark-ruled"></i> Gestión CDT en Oficina</button></div>
+                            <div class="col-md-12"><button class="btn-novedad operativa" onclick="seleccionarNovedad('RECOGE ELEMENTO EN SEGUROS BOLIVAR')"><i class="bi bi-box-seam"></i> Recoge elemento Seguros Bolívar</button></div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    let rawDataUar = [];
+    let estadoGlobalAsesor = "INACTIVO";
+    let yaSeIntentoAsignar = false;
+
+    // ==========================================
+    // INICIALIZACIÓN
+    // ==========================================
+    $(document).ready(function() {
+        // Cargar email del usuario
+        google.script.run
+            .withSuccessHandler(function(email) {
+                if (email) document.getElementById('userEmailNav').innerText = email.split('@')[0];
+            })
+            .withFailureHandler(function() {
+                document.getElementById('userEmailNav').innerText = "Analista";
+            })
+            .getEmailUsuario();
+
+        // Sincronizar estado inicial y cargar datos
+        sincronizarEstadoInicial();
+        cargarDatosUar();
+    });
+
+    // ==========================================
+    // FUNCIONES DE ESTADO Y MODAL DE NOVEDADES
+    // ==========================================
+    function abrirModalNovedades() {
+        const modal = new bootstrap.Modal(document.getElementById('modalNovedades'));
+        modal.show();
+    }
+
+    function seleccionarNovedad(novedad) {
+        bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+        cambiarMiEstado(novedad);
+    }
+
+    function sincronizarEstadoInicial() {
+        google.script.run.withSuccessHandler(function(estadoReal) {
+            if (estadoReal && estadoReal !== "ERROR") {
+                estadoGlobalAsesor = estadoReal.toUpperCase();
+                actualizarUIEstado();
+            }
+        }).obtenerMiEstadoActual();
+    }
+
+    function cambiarMiEstado(nuevoEstado) {
+        estadoGlobalAsesor = nuevoEstado.toUpperCase();
+        actualizarUIEstado();
+
+        google.script.run.withSuccessHandler(function(res) {
+            if (res && res.success) {
+                Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
+                if (estadoGlobalAsesor === 'ACTIVO') {
+                    yaSeIntentoAsignar = false;
+                    cargarDatosUar();
+                }
+            }
+        }).actualizarEstadoPropio(nuevoEstado);
+    }
+
+    function actualizarUIEstado() {
+        $('#currentStatusText').text(estadoGlobalAsesor);
+        if (estadoGlobalAsesor === 'ACTIVO') {
+            $('#statusDot').css('background-color', '#22c55e');
+            $('#statusIndicatorCard').css('border-color', 'rgba(34, 197, 94, 0.5)');
+        } else {
+            $('#statusDot').css('background-color', '#f59e0b');
+            $('#statusIndicatorCard').css('border-color', 'rgba(255, 255, 255, 0.08)');
+        }
+    }
+
+    // ==========================================
+    // CARGA DE DATOS UAR
+    // ==========================================
+    function cargarDatosUar() {
+        const loader = document.getElementById('loader-container');
+        if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
+
+        google.script.run.withSuccessHandler(function(res) {
+            rawDataUar = res.solicitudes || [];
+            $('#countHoy').text(res.stats ? res.stats.hoy : 0);
+            $('#countPendientes').text(res.stats ? res.stats.pendientes : 0);
+
+            let html = "";
+            if (rawDataUar.length > 0) {
+                rawDataUar.forEach(fila => {
+                    html += `<tr>
+                        <td class="fw-bold" style="color: #253150;">${fila.idSolicitud}</td>
+                        <td>${fila.poliza}</td>
+                        <td>${fila.inmobiliaria}</td>
+                        <td><span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:8px;">${fila.fechaAsignacion}</span></td>
+                        <td class="text-center">
+                            <button class="btn-action" onclick="abrirModal('${fila.idSolicitud}')" title="Gestionar">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                        </td>
+                    </tr>`;
+                });
+            }
+
+            if ($.fn.DataTable.isDataTable('#tablaUar')) $('#tablaUar').DataTable().destroy();
+            $('#cuerpoTablaUar').html(html);
+
+            $('#tablaUar').DataTable({
+                language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json' },
+                order: [[3, 'desc']],
+                initComplete: function() {
+                    if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+                }
+            });
+
+            // AUTO-ASIGNACIÓN si tabla vacía y estado ACTIVO
+            if (rawDataUar.length === 0 && estadoGlobalAsesor === "ACTIVO" && !yaSeIntentoAsignar) {
+                yaSeIntentoAsignar = true;
+                console.log("Tabla UAR vacía, solicitando auto-asignación...");
+
+                google.script.run.withSuccessHandler(function(r) {
+                    if (r && r.success && r.nueva) {
+                        Swal.fire({ icon: 'info', title: 'Nueva Solicitud UAR', text: 'Se te ha asignado un nuevo registro.', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+                        setTimeout(() => { yaSeIntentoAsignar = false; cargarDatosUar(); }, 2000);
+                    } else {
+                        console.log("Sin solicitudes UAR pendientes en este momento.");
+                    }
+                }).autoAsignarUar();
+            }
+
+        }).withFailureHandler(function(err) {
+            const loader = document.getElementById('loader-container');
+            if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+            Swal.fire('Error de Conexión', err.message || 'No se pudo cargar la información.', 'error');
+        }).getUarData();
+    }
+
+    // ==========================================
+    // MODAL DE GESTIÓN
+    // ==========================================
+    function abrirModal(id) {
+        limpiarFormularioUar();
+        $('#uar_solicitudId').val(id);
+        $('#displaySolUar').text(id);
+
+        // Rellenar datos de solo lectura
+        const fila = rawDataUar.find(f => String(f.idSolicitud) === String(id));
+        if (fila) {
+            $('#uar_view_poliza').text(fila.poliza || '---');
+            $('#uar_view_inmobiliaria').text(fila.inmobiliaria || '---');
+            $('#uar_view_ciudad').text(fila.ciudad || '---');
+            $('#uar_view_direccion').text(fila.direccion || '---');
+            $('#uar_view_inquilino').text(fila.nombreInquilino || '---');
+            $('#uar_view_canon').text(fila.canon || '---');
+            $('#uar_view_celular').text(fila.celular || '---');
+            $('#uar_view_fecha').text(fila.fechaAsignacion || '---');
+        }
+
+        // Cargar historial de deudores de forma asíncrona
+        $('#loaderDeudoresUar').removeClass('d-none');
+        $('#contenedorDeudoresUar').empty();
+
+        google.script.run.withSuccessHandler(function(res) {
+            $('#loaderDeudoresUar').addClass('d-none');
+            if (res && res.success) {
+                let categorias = Object.keys(res.resultados);
+                if (categorias.length === 0) {
+                    $('#contenedorDeudoresUar').html('<p class="text-center text-muted py-3">No se encontró historial de deudores para esta solicitud.</p>');
+                    return;
+                }
+                let html = '<div class="accordion accordion-flush" id="accordionDeudoresUar">';
+                categorias.forEach((tipo, i) => {
+                    let items = res.resultados[tipo].map(p => `
+                        <div class="p-3 border-bottom">
+                            <div class="fw-bold text-dark">${p.nombre}</div>
+                            <div class="small text-muted mt-1">${p.descripcionResultado || 'Sin detalle'}</div>
+                        </div>`).join("");
+
+                    html += `
+                        <div class="accordion-item border rounded-3 overflow-hidden mb-2">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed fw-bold" data-bs-toggle="collapse" data-bs-target="#collapseUar${i}" style="background-color: #f8fafc; color: #253150;">
+                                    ${tipo.toUpperCase()} (${res.resultados[tipo].length})
+                                </button>
+                            </h2>
+                            <div id="collapseUar${i}" class="accordion-collapse collapse">
+                                <div class="accordion-body bg-white p-0">${items}</div>
+                            </div>
+                        </div>`;
+                });
+                html += '</div>';
+                $('#contenedorDeudoresUar').html(html);
+            } else {
+                $('#contenedorDeudoresUar').html('<p class="text-center text-muted py-3">Sin datos disponibles.</p>');
+            }
+        }).withFailureHandler(function() {
+            $('#loaderDeudoresUar').addClass('d-none');
+            $('#contenedorDeudoresUar').html('<p class="text-center text-danger py-3">Error al consultar historial.</p>');
+        }).getDataUniqueForSolicitud(id);
+
+        // Mostrar modal
+        const modalElement = document.getElementById('modalGestionUar');
+        const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
+        modal.show();
+    }
+
+    // ==========================================
+    // TOGGLE MOTIVO (solo visible si DEVUELTO A MESA)
+    // ==========================================
+    function toggleMotivoUar() {
+        const resultado = $('#uar_resultado').val();
+        if (resultado === 'DEVUELTO A MESA') {
+            $('#wrapperMotivoUar').slideDown(200);
+        } else {
+            $('#wrapperMotivoUar').slideUp(200);
+            $('#uar_motivo').val('');
+        }
+    }
+
+    // ==========================================
+    // ENVIAR GESTIÓN UAR
+    // ==========================================
+    function enviarGestionUar() {
+        const id = $('#uar_solicitudId').val();
+        const resultado = $('#uar_resultado').val();
+        const motivo = $('#uar_motivo').val();
+        const observaciones = $('#uar_observaciones').val();
+
+        // Validación de campos obligatorios
+        if (!resultado) {
+            Swal.fire({ title: 'Atención', text: 'Debes seleccionar un Resultado UAR.', icon: 'warning', confirmButtonColor: '#253150' });
+            return;
+        }
+
+        if (resultado === 'DEVUELTO A MESA' && !motivo) {
+            Swal.fire({ title: 'Atención', text: 'Debes seleccionar un Motivo de Devolución cuando el resultado es "DEVUELTO A MESA".', icon: 'warning', confirmButtonColor: '#253150' });
+            return;
+        }
+
+        const datos = {
+            idSolicitud: id,
+            resultado: resultado,
+            motivo: motivo || '',
+            observaciones: observaciones || ''
+        };
+
+        Swal.fire({ title: 'Procesando...', text: 'Guardando gestión UAR', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+        google.script.run.withSuccessHandler(function(res) {
+            Swal.close();
+            if (res && res.success) {
+                bootstrap.Modal.getInstance(document.getElementById('modalGestionUar')).hide();
+                Swal.fire({ title: '¡Éxito!', text: res.message || 'Gestión UAR guardada correctamente.', icon: 'success', confirmButtonColor: '#253150' }).then(cargarDatosUar);
+            } else {
+                Swal.fire({ title: 'Error', text: res.error || 'No se pudo guardar la gestión.', icon: 'error', confirmButtonColor: '#BD0F14' });
+            }
+        }).withFailureHandler(function(err) {
+            Swal.close();
+            Swal.fire({ title: 'Error de Conexión', text: err.message || 'Ocurrió un error inesperado.', icon: 'error', confirmButtonColor: '#BD0F14' });
+        }).saveUarGestion(datos);
+    }
+
+    // ==========================================
+    // UTILIDADES
+    // ==========================================
+    function limpiarFormularioUar() {
+        $('#uar_resultado').val('');
+        $('#uar_motivo').val('');
+        $('#uar_observaciones').val('');
+        $('#wrapperMotivoUar').hide();
+        $('#contenedorDeudoresUar').empty();
+        // Volver a la primera pestaña
+        let firstTab = document.querySelector('#tabsUar button[data-bs-target="#tab-visualizacion-uar"]');
+        if (firstTab) new bootstrap.Tab(firstTab).show();
+    }
+
+    // ==========================================
+    // PARTICLES.JS
+    // ==========================================
+    particlesJS("particles-js", {
+        particles: { number: { value: 40 }, color: { value: ["#BD0F14", "#253150"] }, shape: { type: "circle" }, opacity: { value: 0.25 }, size: { value: 3, random: true }, line_linked: { enable: true, distance: 150, color: "#94a3b8", opacity: 0.15, width: 1 }, move: { enable: true, speed: 1.5 } },
+        interactivity: { detect_on: "canvas", events: { onclick: { enable: false }, onhover: { enable: false } } },
+        retina_detect: true
+    });
+</script>
+</body>
 </html>
