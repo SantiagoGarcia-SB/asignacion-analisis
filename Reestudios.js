@@ -1,261 +1,166 @@
-const ID_HOJA_VICTORIA = '1_wSkdh3eD0mG474De6RUrj9yd9L8SKnnSjqO3Pg4Jsg'; 
-const NOMBRE_PESTANA_VICTORIA = 'Anexar documentos a la solicitud';
+/**
+ * ====================================================
+ * MÓDULO REESTUDIOS - Backend para VistaReestudios.html
+ * ====================================================
+ * Funciones: getReestudiosData, guardarGestionReestudio, getEmailUsuarioReestudios
+ * 
+ * El motor de asignación (RequestLeadReestudios) está en ModeloReestudios.js
+ * 
+ * Hoja fuente: "Solicitudes_Asignacion_Reestudios_UAR" en el spreadsheet ID_HOJA_REESTUDIOS
+ * 
+ * Columnas (1-indexed):
+ *  A(1): fechaRadicacion
+ *  B(2): solicitud
+ *  C(3): linkDrive
+ *  D(4): origen (VICTORIA / CORREO)
+ *  E(5): tipoDeProceso
+ *  F(6): claseDeSolicitud
+ *  G(7): analistaAsignado (email)
+ *  H(8): nombreAnalista
+ *  I(9): fechaAsignacion
+ *  J(10): fechaFinGestion
+ *  K(11): estadoGestion
+ *  L(12): motivoAplazamiento
+ *  M(13): motivoNegacion
+ *  N(14): observaciones
+ */
 
-const ID_HOJA_CORREO = '1jGa30nF7DTlu6bRoU8cOBqU8c_AP-bq6LP8D52JpaPQ'; 
-const NOMBRE_PESTANA_CORREO = 'Solicitudes';
+const ID_HOJA_REESTUDIOS = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
+const NOMBRE_PESTANA_REESTUDIOS = 'ORIGEN';
 
-const ID_HOJA_APROBADOS = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U'; 
-const NOMBRE_PESTANA_APROBADOS = 'Hoja 1';
-
-function registrarSolicitudAprobada(nroSolicitud) {
-  if (!nroSolicitud || nroSolicitud === "---") return;
+/**
+ * Obtiene los casos de reestudios asignados al analista actual.
+ * Retorna pendientes + estadísticas.
+ */
+function getReestudiosData() {
   try {
-    const sheetAprobados = SpreadsheetApp.openById(ID_HOJA_APROBADOS).getSheetByName(NOMBRE_PESTANA_APROBADOS);
-    sheetAprobados.appendRow([nroSolicitud]);
-  } catch (error) {
-    Logger.log("Error al pasar a la hoja de aprobados: " + error.message);
-  }
-}
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
 
+    if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
 
-function obtenerUltimaFilaReal(sheet) {
-  const columnaB = sheet.getRange("B1:B" + sheet.getLastRow()).getValues();
-  for (let i = columnaB.length - 1; i >= 0; i--) {
-    let valor = String(columnaB[i][0]).replace(/[\n\r\t]/g, "").trim();
-    if (valor !== "" && valor.toLowerCase() !== "null" && valor.length > 2) {
-      return i + 1;
-    }
-  }
-  return 1;
-}
+    const lastRow = hoja.getLastRow();
+    if (lastRow < 2) return { success: true, solicitudes: [], stats: { hoy: 0, pendientes: 0 } };
 
+    const data = hoja.getRange(2, 1, lastRow - 1, 14).getDisplayValues();
+    const hoyStr = Utilities.formatDate(new Date(), "GMT-5", "dd/MM/yyyy");
 
-function getDatosVictoria() {
-  try {
-    const sheet = SpreadsheetApp.openById(ID_HOJA_VICTORIA).getSheetByName(NOMBRE_PESTANA_VICTORIA);
-    if (!sheet) throw new Error("No se encontró la pestaña Victoria.");
+    let conteoHoy = 0;
+    let listaPendientes = [];
 
-    const lastRowReal = obtenerUltimaFilaReal(sheet);
-    if (lastRowReal <= 1) return { success: true, data: [] }; 
+    for (let i = 0; i < data.length; i++) {
+      const fila = data[i];
+      const asignado = String(fila[6]).trim().toLowerCase(); // col G
+      const fechaFin = String(fila[9]).trim(); // col J
+      const fechaAsignacion = String(fila[8]).trim(); // col I
 
-    const data = sheet.getRange("A2:Q" + lastRowReal).getDisplayValues();
-    let resultados = [];
+      if (asignado !== userEmail) continue;
 
-    let inicio = 0;
-    if (data.length > 2000) inicio = data.length - 2000;
+      // Contar gestionadas hoy
+      if (fechaFin !== "") {
+        if (fechaFin.includes(hoyStr)) {
+          conteoHoy++;
+        }
+        continue; // Ya gestionada
+      }
 
-    for (let i = inicio; i < data.length; i++) {
-      let solicitud = String(data[i][1] || "").trim();
-      if (solicitud === "") continue; 
+      // Es pendiente si tiene fecha de asignación pero no fecha fin
+      if (fechaAsignacion === "") continue;
 
-      let valRepetida = String(data[i][8] || "").trim().toUpperCase(); 
-      if (valRepetida === "") valRepetida = "NO";
-
-      resultados.push({
-        filaReal: i + 2, 
-        nro_solicitud:     solicitud, 
-        tipo_documento:    String(data[i][2] || "---"), 
-        nro_documento:     String(data[i][3] || "---"), 
-        documento_adjunto: String(data[i][4] || ""),    
-        detalles:          String(data[i][5] || ""),    
-        celular:           String(data[i][6] || ""),    
-        correo:            String(data[i][7] || ""),    
-        repetida:          valRepetida,
-        estadoColJ:        String(data[i][9] || "").trim() 
+      listaPendientes.push({
+        filaReal: i + 2,
+        solicitud: String(fila[1]).trim(),        // col B
+        linkDrive: String(fila[2]).trim(),         // col C
+        origen: String(fila[3]).trim(),            // col D
+        tipoProceso: String(fila[4]).trim(),       // col E
+        claseSolicitud: String(fila[5]).trim(),    // col F
+        fechaAsignacion: fechaAsignacion,          // col I
+        fechaRadicacion: String(fila[0]).trim()    // col A
       });
     }
 
-    resultados.reverse(); 
-    return { success: true, data: resultados };
+    return {
+      success: true,
+      solicitudes: listaPendientes,
+      stats: { hoy: conteoHoy, pendientes: listaPendientes.length }
+    };
+
   } catch (error) {
-    return { success: false, message: error.message };
+    return { success: false, message: error.toString() };
   }
 }
 
-function guardarGestionVictoria(datos) {
-  try {
-    if (!datos.filaReal) throw new Error("Falta la fila de destino.");
-    const sheet = SpreadsheetApp.openById(ID_HOJA_VICTORIA).getSheetByName(NOMBRE_PESTANA_VICTORIA);
-    const targetRow = datos.filaReal;
-
-    sheet.getRange(targetRow, 10).setValue(datos.estadoSolicitud || ""); // Col J
-    sheet.getRange(targetRow, 16).setValue(datos.tipoDocPresentado || ""); // Col P
-
-    if (datos.estadoSolicitud === "Solicitud aprobada") {
-      registrarSolicitudAprobada(datos.nroSolicitud);
-    }
-
-    SpreadsheetApp.flush();
-    return { success: true, message: "Gestión de Victoria guardada correctamente." };
-  } catch (error) {
-    return { success: false, message: error.message };
+/**
+ * Guarda la gestión de un caso de reestudio.
+ * Después de guardar, intenta auto-asignar un nuevo caso (via ModeloReestudios.js).
+ * 
+ * @param {Object} datos - { filaReal, estadoGestion, motivoAplazamiento, motivoNegacion, observaciones }
+ */
+function guardarGestionReestudio(datos) {
+  if (!datos || !datos.filaReal) {
+    return { success: false, message: "Fila de destino no proporcionada." };
   }
-}
 
-function getDatosCorreo() {
-  try {
-    const sheet = SpreadsheetApp.openById(ID_HOJA_CORREO).getSheetByName(NOMBRE_PESTANA_CORREO);
-    if (!sheet) throw new Error("No se encontró la pestaña Correo.");
-
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= 1) return { success: true, data: [] }; 
-
-    const data = sheet.getRange("A2:M" + lastRow).getDisplayValues();
-    let pendientes = [];
-
-    for (let i = 0; i < data.length; i++) {
-      let estadoEval = String(data[i][11] || "").trim();
-
-      if (estadoEval === "") {
-        pendientes.push({
-          filaReal: i + 2,
-          id_registro:      String(data[i][0] || "---"),
-          nro_solicitud:    String(data[i][1] || "---"),
-          nro_poliza:       String(data[i][2] || "---"),
-          tipo_proceso:     String(data[i][3] || "---"),
-          adjuntos:         String(data[i][4] || ""),
-          fecha_llegada:    String(data[i][5] || "---"),
-          url_carpeta:      String(data[i][6] || ""),
-          fecha_registro:   String(data[i][7] || "---"),
-          registrado_por:   String(data[i][8] || "---"),
-          email_asignador:  String(data[i][9] || "---")
-        });
-      }
-    }
-    return { success: true, data: pendientes };
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
-}
-
-function guardarGestionCorreo(datos) {
   const lock = LockService.getScriptLock();
-  try { lock.waitLock(10000); } catch (e) { return { success: false, message: "Sistema ocupado." }; }
+  try {
+    lock.waitLock(15000);
+  } catch (e) {
+    return { success: false, message: "Sistema ocupado, reintenta en unos segundos." };
+  }
 
   try {
-    if (!datos.filaReal) throw new Error("Falta la fila de destino.");
-    const sheet = SpreadsheetApp.openById(ID_HOJA_CORREO).getSheetByName(NOMBRE_PESTANA_CORREO);
-    const targetRow = datos.filaReal;
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    const targetRow = parseInt(datos.filaReal);
 
-    const estadoL = String(sheet.getRange(targetRow, 12).getDisplayValue()).trim(); 
-    if (estadoL !== "") {
-        return { success: false, message: "Este correo ya fue evaluado por otro analista." };
+    if (!hoja) return { success: false, message: "No se encontró la hoja." };
+
+    // Verificar que no haya sido gestionada ya
+    const fechaFinExistente = String(hoja.getRange(targetRow, 10).getDisplayValue()).trim();
+    if (fechaFinExistente !== "") {
+      return { success: false, message: "Este caso ya fue gestionado." };
     }
 
-    sheet.getRange(targetRow, 11).setValue(datos.nombreEvaluador || ""); 
-    sheet.getRange(targetRow, 12).setValue(datos.estadoEvaluacion || ""); 
-    sheet.getRange(targetRow, 13).setValue(datos.motivoDevolucion || ""); 
+    const ahora = new Date();
 
-    if (datos.estadoEvaluacion === "APROBADO PARA ASIGNAR") {
-      registrarSolicitudAprobada(datos.nroSolicitud);
-    }
+    // Escribir gestión en columnas J-N
+    hoja.getRange(targetRow, 10, 1, 5).setValues([[
+      ahora,                              // J: fechaFinGestion
+      datos.estadoGestion || "",          // K: estadoGestion
+      datos.motivoAplazamiento || "",     // L: motivoAplazamiento
+      datos.motivoNegacion || "",         // M: motivoNegacion
+      datos.observaciones || ""           // N: observaciones
+    ]]);
+
+    // Formatear fecha
+    hoja.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
 
     SpreadsheetApp.flush();
-    return { success: true, message: "Evaluación de Correo guardada exitosamente." };
+
+    // Intentar auto-asignar un nuevo caso (función en ModeloReestudios.js)
+    let mensajeExtra = "";
+    try {
+      const autoResult = RequestLeadReestudios();
+      if (autoResult.success && autoResult.nueva) {
+        mensajeExtra = "\n📌 " + autoResult.message;
+      }
+    } catch (e) {
+      // No bloquear si falla la auto-asignación
+    }
+
+    return { success: true, message: "Gestión guardada correctamente." + mensajeExtra };
 
   } catch (error) {
-    return { success: false, message: error.message };
+    return { success: false, message: "Error al guardar: " + error.toString() };
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
 }
 
-const URL_WEBHOOK_GOOGLE_CHAT = 'https://chat.googleapis.com/v1/spaces/AAQAwBNOpI8/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=lzhAcRL1_ZA3xh-Wa_DGDZCbzyxchh2sPBgh0-GaMEo'; 
-
-function inicializarHistorico() {
-  try {
-    const sheetVictoria = SpreadsheetApp.openById(ID_HOJA_VICTORIA).getSheetByName(NOMBRE_PESTANA_VICTORIA);
-    const trueLastRowVic = obtenerUltimaFilaReal(sheetVictoria);
-    PropertiesService.getScriptProperties().setProperty('LAST_ROW_VICTORIA', trueLastRowVic.toString());
-
-    const sheetCorreo = SpreadsheetApp.openById(ID_HOJA_CORREO).getSheetByName(NOMBRE_PESTANA_CORREO);
-    const lastRowCor = sheetCorreo.getLastRow();
-    if (lastRowCor > 1) {
-      const valoresCor = [];
-      for (let i = 2; i <= lastRowCor; i++) { valoresCor.push(["NOTIFICADO"]); }
-      sheetCorreo.getRange(2, 14, valoresCor.length, 1).setValues(valoresCor); 
-    }
-
-    Logger.log("✅ ¡Borrón completado!");
-  } catch(error) {
-    Logger.log("❌ Error en inicialización: " + error.message);
-  }
-}
-
-function escanearYNotificar() {
-  try {
-    const sheetVictoria = SpreadsheetApp.openById(ID_HOJA_VICTORIA).getSheetByName(NOMBRE_PESTANA_VICTORIA);
-    const currentTrueLastRow = obtenerUltimaFilaReal(sheetVictoria);
-    let lastProcessedRowVicStr = PropertiesService.getScriptProperties().getProperty('LAST_ROW_VICTORIA');
-    
-    if (!lastProcessedRowVicStr) {
-      PropertiesService.getScriptProperties().setProperty('LAST_ROW_VICTORIA', currentTrueLastRow.toString());
-      lastProcessedRowVicStr = currentTrueLastRow.toString();
-    }
-    let lastProcessedRowVic = parseInt(lastProcessedRowVicStr, 10);
-
-    if (currentTrueLastRow > lastProcessedRowVic) {
-      const numRowsNew = currentTrueLastRow - lastProcessedRowVic;
-      const dataNuevosVic = sheetVictoria.getRange(lastProcessedRowVic + 1, 1, numRowsNew, sheetVictoria.getLastColumn()).getDisplayValues();
-      
-      for (let i = 0; i < dataNuevosVic.length; i++) {
-        let solicitud = String(dataNuevosVic[i][1] || "").trim(); 
-        let tipoDoc = String(dataNuevosVic[i][2] || "").trim();   
-        let adjunto = String(dataNuevosVic[i][4] || "").trim();   
-        
-        if (solicitud !== "" && solicitud.length > 2) {
-          enviarNotificacionGoogleChat("VICTORIA", solicitud, "Tipo de Documento: " + tipoDoc, adjunto);
-        }
-      }
-      PropertiesService.getScriptProperties().setProperty('LAST_ROW_VICTORIA', currentTrueLastRow.toString());
-    }
-    
-    const sheetCorreo = SpreadsheetApp.openById(ID_HOJA_CORREO).getSheetByName(NOMBRE_PESTANA_CORREO);
-    const dataCorreo = sheetCorreo.getDisplayValues();
-    
-    for (let i = 1; i < dataCorreo.length; i++) {
-      let notificado = String(dataCorreo[i][13] || "").trim().toUpperCase(); 
-      let solicitud = String(dataCorreo[i][1] || "").trim();
-      
-      if (solicitud !== "" && notificado !== "NOTIFICADO") {
-        let proceso = String(dataCorreo[i][3] || "").trim();
-        let carpeta = String(dataCorreo[i][6] || "").trim();
-        
-        enviarNotificacionGoogleChat("CORREO", solicitud, "Tipo de Proceso: " + proceso, carpeta);
-        sheetCorreo.getRange(i + 1, 14).setValue("NOTIFICADO"); 
-      }
-    }
-  } catch(error) {
-    Logger.log("Error en el escáner: " + error.message);
-  }
-}
-
-function enviarNotificacionGoogleChat(modulo, solicitud, detalle, linkAdjunto) {
-  if (!URL_WEBHOOK_GOOGLE_CHAT || URL_WEBHOOK_GOOGLE_CHAT.includes('AQUÍ_PEGA')) return;
-
-  let titulo = (modulo === "VICTORIA") ? "Notificación de Victoria" : "Notificación de Correo";
-  let subtitulo = "Se ha ingresado una nueva solicitud en " + modulo;
-  let icono = (modulo === "VICTORIA") ? "https://cdn-icons-png.flaticon.com/512/4616/4616304.png" : "https://cdn-icons-png.flaticon.com/512/8899/8899109.png";
-  let webAppUrl = ScriptApp.getService().getUrl();
-
-  let botones = [{ "textButton": { "text": "Ver solicitud", "onClick": { "openLink": { "url": webAppUrl } } } }];
-  if (linkAdjunto && linkAdjunto.startsWith("http")) {
-    botones.push({ "textButton": { "text": "Ver Adjuntos / Carpeta", "onClick": { "openLink": { "url": linkAdjunto } } } });
-  }
-
-  let widgetsArray = [
-    { "keyValue": { "topLabel": "Número de solicitud", "content": "" + solicitud, "icon": "PERSON" } },
-    { "keyValue": { "topLabel": "Detalles", "content": "" + detalle, "icon": "DESCRIPTION" } },
-    { "buttons": botones } 
-  ];
-
-  let message = {
-    "cards": [{ "header": { "title": titulo, "subtitle": subtitulo, "imageUrl": icono, "imageStyle": "AVATAR" }, "sections": [{ "header": "Detalles del registro", "widgets": widgetsArray }] }]
-  };
-
-  UrlFetchApp.fetch(URL_WEBHOOK_GOOGLE_CHAT, { method: "POST", payload: JSON.stringify(message), contentType: "application/json", muteHttpExceptions: true });
-}
-
-function getEmailUsuario() {
+/**
+ * Retorna el email del usuario actual.
+ */
+function getEmailUsuarioReestudios() {
   return Session.getActiveUser().getEmail();
 }

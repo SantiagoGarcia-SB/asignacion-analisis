@@ -1,0 +1,128 @@
+/**
+ * ====================================================
+ * MODELO DE ASIGNACIÓN - REESTUDIOS
+ * ====================================================
+ * Motor de asignación equitativa para reestudios.
+ * Separado del módulo de gestión (Reestudios.js) para mantener
+ * la lógica de negocio aislada.
+ *
+ * Hoja fuente: "ORIGEN" en el spreadsheet ID_HOJA_REESTUDIOS
+ *
+ * Reglas de asignación:
+ *  - FIFO (primera solicitud sin asignar en la hoja)
+ *  - 1 caso por invocación
+ *  - Respeta capacidad definida en hoja "Usuarios"
+ *  - Excluye tipos "NUEVA UAR" y "DEUDOR UAR" (los maneja la API principal)
+ *  - Control de concurrencia con LockService
+ */
+
+// Tipos que NO se asignan en este módulo (los maneja la API + modelo principal)
+const TIPOS_EXCLUIR_REESTUDIOS = ['NUEVA UAR', 'DEUDOR UAR'];
+
+// Máximo de casos a asignar por invocación
+const MAX_ASIGNAR_REESTUDIOS = 1;
+
+/**
+ * Motor de asignación equitativa para reestudios.
+ * Se ejecuta cuando el analista entra a la vista o al guardar gestión.
+ * Asigna casos sin asignar al analista actual hasta llenar su capacidad.
+ *
+ * @returns {Object} { success, nueva?, message }
+ */
+function RequestLeadReestudios() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+  } catch (e) {
+    return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
+  }
+
+  try {
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaUsuarios = ss.getSheetByName("Usuarios");
+    const dataUsuarios = hojaUsuarios.getDataRange().getValues();
+    const usuarioInfo = dataUsuarios.find(u => String(u[2]).trim().toLowerCase() === userEmail);
+
+    if (!usuarioInfo) return { success: false, message: "Usuario no registrado en el sistema." };
+
+    const nombreUsuario = String(usuarioInfo[1]).trim();
+    const especialidad = String(usuarioInfo[4]).toUpperCase().trim();
+    const estadoUsuario = String(usuarioInfo[5]).toUpperCase().trim();
+    const capTotal = parseInt(usuarioInfo[6]) || 0;
+
+    if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
+    // TODO: Descomentar validación de especialidad en producción
+    // if (!especialidad.includes("REESTUDIOS")) return { success: false, message: "Tu especialidad no es 'Reestudios'." };
+    if (capTotal <= 0) return { success: false, message: "Capacidad en 0." };
+
+    // Abrir hoja de reestudios
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
+
+    const lastRow = hoja.getLastRow();
+    if (lastRow < 2) return { success: false, message: "No hay solicitudes en la bandeja." };
+
+    const data = hoja.getRange(2, 1, lastRow - 1, 14).getValues();
+
+    // Contar carga actual del analista (pendientes asignados sin gestionar)
+    let cargaActual = 0;
+    for (const fila of data) {
+      const asignado = String(fila[6]).trim().toLowerCase(); // col G
+      const fechaFin = String(fila[9]).trim(); // col J
+      if (asignado === userEmail && fechaFin === "") {
+        cargaActual++;
+      }
+    }
+
+    let cupoDisponible = capTotal - cargaActual;
+    if (cupoDisponible <= 0) return { success: false, message: "Capacidad llena. Gestiona casos pendientes primero." };
+
+    // Buscar solicitudes sin asignar, excluyendo tipos que no van aquí
+    // Se asigna de a 1 caso a la vez (FIFO)
+    let asignadas = 0;
+    const fechaAsignacion = new Date();
+
+    for (let i = 0; i < data.length; i++) {
+      if (asignadas >= MAX_ASIGNAR_REESTUDIOS || cupoDisponible <= 0) break;
+
+      const fila = data[i];
+      const analistaAsignado = String(fila[6]).trim(); // col G
+      const tipoProceso = String(fila[4]).toUpperCase().trim(); // col E
+      const claseSolicitud = String(fila[5]).toUpperCase().trim(); // col F
+      const solicitud = String(fila[1]).trim(); // col B
+
+      // Solo solicitudes sin asignar
+      if (analistaAsignado !== "") continue;
+      if (solicitud === "") continue;
+
+      // Excluir tipos que maneja la API
+      const excluirPorTipo = TIPOS_EXCLUIR_REESTUDIOS.some(t =>
+        tipoProceso.includes(t) || claseSolicitud.includes(t)
+      );
+      if (excluirPorTipo) continue;
+
+      // Asignar
+      const filaReal = i + 2;
+      hoja.getRange(filaReal, 7, 1, 3).setValues([
+        [userEmail, nombreUsuario, fechaAsignacion]
+      ]);
+
+      asignadas++;
+      cupoDisponible--;
+    }
+
+    if (asignadas === 0) {
+      return { success: false, nueva: false, message: "No hay solicitudes pendientes para asignar." };
+    }
+
+    SpreadsheetApp.flush();
+    return { success: true, nueva: true, message: "Se te asignaron " + asignadas + " caso(s)." };
+
+  } catch (error) {
+    return { success: false, message: "Error interno: " + error.toString() };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}

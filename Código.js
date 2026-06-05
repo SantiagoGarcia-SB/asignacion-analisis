@@ -51,17 +51,12 @@ function doGet() {
           .evaluate()
           .setTitle('Gestión de Biometría')
           .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    } else if(info.especialidad === "UAR"){
-      return HtmlService.createTemplateFromFile('VistaUar')
-      .evaluate()
-      .setTitle('Gestión uar')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    }else if(info.especialidad === 'REESTUDIOS'){
+    } else if(info.especialidad === 'REESTUDIOS'){
         return HtmlService.createTemplateFromFile('VistaReestudios')
         .evaluate()
-        .setTitle('Gestión de reestudios')
-        .addMetaTag('viewport','width=device-width, initial-scale=1')
-      }else {
+        .setTitle('Gestión de Reestudios')
+        .addMetaTag('viewport','width=device-width, initial-scale=1');
+    } else {
       return HtmlService.createTemplateFromFile('index')
           .evaluate()
           .setTitle('Gestión de Solicitudes - Asesor')
