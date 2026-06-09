@@ -925,7 +925,7 @@
         <div class="avatar"><i class="bi bi-person-fill"></i></div>
         <div class="info">
           <span class="name" id="userEmailNav">Cargando</span>
-          <span class="role">En línea</span>
+          <span class="role">Analista Solicitudes</span>
         </div>
       </div>
     </div>
@@ -934,7 +934,7 @@
   <div class="container mb-3">
     <div class="row g-4 justify-content-center">
       <div class="col-md-5 col-lg-4">
-        <div class="card card-metrica">
+        <div class="card card-metrica" title="Ver actividad">
           <div class="card-body p-4">
             <div class="d-flex align-items-center">
               <div class="icon-circle-modern bg-gradient-hoy me-4">
@@ -943,6 +943,7 @@
               <div>
                 <h6 class="metric-label-modern">Gestionadas Hoy</h6>
                 <h2 class="metric-value-modern" id="countHoy">0</h2>
+                <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Clic para ver resumen</p>
               </div>
             </div>
           </div>
@@ -950,15 +951,16 @@
       </div>
 
       <div class="col-md-5 col-lg-4">
-        <div class="card card-metrica">
+        <div class="card card-metrica" title="Ver actividad">
           <div class="card-body p-4">
             <div class="d-flex align-items-center">
               <div class="icon-circle-modern bg-gradient-total me-4">
-                <i class="bi bi-bar-chart-fill"></i>
+                <i class="bi bi-inbox-fill"></i>
               </div>
               <div>
-                <h6 class="metric-label-modern">Acumulado Total</h6>
+                <h6 class="metric-label-modern">Pendientes</h6>
                 <h2 class="metric-value-modern" id="countTotal">0</h2>
+                <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Ver pendientes</p>
               </div>
             </div>
           </div>
@@ -971,9 +973,12 @@
     <div class="table-container">
       <div class="mb-4">
         <h4 class="fw-bold mb-0" style="color: var(--text-main); font-size: 1.2rem;">
-          <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Listado de Solicitudes
+          <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Mis Solicitudes Asignadas
         </h4>
-        <p class="text-muted small mt-1 mb-0">Selecciona un registro para iniciar la gestión</p>
+        <div class="d-flex align-items-center justify-content-between">
+          <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
+          <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
+        </div>
       </div>
 
       <div class="table-responsive">
@@ -994,7 +999,7 @@
             </div>
             <div>
               <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.1rem;">Solicitud a gestionar</h5>
-              <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Referencia:
+              <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Solicitud:
                 <span id="s_sidebar_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
             </div>
             <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1416,7 +1421,7 @@
 
         <div class="modal-footer border-0 p-4" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
           <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius: 10px; border-color: var(--border);">Cancelar</button>
-          <button id="btnGuardarCambios" type="button" class="btn text-white px-5 fw-bold shadow-sm" data-solicitud-id="" style="border-radius: 10px; background: var(--grad-azul);"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión</button>
+          <button id="btnGuardarCambios" type="button" class="btn text-white px-5 fw-bold shadow-sm" data-solicitud-id="" style="border-radius: 10px; background: var(--grad-azul);"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión <span class="kbd-badge"><kbd>Ctrl</kbd>+<kbd>↵</kbd></span></button>
         </div>
       </div>
     </div>
@@ -1554,6 +1559,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+  <?!= include('ux-enhancements'); ?>
   <?!= include('main.js'); ?>
 
   <script>
@@ -1568,7 +1574,9 @@
         google.script.run
             .withSuccessHandler(function(email) {
                 if(email) {
-                    document.getElementById('userEmailNav').innerText = email.split('@')[0];
+                    var prefijo = email.split('@')[0];
+                    var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+                    document.getElementById('userEmailNav').innerText = nombre;
                 } else {
                     document.getElementById('userEmailNav').innerText = "Asesor";
                 }

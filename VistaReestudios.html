@@ -106,6 +106,24 @@
 
     .dataTables_wrapper .dataTables_filter input { background: var(--bg-page) !important; border: 1.5px solid var(--border) !important; border-radius: 10px !important; padding: 7px 12px !important; font-family: 'Manrope', sans-serif; font-size: 0.82rem; }
     .dataTables_wrapper .page-item.active .page-link { background: var(--color-secundario) !important; color: white !important; border-radius: 8px !important; }
+
+    /* Modal Novedades */
+    .nav-pills-custom .nav-link { color: var(--text-muted); font-weight: 700; border-radius: 12px; padding: 14px 20px; margin-bottom: 8px; transition: all 0.3s ease; border: 1px solid transparent; text-align: left; display: flex; align-items: center; gap: 12px; font-size: 0.9rem; }
+    .nav-pills-custom .nav-link:hover { background-color: rgba(37,49,80,0.05); color: var(--color-secundario); }
+    .nav-pills-custom .nav-link.active { background-color: white; color: var(--color-primario); border-color: var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .btn-novedad { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; text-align: left; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 12px; transition: all 0.2s ease; width: 100%; font-size: 0.82rem; cursor: pointer; }
+    .btn-novedad i { font-size: 1.1rem; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; flex-shrink: 0; }
+    .btn-novedad.falla:hover { border-color: var(--color-primario); box-shadow: 0 4px 15px rgba(189,15,20,0.1); transform: translateY(-2px); color: var(--color-primario); }
+    .btn-novedad.falla i { background: rgba(189,15,20,0.1); color: var(--color-primario); }
+    .btn-novedad.ausencia:hover { border-color: #3b82f6; box-shadow: 0 4px 15px rgba(59,130,246,0.1); transform: translateY(-2px); color: #3b82f6; }
+    .btn-novedad.ausencia i { background: rgba(59,130,246,0.1); color: #3b82f6; }
+    .btn-novedad.reunion:hover { border-color: #10b981; box-shadow: 0 4px 15px rgba(16,185,129,0.1); transform: translateY(-2px); color: #10b981; }
+    .btn-novedad.reunion i { background: rgba(16,185,129,0.1); color: #10b981; }
+    .btn-novedad.operativa:hover { border-color: var(--color-secundario); box-shadow: 0 4px 15px rgba(37,49,80,0.1); transform: translateY(-2px); color: var(--color-secundario); }
+    .btn-novedad.operativa i { background: rgba(37,49,80,0.1); color: var(--color-secundario); }
+    .scroll-premium::-webkit-scrollbar { width: 6px; }
+    .scroll-premium::-webkit-scrollbar-track { background: transparent; }
+    .scroll-premium::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
   </style>
 </head>
 
@@ -142,7 +160,7 @@
       <div id="statusIndicatorCard" class="status-glass-indicator">
         <div id="statusDot" class="rounded-circle" style="width: 10px; height: 10px; background: #94a3b8; box-shadow: 0 0 8px rgba(255,255,255,0.4);"></div>
         <div style="line-height: 1.1;">
-          <p class="mb-0" style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: rgba(255,255,255,0.6);">Estado</p>
+          <p class="mb-0" style="font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: rgba(255,255,255,0.6);">Estado Actual</p>
           <p id="currentStatusText" class="mb-0 fw-bold" style="font-size: 0.85rem;">INACTIVO</p>
         </div>
       </div>
@@ -158,6 +176,12 @@
           <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('BREAK TARDE'); return false;"><i class="bi bi-cup-straw me-2 text-warning"></i> Break Tarde</a></li>
           <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('BAÑO'); return false;"><i class="bi bi-droplet me-2 text-info"></i> Baño</a></li>
           <li><a class="dropdown-item py-2 rounded-2 text-white" href="#" onclick="cambiarMiEstado('INACTIVO'); return false;"><i class="bi bi-building-x me-2 text-secondary"></i> Inactivo</a></li>
+          <li><hr class="dropdown-divider" style="border-color: rgba(255,255,255,0.1);"></li>
+          <li>
+            <a class="dropdown-item py-2 rounded-2 fw-bold" href="#" onclick="abrirModalNovedades(); return false;" style="color: #cbd5e1; background: rgba(255,255,255,0.05);">
+              <i class="bi bi-three-dots-vertical me-2"></i> Reportar otra Novedad...
+            </a>
+          </li>
         </ul>
       </div>
       <div class="nav-glass-profile">
@@ -174,26 +198,28 @@
   <div class="container mb-3">
     <div class="row g-4 justify-content-center">
       <div class="col-md-5 col-lg-4">
-        <div class="card card-metrica">
+        <div class="card card-metrica" title="Ver actividad">
           <div class="card-body p-4">
             <div class="d-flex align-items-center">
               <div class="icon-circle-modern bg-gradient-hoy me-4"><i class="bi bi-lightning-charge-fill"></i></div>
               <div>
                 <h6 class="metric-label-modern">Gestionadas Hoy</h6>
                 <h2 class="metric-value-modern" id="countHoy">0</h2>
+                <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Clic para ver resumen</p>
               </div>
             </div>
           </div>
         </div>
       </div>
       <div class="col-md-5 col-lg-4">
-        <div class="card card-metrica">
+        <div class="card card-metrica" title="Ver actividad">
           <div class="card-body p-4">
             <div class="d-flex align-items-center">
               <div class="icon-circle-modern bg-gradient-total me-4"><i class="bi bi-inbox-fill"></i></div>
               <div>
                 <h6 class="metric-label-modern">Pendientes</h6>
                 <h2 class="metric-value-modern" id="countPendientes">0</h2>
+                <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Ver pendientes</p>
               </div>
             </div>
           </div>
@@ -207,9 +233,12 @@
     <div class="table-container">
       <div class="mb-4">
         <h4 class="fw-bold mb-0" style="color: var(--text-main); font-size: 1.2rem;">
-          <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Mis Casos Asignados
+          <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Mis Solicitudes Asignadas
         </h4>
-        <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
+        <div class="d-flex align-items-center justify-content-between">
+          <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
+          <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
+        </div>
       </div>
       <div class="table-responsive">
         <table id="miTabla" class="table align-middle w-100"></table>
@@ -228,9 +257,12 @@
             </div>
             <div>
               <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.1rem;">Gestión de Solicitud</h5>
-              <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Referencia: <span id="s_sidebar_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
+              <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Solicitud: <span id="s_sidebar_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
             </div>
-            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+            <a id="btnDriveModal" href="#" target="_blank" class="btn ms-auto me-3 d-none" style="background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); color: white; border-radius: 12px; padding: 8px 16px; font-size: 0.8rem; font-weight: 700; backdrop-filter: blur(4px); transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">
+              <i class="bi bi-folder2-open me-2"></i>Abrir Drive
+            </a>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
         </div>
 
@@ -384,7 +416,7 @@
 
         <div class="modal-footer border-0 p-4" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
           <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius: 10px;">Cancelar</button>
-          <button id="btnGuardarCambios" type="button" class="btn text-white px-5 fw-bold shadow-sm" style="border-radius: 10px; background: var(--grad-azul);"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión</button>
+          <button id="btnGuardarCambios" type="button" class="btn text-white px-5 fw-bold shadow-sm" style="border-radius: 10px; background: var(--grad-azul);"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión <span class="kbd-badge"><kbd>Ctrl</kbd>+<kbd>↵</kbd></span></button>
         </div>
       </div>
     </div>
@@ -394,6 +426,107 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
   <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
+
+  <!-- Modal Novedades -->
+  <div class="modal fade" id="modalNovedades" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content" style="border-radius: 24px; border: none; box-shadow: 0 20px 50px rgba(0,0,0,0.25);">
+        <div class="modal-header-inner" style="border-radius: 24px 24px 0 0;">
+          <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+            <div class="p-2 rounded-3 me-3" style="background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(4px);">
+              <i class="bi bi-ui-radios-grid fs-4 text-white"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.2rem;">Reportar Novedad</h5>
+              <p class="small mb-0" style="color: rgba(255,255,255,0.7);">Selecciona tu estado actual para pausar la asignación</p>
+            </div>
+            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+        </div>
+        <div class="modal-body p-0 d-flex flex-column flex-md-row" style="background: var(--bg-page); border-radius: 0 0 24px 24px;">
+          <div class="nav flex-column nav-pills-custom p-4 border-end" style="width: 300px; min-height: 500px;" role="tablist" aria-orientation="vertical">
+            <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#vr-fallas" type="button"><i class="bi bi-laptop fs-5"></i> Fallas Técnicas</button>
+            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-ausencias" type="button"><i class="bi bi-hospital fs-5"></i> Ausencias / Salud</button>
+            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-reuniones" type="button"><i class="bi bi-people fs-5"></i> Reuniones / Eventos</button>
+            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-operativas" type="button"><i class="bi bi-briefcase fs-5"></i> Otras Actividades</button>
+          </div>
+          <div class="tab-content p-4 w-100 bg-white scroll-premium" style="max-height: 550px; overflow-y: auto; border-radius: 0 0 24px 0;">
+            <div class="tab-pane fade show active" id="vr-fallas">
+              <div class="d-flex align-items-center mb-4">
+                <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(189,15,20,0.1); color: var(--color-primario);"><i class="bi bi-exclamation-triangle-fill fs-5"></i></div>
+                <h6 class="fw-bold mb-0" style="color: var(--color-primario);">Fallas de Sistemas y Soporte</h6>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE COMPUTADOR')"><i class="bi bi-pc-display"></i> Falla de Computador</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE DATACREDITO')"><i class="bi bi-credit-card"></i> Falla de Datacrédito</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE INFOBIP')"><i class="bi bi-chat-dots"></i> Falla de Infobip</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE LINPHONE')"><i class="bi bi-telephone-x"></i> Falla de Linphone</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE SAI')"><i class="bi bi-server"></i> Falla de SAI</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA DE V.P.N.')"><i class="bi bi-shield-lock"></i> Falla de V.P.N.</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA VISTA')"><i class="bi bi-browser-edge"></i> Falla vista</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLAS DE INTERNET')"><i class="bi bi-wifi-off"></i> Fallas de Internet</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('FALLA ITBX')"><i class="bi bi-headset"></i> Falla ITBX</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('PROBLEMAS DE ENERGIA ELECTRICA')"><i class="bi bi-lightning-charge"></i> Prob. Energía Eléctrica</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('ACTUALIZACION PC')"><i class="bi bi-arrow-repeat"></i> Actualización PC</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE DE BOLIVAR')"><i class="bi bi-tools"></i> Soporte de Bolívar</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE DIVA')"><i class="bi bi-robot"></i> Soporte Diva</button></div>
+                <div class="col-md-6"><button class="btn-novedad falla" onclick="seleccionarNovedad('SOPORTE TECNICO OPERADOR DE INTERNET')"><i class="bi bi-router"></i> Soporte Operador Internet</button></div>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="vr-ausencias">
+              <div class="d-flex align-items-center mb-4">
+                <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(59,130,246,0.1); color: #3b82f6;"><i class="bi bi-calendar-x-fill fs-5"></i></div>
+                <h6 class="fw-bold mb-0" style="color: #3b82f6;">Permisos e Incapacidades</h6>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
+                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="vr-reuniones">
+              <div class="d-flex align-items-center mb-4">
+                <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(16,185,129,0.1); color: #10b981;"><i class="bi bi-camera-video-fill fs-5"></i></div>
+                <h6 class="fw-bold mb-0" style="color: #10b981;">Reuniones y Formación</h6>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('CAPACITACION')"><i class="bi bi-easel"></i> Capacitación</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('CURSOS XPLORA')"><i class="bi bi-mortarboard"></i> Cursos Xplora</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('ENTREVISTA CON BOLIVAR')"><i class="bi bi-person-video2"></i> Entrevista Bolívar</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('REUNION DEL AREA')"><i class="bi bi-microsoft-teams"></i> Reunión del Área</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('REUNION BRIGADA')"><i class="bi bi-shield-check"></i> Reunión Brigada</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('FEEDBACK')"><i class="bi bi-chat-quote"></i> Feedback</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('EVENTO SEGUROS BOLIVAR')"><i class="bi bi-calendar-star"></i> Evento Seguros Bolívar</button></div>
+                <div class="col-md-6"><button class="btn-novedad reunion" onclick="seleccionarNovedad('AUTOEVALUACION')"><i class="bi bi-ui-checks"></i> Autoevaluación</button></div>
+              </div>
+            </div>
+            <div class="tab-pane fade" id="vr-operativas">
+              <div class="d-flex align-items-center mb-4">
+                <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(37,49,80,0.1); color: var(--color-secundario);"><i class="bi bi-briefcase-fill fs-5"></i></div>
+                <h6 class="fw-bold mb-0" style="color: var(--color-secundario);">Otras Actividades Operativas</h6>
+              </div>
+              <div class="row g-3">
+                <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ACTIVIDADES DE OFICINA')"><i class="bi bi-building"></i> Actividades de Oficina</button></div>
+                <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ANALISTA DESPLAZAMIENTO')"><i class="bi bi-car-front"></i> Analista Desplazamiento</button></div>
+                <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('ASIGNACION REESTUDIOS')"><i class="bi bi-file-earmark-diff"></i> Asignación Reestudios</button></div>
+                <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('GESTION CDT EN OFICINA')"><i class="bi bi-file-earmark-ruled"></i> Gestión CDT en Oficina</button></div>
+                <div class="col-md-6"><button class="btn-novedad operativa" onclick="seleccionarNovedad('RECOGE ELEMENTO EN SEGUROS BOLIVAR')"><i class="bi bi-box-seam"></i> Recoge Elemento</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('ux-enhancements'); ?>
 
   <script>
     let cacheSolicitudes = [];
@@ -441,6 +574,9 @@
           animarNumero('countHoy', res.stats.hoy);
           animarNumero('countPendientes', res.stats.pendientes);
           renderizarTabla();
+          
+          // UX: Update sync time
+          if (typeof UX !== 'undefined') UX.updateSyncTime();
 
           // Auto-asignar si tabla vacía y activo
           if (cacheSolicitudes.length === 0 && !yaSeIntentoAsignar && estadoGlobalAsesor === "ACTIVO") {
@@ -479,10 +615,25 @@
         columns: [
           { title: "Solicitud", data: 'solicitud', render: d => '<span class="fw-bold text-primary">' + d + '</span>' },
           { title: "Origen", data: 'origen', render: d => d === 'VICTORIA' ? '<span class="badge-origen badge-victoria">VICTORIA</span>' : '<span class="badge-origen badge-correo">CORREO</span>' },
-          { title: "Tipo Proceso", data: 'tipoProceso' },
+          { title: "Tipo Proceso", data: 'tipoProceso', render: function(d) {
+              const t = (d || '').toUpperCase();
+              if (t.includes('REESTUDIO')) return '<span class="badge shadow-sm" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-arrow-repeat me-1"></i>' + d + '</span>';
+              if (t.includes('TRASLADO')) return '<span class="badge shadow-sm" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-arrow-left-right me-1"></i>' + d + '</span>';
+              if (t.includes('INDUCCI')) return '<span class="badge shadow-sm" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-easel me-1"></i>' + d + '</span>';
+              if (t.includes('NUEVA') || t.includes('DEUDOR')) return '<span class="badge shadow-sm" style="background:#fce7f3;color:#be185d;border:1px solid #fbcfe8;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-person-plus me-1"></i>' + d + '</span>';
+              return '<span class="badge shadow-sm" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-tag me-1"></i>' + d + '</span>';
+            }
+          },
           { title: "Clase", data: 'claseSolicitud' },
           { title: "Radicación", data: 'fechaRadicacion' },
-          { title: "Acciones", data: null, orderable: false, className: "text-center", render: (d, t, r, meta) => '<button class="btn-action btn-detalle" data-index="' + meta.row + '"><i class="bi bi-eye"></i></button>' }
+          { title: "Acciones", data: null, orderable: false, className: "text-center", render: function(d, t, r, meta) {
+              let driveBtn = '';
+              if (r.linkDrive && r.linkDrive.startsWith('http')) {
+                driveBtn = '<a href="' + r.linkDrive + '" target="_blank" class="btn-action me-1" title="Abrir Drive"><i class="bi bi-folder2-open"></i></a>';
+              }
+              return driveBtn + '<button class="btn-action btn-detalle" data-index="' + meta.row + '" title="Gestionar"><i class="bi bi-eye"></i></button>';
+            }
+          }
         ],
         language: { url: "//cdn.datatables.net/plug-ins/1.13.7/i18n/es-ES.json" },
         pageLength: 10,
@@ -508,9 +659,13 @@
       $('#d_clase').text(item.claseSolicitud);
       $('#d_fechaAsignacion').text(item.fechaAsignacion);
 
+      // Drive button in modal header
+      const btnDrive = $('#btnDriveModal');
       if (item.linkDrive && item.linkDrive.startsWith('http')) {
+        btnDrive.attr('href', item.linkDrive).removeClass('d-none');
         $('#d_linkDrive').html('<a href="' + item.linkDrive + '" target="_blank" class="text-primary fw-bold"><i class="bi bi-folder2-open me-1"></i>Abrir Carpeta</a>');
       } else {
+        btnDrive.addClass('d-none');
         $('#d_linkDrive').text('Sin carpeta');
       }
 
@@ -527,16 +682,20 @@
 
     function actualizarCamposGestion() {
       const estado = ($('#d_estado_q').val() || '').toUpperCase();
-      $('#contenedor_aplazamiento').addClass('d-none');
-      $('#contenedor_negacion').addClass('d-none');
+      const contAplaz = $('#contenedor_aplazamiento');
+      const contNeg = $('#contenedor_negacion');
 
       if (estado.includes('APLAZ')) {
-        $('#contenedor_aplazamiento').removeClass('d-none');
+        contAplaz.removeClass('d-none').hide().slideDown(250);
+        contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
         $('#d_motivo_negacion').val('');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
-        $('#contenedor_negacion').removeClass('d-none');
+        contNeg.removeClass('d-none').hide().slideDown(250);
+        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
         $('#d_motivo_aplazamiento').val('');
       } else {
+        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
+        contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
         $('#d_motivo_aplazamiento').val('');
         $('#d_motivo_negacion').val('');
       }
@@ -560,17 +719,41 @@
 
       Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
+      // UX: loading state
+      const btnGuardar = document.getElementById('btnGuardarCambios');
+      if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, true);
+
       google.script.run.withSuccessHandler(function(r) {
+        if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+        
         if (r.success) {
-          Swal.fire({ icon: 'success', title: 'Operación Exitosa', html: r.message.replace(/\n/g, '<br>'), confirmButtonColor: '#253150' }).then(() => {
-            bootstrap.Modal.getInstance(document.getElementById('modalDetalles')).hide();
-            yaSeIntentoAsignar = false;
-            cargarDatos();
-          });
+          // UX: Log activity
+          if (typeof UX !== 'undefined') {
+            UX.logActivity($('#s_sidebar_solicitud').text(), datos.estadoGestion, datos.motivoAplazamiento || datos.motivoNegacion || '');
+            UX.updateSyncTime();
+          }
+          
+          Swal.close();
+          
+          if (typeof UX !== 'undefined') {
+            UX.showSuccessCheck(function() {
+              UX.showToast('Gestión guardada: ' + datos.estadoGestion, 'success');
+              bootstrap.Modal.getInstance(document.getElementById('modalDetalles')).hide();
+              yaSeIntentoAsignar = false;
+              cargarDatos();
+            });
+          } else {
+            Swal.fire({ icon: 'success', title: 'Operación Exitosa', html: r.message.replace(/\n/g, '<br>'), confirmButtonColor: '#253150' }).then(() => {
+              bootstrap.Modal.getInstance(document.getElementById('modalDetalles')).hide();
+              yaSeIntentoAsignar = false;
+              cargarDatos();
+            });
+          }
         } else {
           Swal.fire({ title: 'Error', text: r.message, icon: 'error', confirmButtonColor: '#253150' });
         }
       }).withFailureHandler(function(e) {
+        if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
         Swal.fire({ title: 'Error Crítico', text: 'Fallo: ' + e.message, icon: 'error', confirmButtonColor: '#BD0F14' });
       }).guardarGestionReestudio(datos);
     }
@@ -588,7 +771,11 @@
 
       google.script.run.withSuccessHandler(function(response) {
         if (response && response.success) {
-          Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
+          if (typeof UX !== 'undefined') {
+            UX.showToast('Estado actualizado: ' + estadoGlobalAsesor, estadoGlobalAsesor === 'ACTIVO' ? 'success' : 'info');
+          } else {
+            Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
+          }
           if (estadoGlobalAsesor === 'ACTIVO') cargarDatos();
         }
       }).actualizarEstadoPropio(nuevoEstado);
@@ -598,6 +785,16 @@
       const el = $(`#${id}`);
       const actual = parseInt(el.text()) || 0;
       $({ n: actual }).animate({ n: valorFinal }, { duration: 800, step: function() { el.text(Math.ceil(this.n)); }, complete: function() { el.text(this.n); } });
+    }
+
+    function abrirModalNovedades() {
+      const modal = new bootstrap.Modal(document.getElementById('modalNovedades'));
+      modal.show();
+    }
+
+    function seleccionarNovedad(novedad) {
+      bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+      cambiarMiEstado(novedad);
     }
   </script>
 </body>

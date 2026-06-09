@@ -109,14 +109,20 @@ function cargarDatos() {
 
       renderizarTabla(response.tabla);
       
+      // UX: Update sync time
+      if (typeof UX !== 'undefined') UX.updateSyncTime();
+      
+      // Count pending from table rows (excluding header)
+      const registrosPendientes = response.tabla ? response.tabla.length - 1 : 0;
+      
       if (response.stats) {
         if (typeof animarNumero === "function") {
           animarNumero("countHoy", response.stats.hoy);
-          animarNumero("countTotal", response.stats.total);
+          animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
         }
       }
 
-      const tablaRealmenteVacia = !response.tabla || response.tabla.length <= 1;
+      const tablaRealmenteVacia = registrosPendientes <= 0;
       const estadoParaValidar = (typeof estadoGlobalAsesor !== 'undefined' ? estadoGlobalAsesor : ($('#selectEstadoAsesor').val() || "INACTIVO")).toUpperCase();
 
       if (tablaRealmenteVacia && !yaSeIntentoAsignar && estadoParaValidar === "ACTIVO") {
@@ -389,8 +395,8 @@ function manejarGuardarCambios() {
     biometria: $('#d_biometria').val(),
     comentarios_gestion: $('#d_comentarios_gestion').val(),
     estado_q: $('#d_estado_q').val(),
-    motivo_aplazamiento: $('#d_motivo_aplazamiento').val().trim(),
-    motivo_negacion: $('#d_motivo_negacion').val().trim()
+    motivo_aplazamiento: ($('#d_motivo_aplazamiento').val() || '').trim(),
+    motivo_negacion: ($('#d_motivo_negacion').val() || '').trim()
   };
 
   if (!datos.estado_q || !datos.biometria) {
@@ -423,6 +429,10 @@ function manejarGuardarCambios() {
     return;
   }
 
+  // UX: loading state on button
+  const btnGuardar = document.getElementById('btnGuardarCambios');
+  if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, true);
+
   Swal.fire({ 
     title: 'Procesando...', 
     html: 'Guardando gestión y buscando nueva asignación...',
@@ -432,13 +442,24 @@ function manejarGuardarCambios() {
 
   google.script.run
     .withSuccessHandler(r => {
+      if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+      
       if (r.success) {
+        // UX: Log activity
+        if (typeof UX !== 'undefined') {
+          UX.logActivity(datos.solicitudId, datos.estado_q, datos.motivo_aplazamiento || datos.motivo_negacion || '');
+          UX.updateSyncTime();
+        }
+        
         Swal.fire({
           icon: 'success',
           title: '¡Operación Exitosa!',
-          html: r.message.replace(/\n/g, '<br>'),
-          confirmButtonColor: '#253150'
+          html: r.message ? r.message.replace(/\n/g, '<br>') : 'Gestión guardada correctamente.',
+          confirmButtonColor: '#253150',
+          timer: 2500,
+          timerProgressBar: true
         }).then(() => {
+          if (typeof UX !== 'undefined') UX.showToast('Sol. ' + datos.solicitudId + ' → ' + datos.estado_q, 'success');
           const modalElement = document.getElementById('modalDetalles');
           const modalInstance = bootstrap.Modal.getInstance(modalElement);
           if (modalInstance) modalInstance.hide();
@@ -454,6 +475,7 @@ function manejarGuardarCambios() {
       }
     })
     .withFailureHandler(e => {
+      if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
       Swal.fire({
         title: 'Error Crítico', 
         text: 'Fallo de conexión: ' + e.message, 
@@ -509,14 +531,19 @@ function cambiarMiEstado(nuevoEstado) {
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Estado: ' + estadoGlobalAsesor,
-          toast: true,
-          position: 'top-end',
-          timer: 2000,
-          showConfirmButton: false
-        });
+        // UX: Use toast instead of SweetAlert for non-blocking feedback
+        if (typeof UX !== 'undefined') {
+          UX.showToast('Estado actualizado: ' + estadoGlobalAsesor, estadoGlobalAsesor === 'ACTIVO' ? 'success' : 'info');
+        } else {
+          Swal.fire({
+            icon: 'success',
+            title: 'Estado: ' + estadoGlobalAsesor,
+            toast: true,
+            position: 'top-end',
+            timer: 2000,
+            showConfirmButton: false
+          });
+        }
         if (estadoGlobalAsesor === 'ACTIVO') {
           cargarDatos(); 
         }

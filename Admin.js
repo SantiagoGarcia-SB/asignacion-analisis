@@ -15,14 +15,19 @@ function obtenerDatosDashboard() {
   verificarPermisoAdmin();
   const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
-  const dataSol = hojaSol.getDataRange().getValues();
+  const dataSol = hojaSol.getDataRange().getDisplayValues();
+  const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
 
-  let totalPendientes = dataSol.length > 1 ? dataSol.length - 1 : 0;
   let res = {
-    pendientesNube: totalPendientes, 
+    sinAsignar: 0,
+    aplazadas: 0,
+    gestionadasHoyEquipo: 0,
     activos: 0,
     inactivos: 0,
-    listaGestion: []
+    listaGestion: [],
+    listaSinAsignar: [],
+    listaAplazadas: [],
+    listaGestionadasHoy: []
   };
 
   const hojaUser = ss.getSheetByName("Usuarios");
@@ -39,14 +44,49 @@ function obtenerDatosDashboard() {
 
   for (let i = 1; i < dataSol.length; i++) {
     const estado = String(dataSol[i][16] || "").toUpperCase();
-    if (!estado.includes("APROB") && !estado.includes("NEGAD") && dataSol[i][0] !== "") {
+    const asignado = String(dataSol[i][27] || "").trim();
+    const fechaFin = String(dataSol[i][28] || "").trim();
+    const tipo = String(dataSol[i][20] || "").toUpperCase();
+    const solicitudId = String(dataSol[i][0] || "").trim();
+    const poliza = String(dataSol[i][1] || "");
+    const asesorNombre = String(dataSol[i][30] || "N/A");
+
+    if (solicitudId === "") continue;
+
+    // Determinar tipo visual
+    let tipoVisual = 'digital';
+    if (estado.includes('BIOMETRIA')) tipoVisual = 'biometria';
+    else if (tipo.includes('INDUCCI') || tipo === 'IND') tipoVisual = 'induccion';
+
+    // Contar gestionadas hoy por todo el equipo
+    if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
+      res.gestionadasHoyEquipo++;
+      res.listaGestionadasHoy.push({ id: solicitudId, poliza: poliza, estado: estado, asesor: asesorNombre, tipo: tipoVisual });
+    }
+
+    // Sin asignar = no tiene analista y no tiene fecha fin
+    if (asignado === "" && fechaFin === "") {
+      res.sinAsignar++;
+      if (res.listaSinAsignar.length < 50) {
+        res.listaSinAsignar.push({ id: solicitudId, poliza: poliza, tipo: tipoVisual });
+      }
+    }
+
+    // Aplazadas = tiene estado APLAZADA y no tiene fecha fin
+    if (estado.includes("APLAZ") && fechaFin === "") {
+      res.aplazadas++;
+      res.listaAplazadas.push({ id: solicitudId, poliza: poliza, asesor: asesorNombre, tipo: tipoVisual });
+    }
+
+    // Lista de monitoreo: solicitudes asignadas sin terminar
+    if (!estado.includes("APROB") && !estado.includes("NEGAD") && asignado !== "" && fechaFin === "") {
       res.listaGestion.push({
-        id: dataSol[i][0],
-        poliza: dataSol[i][1],
+        id: solicitudId,
+        poliza: poliza,
         estado: estado,
-        correo: dataSol[i][27] || "Sin analista",
-        asesor: dataSol[i][30] || "N/A",
-        estClase: estado.includes("NUBE") ? "bg-nube" : "bg-gestion"
+        correo: asignado,
+        asesor: asesorNombre,
+        tipo: tipoVisual
       });
     }
   }
@@ -62,6 +102,19 @@ function admin_obtenerUsuariosGestion() {
     
     const datos = hoja.getDataRange().getValues();
     datos.shift(); 
+
+    // Count current load per analyst from solicitudes
+    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+    const dataSol = hojaSol.getDataRange().getValues();
+    const cargaPorAnalista = {};
+    
+    for (let i = 1; i < dataSol.length; i++) {
+      const asignado = String(dataSol[i][27] || "").toLowerCase().trim();
+      const fechaFin = String(dataSol[i][28] || "").trim();
+      if (asignado && fechaFin === "") {
+        cargaPorAnalista[asignado] = (cargaPorAnalista[asignado] || 0) + 1;
+      }
+    }
     
     return datos.map((fila, index) => {
       let horaInicio = "---";
@@ -76,6 +129,9 @@ function admin_obtenerUsuariosGestion() {
         }
       } catch (e) { horaInicio = "Error"; }
 
+      const correoLower = String(fila[2]).toLowerCase().trim();
+      const cargaActual = cargaPorAnalista[correoLower] || 0;
+
       return {
         nombreComercial: fila[1], 
         correo: fila[2],          
@@ -83,6 +139,7 @@ function admin_obtenerUsuariosGestion() {
         especialidad: fila[4],    
         estado: fila[5],          
         desde: horaInicio,        
+        cargaActual: cargaActual,
         pendientes: fila[7] || 0, 
         rol: fila[23] || "ASESOR", 
         row: index + 2
@@ -231,4 +288,164 @@ function admin_desactivarTodosAsesores() {
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+
+// ===================================================================
+// MÓDULO DE MÉTRICAS - Backend
+// ===================================================================
+
+/**
+ * Convierte string "dd/MM/yyyy" a objeto Date.
+ * Retorna null si el formato es inválido.
+ */
+function parseFechaDDMMYYYY(fechaStr) {
+  if (!fechaStr || typeof fechaStr !== 'string') return null;
+  const partes = fechaStr.trim().split('/');
+  if (partes.length !== 3) return null;
+  const dia = parseInt(partes[0], 10);
+  const mes = parseInt(partes[1], 10) - 1;
+  const anio = parseInt(partes[2], 10);
+  if (isNaN(dia) || isNaN(mes) || isNaN(anio)) return null;
+  const fecha = new Date(anio, mes, dia);
+  if (fecha.getFullYear() !== anio || fecha.getMonth() !== mes || fecha.getDate() !== dia) return null;
+  return fecha;
+}
+
+/**
+ * Obtiene todas las métricas agregadas para el rango de fechas dado.
+ * @param {string} fechaDesde - "dd/MM/yyyy"
+ * @param {string} fechaHasta - "dd/MM/yyyy"
+ * @returns {Object} Objeto con métricas consolidadas
+ */
+function obtenerDatosMetricas(fechaDesde, fechaHasta) {
+  verificarPermisoAdmin();
+
+  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hoja) throw new Error("No se pudo acceder a la hoja de solicitudes.");
+
+  const data = hoja.getDataRange().getDisplayValues();
+  
+  const desde = parseFechaDDMMYYYY(fechaDesde);
+  const hasta = parseFechaDDMMYYYY(fechaHasta);
+  if (!desde || !hasta) throw new Error("Formato de fecha inválido. Use dd/MM/yyyy.");
+
+  // Normalizar 'hasta' al final del día
+  hasta.setHours(23, 59, 59, 999);
+
+  // Acumuladores
+  let totalGestionadas = 0;
+  let sumaTiempos = 0;
+  let countTiempos = 0;
+  let aprobadas = 0;
+  let negadas = 0;
+  let aplazadas = 0;
+  let fueraDeSLA = 0;
+
+  const produccionMap = {};  // fecha -> cantidad
+  const slaMap = {};         // fecha -> { dentro, fuera }
+  const analistaMap = {};    // nombre -> { total, aprobadas, negadas, aplazadas, sumaTiempo, countTiempo, fueraSLA }
+
+  for (let i = 1; i < data.length; i++) {
+    const fila = data[i];
+    const fechaGestionStr = String(fila[33] || "").trim();  // col AH (índice 33)
+    
+    if (!fechaGestionStr) continue;
+    
+    const fechaGestion = parseFechaDDMMYYYY(fechaGestionStr);
+    if (!fechaGestion) continue;
+
+    // Filtrar por rango
+    if (fechaGestion < desde || fechaGestion > hasta) continue;
+
+    totalGestionadas++;
+
+    const estado = String(fila[16] || "").toUpperCase().trim();
+    const nombre = String(fila[30] || "Sin nombre").trim();
+    const tiempoGestionRaw = String(fila[34] || "").trim();
+    const slaHorasRaw = String(fila[29] || "").trim();
+
+    // Estado
+    if (estado.includes("APROB")) aprobadas++;
+    else if (estado.includes("NEGAD") || estado.includes("RECHAZ")) negadas++;
+    else if (estado.includes("APLAZ")) aplazadas++;
+
+    // Tiempo de gestión
+    const tiempoGestion = parseFloat(tiempoGestionRaw);
+    if (!isNaN(tiempoGestion) && tiempoGestion >= 0) {
+      sumaTiempos += tiempoGestion;
+      countTiempos++;
+    }
+
+    // SLA
+    const slaHoras = parseFloat(slaHorasRaw.replace(',', '.'));
+    if (!isNaN(slaHoras)) {
+      if (slaHoras > 4) fueraDeSLA++;
+    }
+
+    // Producción diaria
+    if (!produccionMap[fechaGestionStr]) produccionMap[fechaGestionStr] = 0;
+    produccionMap[fechaGestionStr]++;
+
+    // SLA diario
+    if (!slaMap[fechaGestionStr]) slaMap[fechaGestionStr] = { dentroSLA: 0, fueraSLA: 0 };
+    if (!isNaN(slaHoras)) {
+      if (slaHoras <= 4) slaMap[fechaGestionStr].dentroSLA++;
+      else slaMap[fechaGestionStr].fueraSLA++;
+    }
+
+    // Por analista
+    if (!analistaMap[nombre]) {
+      analistaMap[nombre] = { total: 0, aprobadas: 0, negadas: 0, aplazadas: 0, sumaTiempo: 0, countTiempo: 0, fueraSLA: 0 };
+    }
+    const a = analistaMap[nombre];
+    a.total++;
+    if (estado.includes("APROB")) a.aprobadas++;
+    else if (estado.includes("NEGAD") || estado.includes("RECHAZ")) a.negadas++;
+    else if (estado.includes("APLAZ")) a.aplazadas++;
+    if (!isNaN(tiempoGestion) && tiempoGestion >= 0) { a.sumaTiempo += tiempoGestion; a.countTiempo++; }
+    if (!isNaN(slaHoras) && slaHoras > 4) a.fueraSLA++;
+  }
+
+  // Calcular métricas finales
+  const tiempoPromedioMinutos = countTiempos > 0 ? Math.round((sumaTiempos / countTiempos) * 10) / 10 : 0;
+  const tasaAprobacion = totalGestionadas > 0 ? Math.round((aprobadas / totalGestionadas) * 1000) / 10 : 0;
+
+  // Producción diaria ordenada cronológicamente
+  const produccionDiaria = Object.keys(produccionMap)
+    .sort((a, b) => parseFechaDDMMYYYY(a) - parseFechaDDMMYYYY(b))
+    .map(fecha => ({ fecha: fecha, cantidad: produccionMap[fecha] }));
+
+  // SLA diario ordenado cronológicamente
+  const slaDiario = Object.keys(slaMap)
+    .sort((a, b) => parseFechaDDMMYYYY(a) - parseFechaDDMMYYYY(b))
+    .map(fecha => ({ fecha: fecha, dentroSLA: slaMap[fecha].dentroSLA, fueraSLA: slaMap[fecha].fueraSLA }));
+
+  // Por analista ordenado por total desc
+  const porAnalista = Object.keys(analistaMap)
+    .map(nombre => {
+      const a = analistaMap[nombre];
+      return {
+        nombre: nombre,
+        total: a.total,
+        aprobadas: a.aprobadas,
+        negadas: a.negadas,
+        aplazadas: a.aplazadas,
+        tiempoPromedio: a.countTiempo > 0 ? Math.round((a.sumaTiempo / a.countTiempo) * 10) / 10 : 0,
+        fueraSLA: a.fueraSLA
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  return {
+    totalGestionadas: totalGestionadas,
+    tiempoPromedioMinutos: tiempoPromedioMinutos,
+    tasaAprobacion: tasaAprobacion,
+    fueraDeSLA: fueraDeSLA,
+    produccionDiaria: produccionDiaria,
+    distribucionEstados: { aprobadas: aprobadas, negadas: negadas, aplazadas: aplazadas },
+    porAnalista: porAnalista,
+    slaDiario: slaDiario
+  };
 }

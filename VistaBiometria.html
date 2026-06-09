@@ -367,7 +367,7 @@
             <div class="avatar"><i class="bi bi-person-fill"></i></div>
             <div class="info">
                 <span class="name" id="userEmailNav">Cargando...</span>
-                <span class="role">Analista</span>
+                <span class="role">Analista Biometría</span>
             </div>
         </div>
     </div>
@@ -376,15 +376,16 @@
 <div class="container mb-3"> 
     <div class="row g-4 justify-content-center"> 
         <div class="col-md-5 col-lg-4">
-            <div class="card card-metrica">
+            <div class="card card-metrica" title="Ver actividad">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-center">
                         <div class="icon-circle-modern bg-gradient-hoy me-4">
-                            <i class="bi bi-check2-circle"></i>
+                            <i class="bi bi-lightning-charge-fill"></i>
                         </div>
                         <div>
                             <h6 class="metric-label-modern">Gestionadas Hoy</h6>
                             <h2 class="metric-value-modern" id="countHoy">0</h2>
+                            <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Clic para ver resumen</p>
                         </div>
                     </div>
                 </div>
@@ -392,15 +393,16 @@
         </div>
 
         <div class="col-md-5 col-lg-4">
-            <div class="card card-metrica">
+            <div class="card card-metrica" title="Ver actividad">
                 <div class="card-body p-4">
                     <div class="d-flex align-items-center">
                         <div class="icon-circle-modern bg-gradient-total me-4">
-                            <i class="bi bi-clock-history"></i>
+                            <i class="bi bi-inbox-fill"></i>
                         </div>
                         <div>
-                            <h6 class="metric-label-modern">Pendientes Gestión</h6>
+                            <h6 class="metric-label-modern">Pendientes</h6>
                             <h2 class="metric-value-modern" id="countPendientes">0</h2>
+                            <p class="metric-hint mb-0"><i class="bi bi-hand-index me-1"></i>Ver pendientes</p>
                         </div>
                     </div>
                 </div>
@@ -413,9 +415,12 @@
     <div class="table-container">
         <div class="mb-4">
             <h4 class="fw-bold mb-0" style="color: var(--text-main); font-size: 1.2rem;">
-                <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Listado de Solicitudes
+                <i class="bi bi-list-stars me-2" style="color: var(--color-primario);"></i>Mis Solicitudes Asignadas
             </h4>
-            <p class="text-muted small mt-1 mb-0">Selecciona un registro para iniciar la tipificación</p>
+            <div class="d-flex align-items-center justify-content-between">
+                <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
+                <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
+            </div>
         </div>
         <div class="table-responsive">
             <table id="tablaBiometria" class="table align-middle w-100">
@@ -548,8 +553,8 @@
             
             <div class="modal-footer border-0 p-4" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
                 <button class="btn btn-outline-primary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius: 10px; border-color: var(--border); color: var(--text-main);">Cancelar</button>
-                <button type="button" class="btn text-white px-5 fw-bold shadow-sm" onclick="enviarGestion()" style="border-radius: 10px; background: #253150;">
-                    <i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión
+                <button type="button" class="btn text-white px-5 fw-bold shadow-sm" id="btnGuardarCambios" onclick="enviarGestion()" style="border-radius: 10px; background: #253150;">
+                    <i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión <span class="kbd-badge"><kbd>Ctrl</kbd>+<kbd>↵</kbd></span>
                 </button>
             </div>
 
@@ -690,6 +695,8 @@
 <script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
+<?!= include('ux-enhancements'); ?>
+
 <script>
     let rawData = []; 
     let estadoGlobalAsesor = "INACTIVO";
@@ -699,7 +706,11 @@
         // Cargar email del usuario
         google.script.run
             .withSuccessHandler(function(email) {
-                if(email) document.getElementById('userEmailNav').innerText = email.split('@')[0];
+                if(email) {
+                    var prefijo = email.split('@')[0];
+                    var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+                    document.getElementById('userEmailNav').innerText = nombre;
+                }
             })
             .withFailureHandler(function() {
                 document.getElementById('userEmailNav').innerText = "Analista";
@@ -740,9 +751,13 @@
 
         google.script.run.withSuccessHandler(function(res) {
             if (res && res.success) {
-                Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
+                if (typeof UX !== 'undefined') {
+                    UX.showToast('Estado actualizado: ' + estadoGlobalAsesor, estadoGlobalAsesor === 'ACTIVO' ? 'success' : 'info');
+                } else {
+                    Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
+                }
                 if (estadoGlobalAsesor === 'ACTIVO') {
-                    yaSeIntentoAsignar = false; // Permitir que el sistema busque si está vacío
+                    yaSeIntentoAsignar = false;
                     cargarDatos(); 
                 }
             }
@@ -772,6 +787,9 @@
             rawData = res.solicitudes; 
             $('#countHoy').text(res.stats.hoy);
             $('#countPendientes').text(res.stats.pendientes);
+            
+            // UX: Update sync time
+            if (typeof UX !== 'undefined') UX.updateSyncTime();
 
             let html = "";
             if (rawData && rawData.length > 0) {
@@ -957,14 +975,31 @@ function abrirModal(id) {
             return;
         }
 
+        // UX: Button loading state
+        const btnGuardar = document.querySelector('.modal-footer .btn[onclick="enviarGestion()"]');
+        if (typeof UX !== 'undefined' && btnGuardar) UX.setBtnLoading(btnGuardar, true);
+
         const loader = document.getElementById('loader-container');
         if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
 
         google.script.run.withSuccessHandler(function(res) {
+            if (typeof UX !== 'undefined' && btnGuardar) UX.setBtnLoading(btnGuardar, false);
             if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+            
             if (res.success) {
                 bootstrap.Modal.getInstance(document.getElementById('modalGestion')).hide();
-                Swal.fire({ title: '¡Éxito!', text: res.message || 'Gestión guardada correctamente.', icon: 'success', confirmButtonColor: '#253150' }).then(cargarDatos);
+                
+                // UX: Log activity and show success animation
+                if (typeof UX !== 'undefined') {
+                    UX.logActivity(id, datos.resFinal, datos.resLlamada || '');
+                    UX.updateSyncTime();
+                    UX.showSuccessCheck(function() {
+                        UX.showToast('Biometría #' + id + ' → ' + datos.resFinal, 'success');
+                        cargarDatos();
+                    });
+                } else {
+                    Swal.fire({ title: '¡Éxito!', text: res.message || 'Gestión guardada correctamente.', icon: 'success', confirmButtonColor: '#253150' }).then(cargarDatos);
+                }
             } else {
                 Swal.fire({ title: 'Error', text: res.error, icon: 'error', confirmButtonColor: '#BD0F14' });
             }
