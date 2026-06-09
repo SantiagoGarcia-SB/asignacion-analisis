@@ -327,6 +327,15 @@
                   <i class="bi bi-pencil-square me-2"></i>Actualizar Calificación
                 </h6>
 
+                <!-- Póliza (solo VICTORIA) -->
+                <div class="row g-3 mb-3 d-none" id="contenedor_poliza_victoria">
+                  <div class="col-md-6">
+                    <label style="color:#7c3aed;"><i class="bi bi-file-earmark-text me-1"></i>Número de Póliza</label>
+                    <input type="text" id="d_poliza_victoria" class="form-control fw-bold" placeholder="Ej: 123456" style="font-size:0.92rem;">
+                    <small class="text-muted" style="font-size:0.68rem;">Obligatorio para solicitudes de Victoria</small>
+                  </div>
+                </div>
+
                 <div class="row g-3">
                   <!-- Estado -->
                   <div class="col-md-12">
@@ -571,9 +580,15 @@
       google.script.run.withSuccessHandler(function(res) {
         if (res.success) {
           cacheSolicitudes = res.solicitudes;
-          animarNumero('countHoy', res.stats.hoy);
           animarNumero('countPendientes', res.stats.pendientes);
           renderizarTabla();
+
+          // Cargar conteo cruzado de gestiones del día (todas las vistas)
+          google.script.run.withSuccessHandler(function(cruzado) {
+            if (cruzado && typeof cruzado.hoyTotal === 'number') {
+              animarNumero('countHoy', cruzado.hoyTotal);
+            }
+          }).obtenerGestionesHoyCruzadas();
           
           // UX: Update sync time
           if (typeof UX !== 'undefined') UX.updateSyncTime();
@@ -675,7 +690,15 @@
       $('#d_motivo_aplazamiento').val('');
       $('#d_motivo_negacion').val('');
       $('#d_observaciones').val('');
+      $('#d_poliza_victoria').val('');
       actualizarCamposGestion();
+
+      // Mostrar campo póliza solo si es VICTORIA
+      if (item.origen && item.origen.toUpperCase() === 'VICTORIA') {
+        $('#contenedor_poliza_victoria').removeClass('d-none');
+      } else {
+        $('#contenedor_poliza_victoria').addClass('d-none');
+      }
 
       new bootstrap.Modal('#modalDetalles').show();
     }
@@ -705,6 +728,14 @@
       const estado = $('#d_estado_q').val();
       if (!estado) { Swal.fire({ title: 'Atención', text: 'Selecciona un estado de gestión.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
 
+      // Validar póliza si es VICTORIA
+      const esVictoria = !$('#contenedor_poliza_victoria').hasClass('d-none');
+      const polizaVictoria = ($('#d_poliza_victoria').val() || '').trim();
+      if (esVictoria && !polizaVictoria) {
+        Swal.fire({ title: 'Póliza requerida', text: 'Para solicitudes de Victoria debes ingresar el número de póliza.', icon: 'warning', confirmButtonColor: '#253150' });
+        return;
+      }
+
       const estadoUpper = estado.toUpperCase();
       if (estadoUpper.includes('APLAZ') && !$('#d_motivo_aplazamiento').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
       if (estadoUpper.includes('NEGAD') && !$('#d_motivo_negacion').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
@@ -714,7 +745,8 @@
         estadoGestion: estado,
         motivoAplazamiento: $('#d_motivo_aplazamiento').val() || '',
         motivoNegacion: $('#d_motivo_negacion').val() || '',
-        observaciones: $('#d_observaciones').val() || ''
+        observaciones: $('#d_observaciones').val() || '',
+        poliza: polizaVictoria
       };
 
       Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });

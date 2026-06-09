@@ -6,6 +6,7 @@
 let datosGlobales = [];
 let yaSeIntentoAsignar = false; 
 let estadoGlobalAsesor = "INACTIVO"; 
+let tipoSolicitudActual = ""; // Tipo de solicitud actual en el modal (induccion, biometria, digital)
 
 $(document).ready(function () {
 
@@ -68,6 +69,85 @@ function actualizarCamposGestion() {
   }
 }
 
+/**
+ * Ajusta los campos del formulario de gestión según el tipo de solicitud.
+ * Para inducciones: oculta biometría, limita estado final a APLAZADA y motivo a "Pendiente resultado lote".
+ */
+function ajustarCamposPorTipoSolicitud() {
+  const contBiometria = $('#contenedor_biometria');
+  const selectEstado = $('#d_estado_q');
+  const selectAplaz = $('#d_motivo_aplazamiento');
+
+  if (tipoSolicitudActual === 'induccion') {
+    // Ocultar biometría
+    contBiometria.addClass('d-none');
+    $('#d_biometria').val('No');
+
+    // Estado Final: solo APLAZADA
+    selectEstado.html(`
+      <option value="" selected disabled>Seleccione una opción</option>
+      <option value="APLAZADA">APLAZADA</option>
+    `);
+
+    // Motivo Aplazamiento: solo "Pendiente resultado lote"
+    selectAplaz.html(`
+      <option value="" selected>Sin aplazamiento</option>
+      <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+    `);
+
+    // Expandir el Estado Final para ocupar el ancho completo
+    selectEstado.closest('.gestion-group').removeClass('col-md-8').addClass('col-md-12');
+
+  } else {
+    // Restaurar biometría
+    contBiometria.removeClass('d-none');
+
+    // Restaurar Estado Final completo
+    selectEstado.html(`
+      <option value="" selected disabled>Seleccione una opción</option>
+      <option value="APROBADA">APROBADA</option>
+      <option value="APLAZADA">APLAZADA</option>
+      <option value="NEGADA">NEGADA</option>
+      <option value="PENDIENTE VALIDACIÓN">PENDIENTE VALIDACIÓN</option>
+      <option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>
+    `);
+
+    // Restaurar Motivo Aplazamiento completo
+    selectAplaz.html(`
+      <option value="" selected>Sin aplazamiento</option>
+      <option value="Un deudor solidario">Un deudor solidario</option>
+      <option value="Dos deudores solidarios">Dos deudores solidarios</option>
+      <option value="Extractos bancarios">Extractos bancarios</option>
+      <option value="Estados financieros">Estados financieros</option>
+      <option value="Cámara de comercio">Cámara de comercio</option>
+      <option value="Acta de junta de socios">Acta de junta de socios</option>
+      <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
+      <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
+      <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
+      <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+      <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
+      <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
+      <option value="Pendiente biometria">Pendiente biometría</option>
+      <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+      <option value="Certificado laboral">Certificado laboral</option>
+      <option value="Partida presupuestal">Partida presupuestal</option>
+      <option value="Confirmar solicitud simultánea">Confirmar solicitud simultánea</option>
+      <option value="Documento de identidad legible">Documento de identidad legible</option>
+      <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
+      <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
+      <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
+      <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+      <option value="Error de terceros">Error de terceros</option>
+      <option value="Pendiente recaudo">Pendiente recaudo</option>
+      <option value="Pendiente simasol">Pendiente simasol</option>
+      <option value="Pendiente respuesta eli">Pendiente respuesta ELI</option>
+    `);
+
+    // Restaurar ancho del Estado Final
+    selectEstado.closest('.gestion-group').removeClass('col-md-12').addClass('col-md-8');
+  }
+}
+
 function sincronizarEstadoInicial(debeCargarTabla = false) {
   google.script.run
     .withSuccessHandler(function(estadoReal) {
@@ -104,6 +184,17 @@ function cargarDatos() {
     loader.style.display = 'flex'; 
   }
 
+  // Cargar conteo cruzado de gestiones del día (todas las vistas)
+  google.script.run
+    .withSuccessHandler(function(cruzado) {
+      if (cruzado && typeof cruzado.hoyTotal === 'number') {
+        if (typeof animarNumero === "function") {
+          animarNumero("countHoy", cruzado.hoyTotal);
+        }
+      }
+    })
+    .obtenerGestionesHoyCruzadas();
+
   google.script.run
     .withSuccessHandler(function (response) {
 
@@ -117,7 +208,6 @@ function cargarDatos() {
       
       if (response.stats) {
         if (typeof animarNumero === "function") {
-          animarNumero("countHoy", response.stats.hoy);
           animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
         }
       }
@@ -261,11 +351,17 @@ function renderizarTabla(data) {
     
     if (estadoFila.includes('BIOMETRIA')) {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-fingerprint me-1"></i>Biometría</span>`;
+        tipoSolicitudActual = 'biometria';
     } else if (claseFila.includes('INDUCCI') || claseFila === 'IND') {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
+        tipoSolicitudActual = 'induccion';
     } else {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
+        tipoSolicitudActual = 'digital';
     }
+
+    // Ajustar campos del formulario según el tipo de solicitud
+    ajustarCamposPorTipoSolicitud();
 
 
     $('#s_sidebar_solicitud').html(`${fila[0] || ''} ${tipoBadgeModal}`);
@@ -304,6 +400,24 @@ function renderizarTabla(data) {
     
     $('#d_biometria').val(fila[23] || '');
     $('#d_comentarios_gestion').val(fila[24] || '');
+
+    // Precargar fecha radicación SAI en formato datetime-local
+    // Priorizar fechaDiligenciadaRadicación (idx 37) si existe, sino usar fechaRadicación (idx 17)
+    const fechaRadRaw = String(fila[37] || fila[17] || '').trim();
+    if (fechaRadRaw) {
+      const partesRad = fechaRadRaw.split(/[\s\/\:]+/);
+      if (partesRad.length >= 5) {
+        const valDatetime = partesRad[2] + '-' + partesRad[1].padStart(2,'0') + '-' + partesRad[0].padStart(2,'0') + 'T' + partesRad[3].padStart(2,'0') + ':' + partesRad[4].padStart(2,'0');
+        $('#d_fecha_radicacion_sai').val(valDatetime);
+      } else if (partesRad.length >= 3) {
+        const valDate = partesRad[2] + '-' + partesRad[1].padStart(2,'0') + '-' + partesRad[0].padStart(2,'0') + 'T08:00';
+        $('#d_fecha_radicacion_sai').val(valDate);
+      } else {
+        $('#d_fecha_radicacion_sai').val('');
+      }
+    } else {
+      $('#d_fecha_radicacion_sai').val('');
+    }
     
     $('#d_estado_q').val(fila[16] || '').trigger('change');
     
@@ -396,13 +510,26 @@ function manejarGuardarCambios() {
     comentarios_gestion: $('#d_comentarios_gestion').val(),
     estado_q: $('#d_estado_q').val(),
     motivo_aplazamiento: ($('#d_motivo_aplazamiento').val() || '').trim(),
-    motivo_negacion: ($('#d_motivo_negacion').val() || '').trim()
+    motivo_negacion: ($('#d_motivo_negacion').val() || '').trim(),
+    fecha_radicacion_sai: ($('#d_fecha_radicacion_sai').val() || '').trim()
   };
 
-  if (!datos.estado_q || !datos.biometria) {
+  if (!datos.estado_q || (!datos.biometria && tipoSolicitudActual !== 'induccion')) {
     Swal.fire({
       title: 'Atención', 
-      text: 'Por favor completa todos los campos obligatorios (Estado Final y Biometría).', 
+      text: tipoSolicitudActual === 'induccion' 
+        ? 'Por favor completa el campo obligatorio (Estado Final).' 
+        : 'Por favor completa todos los campos obligatorios (Estado Final y Biometría).', 
+      icon: 'warning',
+      confirmButtonColor: '#253150'
+    });
+    return;
+  }
+
+  if (!datos.fecha_radicacion_sai) {
+    Swal.fire({
+      title: 'Fecha de radicación requerida',
+      text: 'Por favor ingresa la fecha y hora de radicación que aparece en SAI.',
       icon: 'warning',
       confirmButtonColor: '#253150'
     });

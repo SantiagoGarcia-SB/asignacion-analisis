@@ -1128,10 +1128,22 @@
       Actualizar Calificación
     </h6>
 
+    <!-- Fecha/Hora Radicación SAI -->
+    <div class="row mb-3" id="contenedor_fecha_radicacion_sai">
+      <div class="col-md-6 gestion-group">
+        <label class="gestion-label" style="color:#7c3aed;">
+          <i class="bi bi-calendar-event me-1"></i>
+          Fecha y hora de radicación (SAI)
+        </label>
+        <input type="datetime-local" id="d_fecha_radicacion_sai" class="form-control gestion-select" style="font-size:0.88rem;">
+        <small class="text-muted" style="font-size:0.7rem;">Registra la fecha/hora que aparece en SAI al momento de la radicación</small>
+      </div>
+    </div>
+
     <div class="row">
 
       <!-- Biometría -->
-      <div class="col-md-4 gestion-group">
+      <div class="col-md-4 gestion-group" id="contenedor_biometria">
         <label class="gestion-label">
           <i class="bi bi-fingerprint me-1"></i>
           Biometría

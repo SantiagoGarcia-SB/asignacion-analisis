@@ -785,8 +785,14 @@
 
         google.script.run.withSuccessHandler(function(res) {
             rawData = res.solicitudes; 
-            $('#countHoy').text(res.stats.hoy);
             $('#countPendientes').text(res.stats.pendientes);
+            
+            // Cargar conteo cruzado de gestiones del día (todas las vistas)
+            google.script.run.withSuccessHandler(function(cruzado) {
+              if (cruzado && typeof cruzado.hoyTotal === 'number') {
+                $('#countHoy').text(cruzado.hoyTotal);
+              }
+            }).obtenerGestionesHoyCruzadas();
             
             // UX: Update sync time
             if (typeof UX !== 'undefined') UX.updateSyncTime();

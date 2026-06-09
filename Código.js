@@ -25,7 +25,7 @@ const HEADER_SOLICITUDES = [
   "clase", "uar", "tiempoderespuestafinaldelasolicitud", "biometría", "observaciones", 
   "tracking", "fecha asignación", "asignacion", "fecha fin gestión", "tiempo total de resolución de la solicitud",
   "Nombre", "Motivo de aplazamiento", "Motivo de negación", "fecha de gestion", "Tiempo de gestion",
-  "Canal"
+  "Canal", "Tiempo general (radicación)", "fechaDiligenciadaRadicación"
 ];
 
 const props = PropertiesService.getScriptProperties();
@@ -555,6 +555,18 @@ function guardarCambiosInternos(data) {
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
     
     const fechaAsignacion = sheetOrigen.getRange(targetRow, 27).getValue(); 
+    let fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
+
+    // Si el analista proporcionó la fecha de radicación SAI, guardarla en col 38 (fechaDiligenciadaRadicación)
+    let fechaRadicacionParaTiempo = fechaRadicacion;
+    if (data.fecha_radicacion_sai) {
+      const fechaSaiDate = new Date(data.fecha_radicacion_sai);
+      if (fechaSaiDate instanceof Date && !isNaN(fechaSaiDate.getTime())) {
+        sheetOrigen.getRange(targetRow, 38).setValue(fechaSaiDate).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+        fechaRadicacionParaTiempo = fechaSaiDate;
+      }
+    }
+
     let minutosDeGestion = 0;
     if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
       minutosDeGestion = Math.round((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60));
@@ -588,11 +600,19 @@ function guardarCambiosInternos(data) {
     sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
     sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
 
+    // Tiempo general: horas hábiles desde radicación diligenciada hasta resultado
+    let horasHabilesGeneral = 0;
+    if (fechaRadicacionParaTiempo instanceof Date && !isNaN(fechaRadicacionParaTiempo.getTime())) {
+      const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacionParaTiempo, ahora, ssOrigen);
+      horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
+    }
+    sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
+
     const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
     disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
 
     SpreadsheetApp.flush();
-    const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 37).getValues()[0];
+    const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
 
     let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
     if (!hojaHistorico) {
@@ -896,4 +916,71 @@ function calcularMinutosHabilesSLA(desde, hasta, ss) {
   }
 
   return totalMinutos;
+}
+
+
+/**
+ * Obtiene el conteo consolidado de gestiones del día actual para el analista logueado.
+ * Consulta TODAS las fuentes de datos (solicitud principal + reestudios) para que
+ * el analista vea su actividad total sin importar en qué vista esté.
+ *
+ * @returns {Object} { hoyTotal, detalle: { digital, reestudios } }
+ */
+function obtenerGestionesHoyCruzadas() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
+
+    let conteoDigital = 0;
+    let conteoReestudios = 0;
+
+    // 1. Contar gestiones hoy en hoja "solicitud" (estudio digital + biometria)
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+    if (hojaSol) {
+      const lastRow = hojaSol.getLastRow();
+      if (lastRow > 1) {
+        const dataSol = hojaSol.getRange(2, 28, lastRow - 1, 2).getDisplayValues(); // cols AB(28) y AC(29)
+        for (let i = 0; i < dataSol.length; i++) {
+          const asignado = String(dataSol[i][0]).trim().toLowerCase();
+          const fechaFin = String(dataSol[i][1]).trim();
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+            conteoDigital++;
+          }
+        }
+      }
+    }
+
+    // 2. Contar gestiones hoy en hoja de reestudios "ORIGEN"
+    try {
+      const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (hojaReest) {
+        const lastRowR = hojaReest.getLastRow();
+        if (lastRowR > 1) {
+          const dataReest = hojaReest.getRange(2, 7, lastRowR - 1, 4).getDisplayValues(); // cols G(7), H(8), I(9), J(10)
+          for (let i = 0; i < dataReest.length; i++) {
+            const asignado = String(dataReest[i][0]).trim().toLowerCase();
+            const fechaFin = String(dataReest[i][3]).trim(); // col J = fechaFinGestion
+            if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+              conteoReestudios++;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log("Aviso: No se pudo leer hoja de reestudios para conteo cruzado: " + e.message);
+    }
+
+    return {
+      hoyTotal: conteoDigital + conteoReestudios,
+      detalle: {
+        digital: conteoDigital,
+        reestudios: conteoReestudios
+      }
+    };
+  } catch (e) {
+    Logger.log("Error en obtenerGestionesHoyCruzadas: " + e.message);
+    return { hoyTotal: 0, detalle: { digital: 0, reestudios: 0 } };
+  }
 }

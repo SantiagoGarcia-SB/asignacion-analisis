@@ -124,6 +124,23 @@ function guardarGestionReestudio(datos) {
 
     const ahora = new Date();
 
+    // Leer fechaRadicacion (col A) y fechaAsignacion (col I) para cálculos de tiempo
+    const fechaRadicacionRaw = hoja.getRange(targetRow, 1).getValue();
+    const fechaAsignacionRaw = hoja.getRange(targetRow, 9).getValue();
+
+    // Calcular tiempos
+    let tiempoTotalResolucion = "";
+    let tiempoGestion = "";
+
+    if (fechaRadicacionRaw instanceof Date && !isNaN(fechaRadicacionRaw.getTime())) {
+      const diffMs = ahora.getTime() - fechaRadicacionRaw.getTime();
+      tiempoTotalResolucion = Math.round(diffMs / 60000); // en minutos
+    }
+    if (fechaAsignacionRaw instanceof Date && !isNaN(fechaAsignacionRaw.getTime())) {
+      const diffMs = ahora.getTime() - fechaAsignacionRaw.getTime();
+      tiempoGestion = Math.round(diffMs / 60000); // en minutos
+    }
+
     // Escribir gestión en columnas J-N
     hoja.getRange(targetRow, 10, 1, 5).setValues([[
       ahora,                              // J: fechaFinGestion
@@ -132,6 +149,17 @@ function guardarGestionReestudio(datos) {
       datos.motivoNegacion || "",         // M: motivoNegacion
       datos.observaciones || ""           // N: observaciones
     ]]);
+
+    // Escribir tiempos en columnas O-P
+    hoja.getRange(targetRow, 15, 1, 2).setValues([[
+      tiempoTotalResolucion,              // O: tiempo total resolución (radicación → fin)
+      tiempoGestion                       // P: tiempo de gestión (asignación → fin)
+    ]]);
+
+    // Escribir póliza en columna Q si fue proporcionada
+    if (datos.poliza) {
+      hoja.getRange(targetRow, 17).setValue(datos.poliza);
+    }
 
     // Formatear fecha
     hoja.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");

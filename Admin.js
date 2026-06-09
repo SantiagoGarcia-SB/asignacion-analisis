@@ -20,14 +20,26 @@ function obtenerDatosDashboard() {
 
   let res = {
     sinAsignar: 0,
-    aplazadas: 0,
     gestionadasHoyEquipo: 0,
     activos: 0,
     inactivos: 0,
     listaGestion: [],
     listaSinAsignar: [],
-    listaAplazadas: [],
-    listaGestionadasHoy: []
+    listaGestionadasHoy: [],
+    // Desglose por tipo para las 3 tarjetas principales
+    desglose: {
+      sinAsignar: { digital: 0, biometria: 0, induccion: 0, uar: 0, reestudios: 0 },
+      enGestion: { digital: 0, biometria: 0, induccion: 0, uar: 0, reestudios: 0 },
+      gestionadasHoy: { digital: 0, biometria: 0, induccion: 0, uar: 0, reestudios: 0 }
+    },
+    reestudios: {
+      sinAsignar: 0,
+      pendientes: 0,
+      gestionadasHoy: 0,
+      listaGestionadasHoy: [],
+      listaPendientes: [],
+      listaSinAsignar: []
+    }
   };
 
   const hojaUser = ss.getSheetByName("Usuarios");
@@ -53,33 +65,30 @@ function obtenerDatosDashboard() {
 
     if (solicitudId === "") continue;
 
-    // Determinar tipo visual
+    // Clasificación hoja solicitud: biometria > induccion > digital
     let tipoVisual = 'digital';
     if (estado.includes('BIOMETRIA')) tipoVisual = 'biometria';
-    else if (tipo.includes('INDUCCI') || tipo === 'IND') tipoVisual = 'induccion';
+    else if (tipo === 'INDUCCION') tipoVisual = 'induccion';
 
     // Contar gestionadas hoy por todo el equipo
     if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
       res.gestionadasHoyEquipo++;
+      res.desglose.gestionadasHoy[tipoVisual]++;
       res.listaGestionadasHoy.push({ id: solicitudId, poliza: poliza, estado: estado, asesor: asesorNombre, tipo: tipoVisual });
     }
 
     // Sin asignar = no tiene analista y no tiene fecha fin
     if (asignado === "" && fechaFin === "") {
       res.sinAsignar++;
+      res.desglose.sinAsignar[tipoVisual]++;
       if (res.listaSinAsignar.length < 50) {
         res.listaSinAsignar.push({ id: solicitudId, poliza: poliza, tipo: tipoVisual });
       }
     }
 
-    // Aplazadas = tiene estado APLAZADA y no tiene fecha fin
-    if (estado.includes("APLAZ") && fechaFin === "") {
-      res.aplazadas++;
-      res.listaAplazadas.push({ id: solicitudId, poliza: poliza, asesor: asesorNombre, tipo: tipoVisual });
-    }
-
-    // Lista de monitoreo: solicitudes asignadas sin terminar
+    // Lista de monitoreo: solicitudes asignadas sin terminar (= en gestión)
     if (!estado.includes("APROB") && !estado.includes("NEGAD") && asignado !== "" && fechaFin === "") {
+      res.desglose.enGestion[tipoVisual]++;
       res.listaGestion.push({
         id: solicitudId,
         poliza: poliza,
@@ -90,6 +99,87 @@ function obtenerDatosDashboard() {
       });
     }
   }
+
+  // --- REESTUDIOS: Leer datos de la hoja ORIGEN ---
+  try {
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getDisplayValues();
+        for (let i = 0; i < dataReest.length; i++) {
+          const solicitud = String(dataReest[i][1]).trim();         // col B
+          const origen = String(dataReest[i][3]).trim();            // col D
+          const tipoProceso = String(dataReest[i][4]).trim();       // col E
+          const claseSolicitud = String(dataReest[i][5]).trim();    // col F
+          const analistaEmail = String(dataReest[i][6]).trim();     // col G
+          const nombreAnalista = String(dataReest[i][7]).trim();    // col H
+          const fechaAsignacion = String(dataReest[i][8]).trim();   // col I
+          const fechaFin = String(dataReest[i][9]).trim();          // col J
+          const estadoGestion = String(dataReest[i][10]).trim();    // col K
+
+          if (solicitud === "") continue;
+
+          // Clasificación hoja ORIGEN:
+          // UAR = origen es "CORREO" Y tipoDeProceso incluye "Adicional" o "Nueva"
+          // Reestudios = todo lo demás
+          const origenUpper = origen.toUpperCase();
+          const tipoUpper = tipoProceso.toUpperCase();
+          const esUarReest = origenUpper === "CORREO" && (tipoUpper.includes("ADICIONAL") || tipoUpper.includes("NUEVA"));
+          const tipoDesglose = esUarReest ? 'uar' : 'reestudios';
+
+          // Sin asignar (no tiene analista asignado)
+          if (analistaEmail === "" && fechaFin === "") {
+            res.reestudios.sinAsignar++;
+            res.sinAsignar++;
+            res.desglose.sinAsignar[tipoDesglose]++;
+            if (res.reestudios.listaSinAsignar.length < 50) {
+              res.reestudios.listaSinAsignar.push({
+                id: solicitud, origen: origen, tipo: tipoProceso
+              });
+            }
+          }
+
+          // Pendientes (asignadas sin gestionar = en gestión)
+          if (analistaEmail !== "" && fechaAsignacion !== "" && fechaFin === "") {
+            res.reestudios.pendientes++;
+            res.desglose.enGestion[tipoDesglose]++;
+            if (res.reestudios.listaPendientes.length < 50) {
+              res.reestudios.listaPendientes.push({
+                id: solicitud, origen: origen, tipo: tipoProceso, asesor: nombreAnalista
+              });
+            }
+            // También agregar al monitoreo general
+            res.listaGestion.push({
+              id: solicitud,
+              poliza: origen,
+              estado: "EN GESTIÓN",
+              correo: analistaEmail,
+              asesor: nombreAnalista,
+              tipo: 'reestudio'
+            });
+          }
+
+          // Gestionadas hoy
+          if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
+            res.reestudios.gestionadasHoy++;
+            res.gestionadasHoyEquipo++;
+            res.desglose.gestionadasHoy[tipoDesglose]++;
+            res.reestudios.listaGestionadasHoy.push({
+              id: solicitud, origen: origen, estado: estadoGestion, asesor: nombreAnalista
+            });
+            res.listaGestionadasHoy.push({
+              id: solicitud, poliza: origen, estado: estadoGestion, asesor: nombreAnalista, tipo: 'reestudio'
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: No se pudo leer hoja de reestudios para dashboard: " + e.message);
+  }
+
   return res;
 }
 
@@ -103,7 +193,7 @@ function admin_obtenerUsuariosGestion() {
     const datos = hoja.getDataRange().getValues();
     datos.shift(); 
 
-    // Count current load per analyst from solicitudes
+    // Count current load per analyst from solicitudes + reestudios
     const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
     const dataSol = hojaSol.getDataRange().getValues();
     const cargaPorAnalista = {};
@@ -114,6 +204,27 @@ function admin_obtenerUsuariosGestion() {
       if (asignado && fechaFin === "") {
         cargaPorAnalista[asignado] = (cargaPorAnalista[asignado] || 0) + 1;
       }
+    }
+
+    // También contar carga de reestudios
+    try {
+      const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (hojaReest) {
+        const lastRowR = hojaReest.getLastRow();
+        if (lastRowR > 1) {
+          const dataReest = hojaReest.getRange(2, 7, lastRowR - 1, 4).getValues(); // G, H, I, J
+          for (let i = 0; i < dataReest.length; i++) {
+            const asignado = String(dataReest[i][0]).toLowerCase().trim();
+            const fechaFin = String(dataReest[i][3]).trim();
+            if (asignado && fechaFin === "") {
+              cargaPorAnalista[asignado] = (cargaPorAnalista[asignado] || 0) + 1;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      Logger.log("Aviso: No se pudo contar carga de reestudios: " + e.message);
     }
     
     return datos.map((fila, index) => {
@@ -256,6 +367,45 @@ function desasignarSolicitud(idSolicitud){
   } catch(e){ return { success: false, message: e.message }; }
 }
 
+/**
+ * Desasigna una solicitud de reestudio/UAR, devolviéndola a la cola.
+ * Limpia las columnas G (analista), H (nombre), I (fecha asignación) de la hoja ORIGEN.
+ * @param {string} idSolicitud - Número de la solicitud a desasignar
+ * @returns {Object} { success, message }
+ */
+function desasignarSolicitudReestudios(idSolicitud) {
+  try {
+    verificarPermisoAdmin();
+    idSolicitud = String(idSolicitud || "").trim();
+    if (!idSolicitud) return { success: false, message: "ID de solicitud no proporcionado." };
+
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hoja = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
+
+    const lastRow = hoja.getLastRow();
+    if (lastRow < 2) return { success: false, message: "La hoja está vacía." };
+
+    const colB = hoja.getRange(2, 2, lastRow - 1, 1).getDisplayValues();
+    for (let i = 0; i < colB.length; i++) {
+      if (String(colB[i][0]).trim() === idSolicitud) {
+        const fila = i + 2;
+        // Verificar que no esté ya gestionada (col J no vacía)
+        const fechaFin = String(hoja.getRange(fila, 10).getDisplayValue()).trim();
+        if (fechaFin !== "") {
+          return { success: false, message: "No se puede desasignar: la solicitud ya fue gestionada." };
+        }
+        // Limpiar asignación: G (analista), H (nombre), I (fecha asignación)
+        hoja.getRange(fila, 7, 1, 3).clearContent();
+        return { success: true, message: "Solicitud de reestudio desasignada y devuelta a la cola." };
+      }
+    }
+    return { success: false, message: "Solicitud no encontrada en la hoja de reestudios." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
 function getHojaSolicitudes_() {
   return SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID).getSheetByName(SHEET_NAME_SOLICITUDES);
 }
@@ -292,6 +442,202 @@ function admin_desactivarTodosAsesores() {
 
 
 // ===================================================================
+// ASESORES ACTIVOS CON PRIMER RESULTADO DEL DÍA
+// ===================================================================
+
+/**
+ * Obtiene la lista de asesores activos con la hora de su primer resultado del día.
+ * Permite identificar si ya empezaron a trabajar o aún no han emitido resultado.
+ * Incluye asesores con cualquier estado distinto de INACTIVO para ver su estado real.
+ * @returns {Array<Object>} Lista con nombre, correo, estado y hora del primer resultado hoy.
+ */
+function admin_obtenerAsesoresActivosPrimerResultado(fechaFiltro) {
+  verificarPermisoAdmin();
+
+  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const hojaUser = ss.getSheetByName("Usuarios");
+  const dataUser = hojaUser.getDataRange().getValues();
+
+  const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  const dataSol = hojaSol.getDataRange().getDisplayValues();
+
+  // Si se recibe fecha en formato yyyy-MM-dd, convertir a dd/MM/yyyy; si no, usar hoy
+  const hoyRealStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
+  let fechaStr;
+  if (fechaFiltro && /^\d{4}-\d{2}-\d{2}$/.test(fechaFiltro)) {
+    const partesFecha = fechaFiltro.split("-");
+    fechaStr = partesFecha[2] + "/" + partesFecha[1] + "/" + partesFecha[0];
+  } else {
+    fechaStr = hoyRealStr;
+  }
+
+  const esHoy = (fechaStr === hoyRealStr);
+
+  // Construir mapas por correo
+  const primerResultadoMap = {};
+  const ultimoResultadoMap = {};
+  const gestionadasMap = {};   // correo -> gestionadas en la fecha
+  const pendientesMap = {};    // correo -> pendientes actuales (solo si es hoy)
+  const asignadasFechaMap = {}; // correo -> asignadas en la fecha (solo si es histórico)
+  const tiemposGestionMap = {};  // correo -> array de minutos de gestión
+  const tiemposGeneralMap = {};  // correo -> array de horas hábiles generales
+
+  for (let i = 1; i < dataSol.length; i++) {
+    const asignado = String(dataSol[i][27] || "").toLowerCase().trim();
+    const fechaFinRaw = String(dataSol[i][28] || "").trim();
+    const fechaAsignacion = String(dataSol[i][26] || "").trim();
+    const tiempoGestionVal = String(dataSol[i][34] || "").trim();
+    const tiempoGeneralVal = String(dataSol[i][36] || "").trim();
+
+    if (!asignado) continue;
+
+    if (esHoy) {
+      if (fechaAsignacion !== "" && fechaFinRaw === "") {
+        pendientesMap[asignado] = (pendientesMap[asignado] || 0) + 1;
+      }
+    } else {
+      if (fechaAsignacion && fechaAsignacion.includes(fechaStr)) {
+        asignadasFechaMap[asignado] = (asignadasFechaMap[asignado] || 0) + 1;
+      }
+    }
+
+    // Gestionadas en la fecha y horas primer/último resultado
+    if (fechaFinRaw && fechaFinRaw.includes(fechaStr)) {
+      gestionadasMap[asignado] = (gestionadasMap[asignado] || 0) + 1;
+
+      // Acumular tiempos para promedios
+      const tg = parseFloat(tiempoGestionVal);
+      if (!isNaN(tg) && tg > 0) {
+        if (!tiemposGestionMap[asignado]) tiemposGestionMap[asignado] = [];
+        tiemposGestionMap[asignado].push(tg);
+      }
+      const tGen = parseFloat(tiempoGeneralVal);
+      if (!isNaN(tGen) && tGen > 0) {
+        if (!tiemposGeneralMap[asignado]) tiemposGeneralMap[asignado] = [];
+        tiemposGeneralMap[asignado].push(tGen);
+      }
+
+      const partes = fechaFinRaw.split(" ");
+      const hora = partes.length > 1 ? partes[1] : "";
+      if (hora) {
+        if (!primerResultadoMap[asignado] || hora < primerResultadoMap[asignado]) {
+          primerResultadoMap[asignado] = hora;
+        }
+        if (!ultimoResultadoMap[asignado] || hora > ultimoResultadoMap[asignado]) {
+          ultimoResultadoMap[asignado] = hora;
+        }
+      }
+    }
+  }
+
+  // Incluir actividad de reestudios
+  try {
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const dataReest = hojaReest.getRange(2, 7, lastRowR - 1, 10).getDisplayValues(); // G-P (10 cols)
+        for (let i = 0; i < dataReest.length; i++) {
+          const asignado = String(dataReest[i][0]).trim().toLowerCase();  // G
+          const fechaAsig = String(dataReest[i][2]).trim();               // I
+          const fechaFinRaw = String(dataReest[i][3]).trim();             // J
+          const tiempoTotalReest = String(dataReest[i][8] || "").trim();  // O (radicación→fin, minutos)
+          const tiempoGestionReest = String(dataReest[i][9] || "").trim(); // P (asignación→fin, minutos)
+
+          if (!asignado) continue;
+
+          if (esHoy) {
+            if (fechaAsig !== "" && fechaFinRaw === "") {
+              pendientesMap[asignado] = (pendientesMap[asignado] || 0) + 1;
+            }
+          } else {
+            if (fechaAsig && fechaAsig.includes(fechaStr)) {
+              asignadasFechaMap[asignado] = (asignadasFechaMap[asignado] || 0) + 1;
+            }
+          }
+
+          // Gestionadas en la fecha reestudios
+          if (fechaFinRaw && fechaFinRaw.includes(fechaStr)) {
+            gestionadasMap[asignado] = (gestionadasMap[asignado] || 0) + 1;
+
+            // Acumular tiempos de reestudios (ambos están en minutos)
+            const tgReest = parseFloat(tiempoGestionReest);
+            if (!isNaN(tgReest) && tgReest > 0) {
+              if (!tiemposGestionMap[asignado]) tiemposGestionMap[asignado] = [];
+              tiemposGestionMap[asignado].push(tgReest);
+            }
+            const tGenReest = parseFloat(tiempoTotalReest);
+            if (!isNaN(tGenReest) && tGenReest > 0) {
+              if (!tiemposGeneralMap[asignado]) tiemposGeneralMap[asignado] = [];
+              // Convertir minutos a horas para consistencia con solicitudes
+              tiemposGeneralMap[asignado].push(Number((tGenReest / 60).toFixed(2)));
+            }
+
+            const partes = fechaFinRaw.split(" ");
+            const hora = partes.length > 1 ? partes[1] : "";
+            if (hora) {
+              if (!primerResultadoMap[asignado] || hora < primerResultadoMap[asignado]) {
+                primerResultadoMap[asignado] = hora;
+              }
+              if (!ultimoResultadoMap[asignado] || hora > ultimoResultadoMap[asignado]) {
+                ultimoResultadoMap[asignado] = hora;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: No se incluyeron reestudios en seguimiento: " + e.message);
+  }
+
+  // Filtrar asesores que NO estén INACTIVO
+  const resultado = [];
+  for (let j = 1; j < dataUser.length; j++) {
+    const estadoUser = String(dataUser[j][5] || "").toUpperCase().trim();
+    if (estadoUser === "INACTIVO" || estadoUser === "") continue;
+
+    const correo = String(dataUser[j][2] || "").toLowerCase().trim();
+    const nombre = String(dataUser[j][1] || "").trim();
+    const especialidad = String(dataUser[j][4] || "").trim();
+
+    // Calcular promedios de tiempo
+    const arrGestion = tiemposGestionMap[correo] || [];
+    const arrGeneral = tiemposGeneralMap[correo] || [];
+    const promedioGestion = arrGestion.length > 0
+      ? Number((arrGestion.reduce(function(a, b) { return a + b; }, 0) / arrGestion.length).toFixed(1))
+      : null;
+    const promedioGeneral = arrGeneral.length > 0
+      ? Number((arrGeneral.reduce(function(a, b) { return a + b; }, 0) / arrGeneral.length).toFixed(2))
+      : null;
+
+    resultado.push({
+      nombre: nombre,
+      correo: correo,
+      estado: estadoUser,
+      especialidad: especialidad,
+      gestionadas: gestionadasMap[correo] || 0,
+      pendientes: esHoy ? (pendientesMap[correo] || 0) : (asignadasFechaMap[correo] || 0),
+      primerResultado: primerResultadoMap[correo] || null,
+      ultimoResultado: ultimoResultadoMap[correo] || null,
+      promedioGestion: promedioGestion,
+      promedioGeneral: promedioGeneral
+    });
+  }
+
+  // Ordenar: primero los que NO tienen resultado (null), luego por hora ascendente
+  resultado.sort(function(a, b) {
+    if (!a.primerResultado && !b.primerResultado) return a.nombre.localeCompare(b.nombre);
+    if (!a.primerResultado) return -1;
+    if (!b.primerResultado) return 1;
+    return a.primerResultado.localeCompare(b.primerResultado);
+  });
+
+  return { esHoy: esHoy, fecha: fechaStr, datos: resultado };
+}
+
+// ===================================================================
 // MÓDULO DE MÉTRICAS - Backend
 // ===================================================================
 
@@ -313,7 +659,27 @@ function parseFechaDDMMYYYY(fechaStr) {
 }
 
 /**
+ * Convierte string "dd/MM/yyyy" o "dd/MM/yyyy HH:mm:ss" a Date completo.
+ * Retorna null si no se puede parsear.
+ */
+function parseFechaCompleta_(fechaStr) {
+  if (!fechaStr || typeof fechaStr !== 'string') return null;
+  const partes = fechaStr.trim().split(/[\s\/\:]+/);
+  if (partes.length < 3) return null;
+  const dia = parseInt(partes[0], 10);
+  const mes = parseInt(partes[1], 10) - 1;
+  const anio = parseInt(partes[2], 10);
+  const hora = partes.length > 3 ? parseInt(partes[3], 10) : 0;
+  const min = partes.length > 4 ? parseInt(partes[4], 10) : 0;
+  const seg = partes.length > 5 ? parseInt(partes[5], 10) : 0;
+  if (isNaN(dia) || isNaN(mes) || isNaN(anio)) return null;
+  return new Date(anio, mes, dia, hora, min, seg);
+}
+
+/**
  * Obtiene todas las métricas agregadas para el rango de fechas dado.
+ * Fuente principal: hoja "Historico_Gestiones" (registro de todas las solicitudes cerradas).
+ * Fuente complementaria: hoja "ORIGEN" de reestudios/UAR.
  * @param {string} fechaDesde - "dd/MM/yyyy"
  * @param {string} fechaHasta - "dd/MM/yyyy"
  * @returns {Object} Objeto con métricas consolidadas
@@ -322,8 +688,8 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
   verificarPermisoAdmin();
 
   const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-  const hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
-  if (!hoja) throw new Error("No se pudo acceder a la hoja de solicitudes.");
+  const hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja) throw new Error("No se pudo acceder a la hoja Historico_Gestiones.");
 
   const data = hoja.getDataRange().getDisplayValues();
   
@@ -338,6 +704,8 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
   let totalGestionadas = 0;
   let sumaTiempos = 0;
   let countTiempos = 0;
+  let sumaTiemposGeneral = 0;
+  let countTiemposGeneral = 0;
   let aprobadas = 0;
   let negadas = 0;
   let aplazadas = 0;
@@ -345,7 +713,7 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
 
   const produccionMap = {};  // fecha -> cantidad
   const slaMap = {};         // fecha -> { dentro, fuera }
-  const analistaMap = {};    // nombre -> { total, aprobadas, negadas, aplazadas, sumaTiempo, countTiempo, fueraSLA }
+  const analistaMap = {};    // nombre -> { total, aprobadas, negadas, aplazadas, sumaTiempo, countTiempo, sumaTiempoGeneral, countTiempoGeneral, fueraSLA }
 
   for (let i = 1; i < data.length; i++) {
     const fila = data[i];
@@ -366,16 +734,35 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
     const tiempoGestionRaw = String(fila[34] || "").trim();
     const slaHorasRaw = String(fila[29] || "").trim();
 
+    // Tiempo general: calcular desde fechaDiligenciadaRadicación (col 38, idx 37) o fechaRadicación (col 18, idx 17) hasta fecha fin gestión (col 29, idx 28)
+    const fechaDiligenciadaStr = String(fila[37] || "").trim();
+    const fechaRadStr = fechaDiligenciadaStr || String(fila[17] || "").trim();
+    const fechaFinStr = String(fila[28] || "").trim();
+    let tiempoGeneralHoras = 0;
+    if (fechaRadStr && fechaFinStr) {
+      const fechaRad = parseFechaCompleta_(fechaRadStr);
+      const fechaFin = parseFechaCompleta_(fechaFinStr);
+      if (fechaRad && fechaFin && fechaFin > fechaRad) {
+        tiempoGeneralHoras = (fechaFin.getTime() - fechaRad.getTime()) / (1000 * 60 * 60);
+      }
+    }
+
     // Estado
     if (estado.includes("APROB")) aprobadas++;
     else if (estado.includes("NEGAD") || estado.includes("RECHAZ")) negadas++;
     else if (estado.includes("APLAZ")) aplazadas++;
 
-    // Tiempo de gestión
+    // Tiempo de gestión (minutos)
     const tiempoGestion = parseFloat(tiempoGestionRaw);
     if (!isNaN(tiempoGestion) && tiempoGestion >= 0) {
       sumaTiempos += tiempoGestion;
       countTiempos++;
+    }
+
+    // Tiempo general (horas desde radicación hasta cierre)
+    if (tiempoGeneralHoras > 0) {
+      sumaTiemposGeneral += tiempoGeneralHoras;
+      countTiemposGeneral++;
     }
 
     // SLA
@@ -397,7 +784,7 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
 
     // Por analista
     if (!analistaMap[nombre]) {
-      analistaMap[nombre] = { total: 0, aprobadas: 0, negadas: 0, aplazadas: 0, sumaTiempo: 0, countTiempo: 0, fueraSLA: 0 };
+      analistaMap[nombre] = { total: 0, aprobadas: 0, negadas: 0, aplazadas: 0, sumaTiempo: 0, countTiempo: 0, sumaTiempoGeneral: 0, countTiempoGeneral: 0, fueraSLA: 0 };
     }
     const a = analistaMap[nombre];
     a.total++;
@@ -405,11 +792,77 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
     else if (estado.includes("NEGAD") || estado.includes("RECHAZ")) a.negadas++;
     else if (estado.includes("APLAZ")) a.aplazadas++;
     if (!isNaN(tiempoGestion) && tiempoGestion >= 0) { a.sumaTiempo += tiempoGestion; a.countTiempo++; }
+    if (tiempoGeneralHoras > 0) { a.sumaTiempoGeneral += tiempoGeneralHoras; a.countTiempoGeneral++; }
     if (!isNaN(slaHoras) && slaHoras > 4) a.fueraSLA++;
+  }
+
+  // --- INCLUIR GESTIONES DE REESTUDIOS EN MÉTRICAS ---
+  try {
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 16).getDisplayValues(); // A-P (16 cols)
+        for (let i = 0; i < dataReest.length; i++) {
+          const fechaFinStr = String(dataReest[i][9]).trim(); // col J - fechaFinGestion
+          if (!fechaFinStr) continue;
+
+          // Extraer solo la fecha (formato dd/MM/yyyy HH:mm:ss → dd/MM/yyyy)
+          const fechaParte = fechaFinStr.split(' ')[0];
+          const fechaGestion = parseFechaDDMMYYYY(fechaParte);
+          if (!fechaGestion) continue;
+          if (fechaGestion < desde || fechaGestion > hasta) continue;
+
+          totalGestionadas++;
+          const estadoR = String(dataReest[i][10]).toUpperCase().trim(); // col K
+          const nombreR = String(dataReest[i][7] || "Sin nombre").trim(); // col H
+          const tiempoTotalReest = String(dataReest[i][14] || "").trim(); // col O - tiempo total (radicación→fin, minutos)
+          const tiempoGestionReest = String(dataReest[i][15] || "").trim(); // col P - tiempo gestión (asignación→fin, minutos)
+
+          if (estadoR.includes("APROB")) aprobadas++;
+          else if (estadoR.includes("NEGAD") || estadoR.includes("RECHAZ")) negadas++;
+          else if (estadoR.includes("APLAZ")) aplazadas++;
+
+          // Tiempo de gestión reestudios (en minutos)
+          const tgReest = parseFloat(tiempoGestionReest);
+          if (!isNaN(tgReest) && tgReest > 0) {
+            sumaTiempos += tgReest;
+            countTiempos++;
+          }
+
+          // Tiempo general reestudios (en minutos → convertir a horas para consistencia)
+          const tGenReest = parseFloat(tiempoTotalReest);
+          if (!isNaN(tGenReest) && tGenReest > 0) {
+            sumaTiemposGeneral += tGenReest / 60;
+            countTiemposGeneral++;
+          }
+
+          // Producción diaria
+          if (!produccionMap[fechaParte]) produccionMap[fechaParte] = 0;
+          produccionMap[fechaParte]++;
+
+          // Por analista
+          if (!analistaMap[nombreR]) {
+            analistaMap[nombreR] = { total: 0, aprobadas: 0, negadas: 0, aplazadas: 0, sumaTiempo: 0, countTiempo: 0, sumaTiempoGeneral: 0, countTiempoGeneral: 0, fueraSLA: 0 };
+          }
+          const aR = analistaMap[nombreR];
+          aR.total++;
+          if (estadoR.includes("APROB")) aR.aprobadas++;
+          else if (estadoR.includes("NEGAD") || estadoR.includes("RECHAZ")) aR.negadas++;
+          else if (estadoR.includes("APLAZ")) aR.aplazadas++;
+          if (!isNaN(tgReest) && tgReest > 0) { aR.sumaTiempo += tgReest; aR.countTiempo++; }
+          if (!isNaN(tGenReest) && tGenReest > 0) { aR.sumaTiempoGeneral += tGenReest / 60; aR.countTiempoGeneral++; }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: No se incluyeron reestudios en métricas: " + e.message);
   }
 
   // Calcular métricas finales
   const tiempoPromedioMinutos = countTiempos > 0 ? Math.round((sumaTiempos / countTiempos) * 10) / 10 : 0;
+  const tiempoPromedioGeneralHoras = countTiemposGeneral > 0 ? Number((sumaTiemposGeneral / countTiemposGeneral).toFixed(2)) : 0;
   const tasaAprobacion = totalGestionadas > 0 ? Math.round((aprobadas / totalGestionadas) * 1000) / 10 : 0;
 
   // Producción diaria ordenada cronológicamente
@@ -433,6 +886,7 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
         negadas: a.negadas,
         aplazadas: a.aplazadas,
         tiempoPromedio: a.countTiempo > 0 ? Math.round((a.sumaTiempo / a.countTiempo) * 10) / 10 : 0,
+        tiempoPromedioGeneral: a.countTiempoGeneral > 0 ? Number((a.sumaTiempoGeneral / a.countTiempoGeneral).toFixed(2)) : 0,
         fueraSLA: a.fueraSLA
       };
     })
@@ -441,11 +895,317 @@ function obtenerDatosMetricas(fechaDesde, fechaHasta) {
   return {
     totalGestionadas: totalGestionadas,
     tiempoPromedioMinutos: tiempoPromedioMinutos,
+    tiempoPromedioGeneralHoras: tiempoPromedioGeneralHoras,
     tasaAprobacion: tasaAprobacion,
     fueraDeSLA: fueraDeSLA,
     produccionDiaria: produccionDiaria,
     distribucionEstados: { aprobadas: aprobadas, negadas: negadas, aplazadas: aplazadas },
     porAnalista: porAnalista,
     slaDiario: slaDiario
+  };
+}
+
+
+/**
+ * Busca una solicitud por su ID en ambas hojas (solicitud + ORIGEN reestudios).
+ * Retorna el estado completo de la solicitud encontrada.
+ *
+ * @param {string} idSolicitud - Número de solicitud a buscar
+ * @returns {Object} { success, fuente, datos }
+ */
+function admin_buscarSolicitud(idSolicitud) {
+  verificarPermisoAdmin();
+
+  idSolicitud = String(idSolicitud || "").trim();
+  if (!idSolicitud) return { success: false, message: "Ingresa un número de solicitud." };
+
+  // 1. Buscar en hoja "solicitud" (principal)
+  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (hojaSol) {
+    const lastRow = hojaSol.getLastRow();
+    if (lastRow > 1) {
+      const colA = hojaSol.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+      for (let i = 0; i < colA.length; i++) {
+        if (String(colA[i][0]).trim() === idSolicitud) {
+          const fila = hojaSol.getRange(i + 2, 1, 1, hojaSol.getLastColumn()).getDisplayValues()[0];
+          return {
+            success: true,
+            fuente: "solicitud",
+            datos: {
+              solicitud: fila[0] || "",
+              poliza: fila[1] || "",
+              identificacion: fila[2] || "",
+              tipoIdentificacion: fila[3] || "",
+              nombreInquilino: fila[4] || "",
+              correoInquilino: fila[5] || "",
+              telefonoInquilino: fila[6] || "",
+              ingresos: fila[7] || "",
+              fechaExpedicion: fila[8] || "",
+              canon: fila[9] || "",
+              cuota: fila[10] || "",
+              direccionInmueble: fila[11] || "",
+              destinoInmueble: fila[12] || "",
+              ciudadInmueble: fila[13] || "",
+              nombreAsesor: fila[14] || "",
+              correoAsesor: fila[15] || "",
+              estadoGeneral: fila[16] || "",
+              fechaRadicacion: fila[17] || "",
+              fechaResultado: fila[18] || "",
+              clase: fila[20] || "",
+              uar: fila[21] || "",
+              biometria: fila[23] || "",
+              observaciones: fila[24] || "",
+              fechaAsignacion: fila[26] || "",
+              analistaAsignado: fila[27] || "",
+              fechaFinGestion: fila[28] || "",
+              tiempoResolucion: fila[29] || "",
+              nombreAnalista: fila[30] || "",
+              motivoAplazamiento: fila[31] || "",
+              motivoNegacion: fila[32] || "",
+              fechaGestion: fila[33] || "",
+              tiempoGestion: fila[34] || "",
+              canal: fila[36] || ""
+            }
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Buscar en hoja ORIGEN (reestudios)
+  try {
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const colB = hojaReest.getRange(2, 2, lastRowR - 1, 1).getDisplayValues();
+        for (let i = 0; i < colB.length; i++) {
+          if (String(colB[i][0]).trim() === idSolicitud) {
+            const fila = hojaReest.getRange(i + 2, 1, 1, 16).getDisplayValues()[0];
+            return {
+              success: true,
+              fuente: "reestudios",
+              datos: {
+                fechaRadicacion: fila[0] || "",
+                solicitud: fila[1] || "",
+                linkDrive: fila[2] || "",
+                origen: fila[3] || "",
+                tipoDeProceso: fila[4] || "",
+                claseDeSolicitud: fila[5] || "",
+                analistaAsignado: fila[6] || "",
+                nombreAnalista: fila[7] || "",
+                fechaAsignacion: fila[8] || "",
+                fechaFinGestion: fila[9] || "",
+                estadoGestion: fila[10] || "",
+                motivoAplazamiento: fila[11] || "",
+                motivoNegacion: fila[12] || "",
+                observaciones: fila[13] || "",
+                tiempoResolucion: fila[14] || "",
+                tiempoGestion: fila[15] || ""
+              }
+            };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("Error buscando en reestudios: " + e.message);
+  }
+
+  return { success: false, message: "Solicitud '" + idSolicitud + "' no encontrada en ninguna base de datos." };
+}
+
+
+/**
+ * Obtiene el detalle de solicitudes gestionadas y pendientes de un analista específico (hoy).
+ * Busca en ambas hojas (solicitud + ORIGEN).
+ *
+/**
+ * Obtiene el detalle de solicitudes de un analista para una fecha específica.
+ * @param {string} correoAnalista - Email del analista
+ * @param {string} fechaFiltro - Fecha en formato yyyy-MM-dd (opcional, default: hoy)
+ * @returns {Object} { success, nombre, correo, esHoy, fecha, gestionadas: [...], pendientes: [...] }
+ */
+function admin_obtenerDetallePorAnalista(correoAnalista, fechaFiltro) {
+  verificarPermisoAdmin();
+
+  correoAnalista = String(correoAnalista || "").toLowerCase().trim();
+  if (!correoAnalista) return { success: false, message: "Correo no proporcionado." };
+
+  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  const dataSol = hojaSol.getDataRange().getDisplayValues();
+
+  const hoyRealStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
+  let fechaStr;
+  if (fechaFiltro && /^\d{4}-\d{2}-\d{2}$/.test(fechaFiltro)) {
+    const partesFecha = fechaFiltro.split("-");
+    fechaStr = partesFecha[2] + "/" + partesFecha[1] + "/" + partesFecha[0];
+  } else {
+    fechaStr = hoyRealStr;
+  }
+  const esHoy = (fechaStr === hoyRealStr);
+
+  let nombreAnalista = correoAnalista;
+  const hojaUser = ss.getSheetByName("Usuarios");
+  const dataUser = hojaUser.getDataRange().getValues();
+  for (let j = 1; j < dataUser.length; j++) {
+    if (String(dataUser[j][2]).toLowerCase().trim() === correoAnalista) {
+      nombreAnalista = String(dataUser[j][1]).trim();
+      break;
+    }
+  }
+
+  const gestionadas = [];
+  const pendientes = [];
+
+  // Hoja solicitud
+  for (let i = 1; i < dataSol.length; i++) {
+    const asignado = String(dataSol[i][27] || "").toLowerCase().trim();
+    if (asignado !== correoAnalista) continue;
+
+    const solicitudId = String(dataSol[i][0] || "").trim();
+    const poliza = String(dataSol[i][1] || "");
+    const estado = String(dataSol[i][16] || "").toUpperCase();
+    const clase = String(dataSol[i][20] || "").toUpperCase();
+    const fechaAsignacion = String(dataSol[i][26] || "").trim();
+    const fechaFin = String(dataSol[i][28] || "").trim();
+    const tiempoGestion = String(dataSol[i][34] || "").trim();       // minutos brutos (asignación→resultado)
+    const tiempoSLA = String(dataSol[i][29] || "").trim();           // horas hábiles (asignación→resultado)
+    const tiempoGeneral = String(dataSol[i][36] || "").trim();       // horas hábiles (radicación→resultado)
+
+    if (!solicitudId) continue;
+
+    // Tipo
+    let tipo = 'Digital';
+    if (estado.includes('BIOMETRIA')) tipo = 'Biometría';
+    else if (clase === 'INDUCCION') tipo = 'Inducción';
+
+    // Gestionadas: terminadas en la fecha seleccionada
+    if (fechaFin !== "" && fechaFin.includes(fechaStr)) {
+      gestionadas.push({
+        id: solicitudId,
+        poliza: poliza,
+        tipo: tipo,
+        estado: estado,
+        fechaFin: fechaFin,
+        duracion: tiempoGestion,
+        tiempoSLA: tiempoSLA,
+        tiempoGeneral: tiempoGeneral
+      });
+    }
+
+    // Pendientes/Asignadas según modo
+    if (esHoy) {
+      // Hoy: pendientes reales (asignada sin resultado)
+      if (fechaAsignacion !== "" && fechaFin === "") {
+        pendientes.push({
+          id: solicitudId,
+          poliza: poliza,
+          tipo: tipo,
+          estado: estado,
+          fechaAsignacion: fechaAsignacion
+        });
+      }
+    } else {
+      // Histórico: asignadas en esa fecha
+      if (fechaAsignacion && fechaAsignacion.includes(fechaStr)) {
+        pendientes.push({
+          id: solicitudId,
+          poliza: poliza,
+          tipo: tipo,
+          estado: estado,
+          fechaAsignacion: fechaAsignacion
+        });
+      }
+    }
+  }
+
+  // Hoja ORIGEN (reestudios)
+  try {
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 16).getDisplayValues();
+        for (let i = 0; i < dataReest.length; i++) {
+          const asignado = String(dataReest[i][6]).toLowerCase().trim();
+          if (asignado !== correoAnalista) continue;
+
+          const solicitud = String(dataReest[i][1]).trim();
+          const origen = String(dataReest[i][3]).trim();
+          const tipoProceso = String(dataReest[i][4]).trim();
+          const fechaAsig = String(dataReest[i][8]).trim();
+          const fechaFin = String(dataReest[i][9]).trim();
+          const estadoG = String(dataReest[i][10]).trim();
+          const tiempoTotalReest = String(dataReest[i][14] || "").trim(); // col O (radicación→fin, minutos)
+          const tiempoG = String(dataReest[i][15]).trim(); // col P (asignación→fin, minutos)
+
+          if (!solicitud) continue;
+
+          // Tipo
+          const origenUp = origen.toUpperCase();
+          const tipoUp = tipoProceso.toUpperCase();
+          const esUar = origenUp === "CORREO" && (tipoUp.includes("ADICIONAL") || tipoUp.includes("NUEVA"));
+          const tipoLabel = esUar ? 'UAR' : 'Reestudio';
+
+          // Tiempo general en horas para consistencia con hoja solicitudes
+          const tGenMinutos = parseFloat(tiempoTotalReest);
+          const tiempoGeneralReest = (!isNaN(tGenMinutos) && tGenMinutos > 0) ? (tGenMinutos / 60).toFixed(2) : "";
+
+          // Gestionadas: terminadas en la fecha
+          if (fechaFin !== "" && fechaFin.includes(fechaStr)) {
+            gestionadas.push({
+              id: solicitud,
+              poliza: origen,
+              tipo: tipoLabel,
+              estado: estadoG,
+              fechaFin: fechaFin,
+              duracion: tiempoG,
+              tiempoSLA: "",
+              tiempoGeneral: tiempoGeneralReest
+            });
+          }
+
+          // Pendientes/Asignadas según modo
+          if (esHoy) {
+            if (fechaAsig !== "" && fechaFin === "") {
+              pendientes.push({
+                id: solicitud,
+                poliza: origen,
+                tipo: tipoLabel,
+                estado: "En gestión",
+                fechaAsignacion: fechaAsig
+              });
+            }
+          } else {
+            if (fechaAsig && fechaAsig.includes(fechaStr)) {
+              pendientes.push({
+                id: solicitud,
+                poliza: origen,
+                tipo: tipoLabel,
+                estado: estadoG || "En gestión",
+                fechaAsignacion: fechaAsig
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("Error leyendo reestudios para detalle analista: " + e.message);
+  }
+
+  return {
+    success: true,
+    nombre: nombreAnalista,
+    correo: correoAnalista,
+    esHoy: esHoy,
+    fecha: fechaStr,
+    gestionadas: gestionadas,
+    pendientes: pendientes
   };
 }

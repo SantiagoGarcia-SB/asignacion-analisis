@@ -34,6 +34,7 @@ El sistema resuelve la necesidad de **gestionar, asignar y dar trazabilidad** a 
 | Framework CSS | Bootstrap 5.3 |
 | Tablas Interactivas | DataTables 1.13.x |
 | Alertas UI | SweetAlert2 11.x |
+| Gráficos | Chart.js 4.x + chartjs-plugin-datalabels 2.x |
 | Efectos Visuales | Particles.js 2.0 |
 | Fuente | Google Fonts (Manrope) |
 | Iconografía | Bootstrap Icons |
@@ -297,6 +298,86 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
 3. **Limpieza automática:** Si la solicitud ya no está pendiente, se elimina de la cola.
 4. **Tipificación:** El analista guarda resultado. Al guardar, se reasigna automáticamente un nuevo caso.
 
+### 4.7 Sistema de Medición de Tiempos
+
+El sistema mide dos tipos de tiempo que reflejan diferentes perspectivas de rendimiento:
+
+| Métrica | Desde | Hasta | Mide | Unidad | Columna (Solicitudes) | Columna (Reestudios) |
+|---------|-------|-------|------|--------|----------------------|---------------------|
+| **Tiempo de Gestión** | Asignación al analista | Resultado/cierre | Eficiencia individual del analista | Minutos brutos | Col AI (35) | Col P (16) |
+| **Tiempo General** | Radicación de la solicitud | Resultado/cierre | Nivel de servicio al cliente (incluye cola de espera) | Horas hábiles* | Col AK (37) | Col O (15)** |
+
+\* En la hoja de solicitudes, el Tiempo General se calcula con `calcularMinutosHabilesSLA()` que excluye noches (fuera de 8am-6pm), fines de semana y festivos.
+
+\** En la hoja de reestudios, el Tiempo General se almacena en minutos brutos y se convierte a horas en los reportes.
+
+**Cálculo del Tiempo General (solicitudes — `guardarCambiosInternos`):**
+```javascript
+const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
+let horasHabilesGeneral = 0;
+if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
+  const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
+  horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
+}
+sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
+```
+
+**Cálculo del Tiempo General (reestudios — `guardarGestionReestudio`):**
+```javascript
+const fechaRadicacionRaw = hoja.getRange(targetRow, 1).getValue();
+if (fechaRadicacionRaw instanceof Date && !isNaN(fechaRadicacionRaw.getTime())) {
+  tiempoTotalResolucion = Math.round((ahora.getTime() - fechaRadicacionRaw.getTime()) / 60000);
+}
+hoja.getRange(targetRow, 15).setValue(tiempoTotalResolucion); // col O
+```
+
+**Dónde se exponen estos tiempos:**
+
+1. **Panel de Seguimiento de Analistas** — columnas "Prom. Gestión" y "Prom. General" por analista
+2. **Modal Detalle del Analista** — columnas "T. Gestión" y "T. General" por solicitud
+3. **Tarjetas KPI de Métricas** — "Tiempo Gestión" (promedio global) y "Tiempo General" (promedio global)
+4. **Tabla Rendimiento Individual** — columnas "T. Gestión" y "T. General" por analista en el período
+
+### 4.8 Panel de Métricas del Equipo (`obtenerDatosMetricas`)
+
+Función backend que consolida KPIs de ambas hojas (solicitudes + reestudios/UAR) para un rango de fechas:
+
+**KPIs calculados:**
+
+| KPI | Fuente | Descripción |
+|-----|--------|-------------|
+| Total Gestionadas | Ambas hojas | Solicitudes cerradas en el período |
+| Tiempo Gestión (promedio) | Col AI solicitudes + Col P reestudios | Promedio de minutos asignación → cierre |
+| Tiempo General (promedio) | Col AK solicitudes + Col O reestudios | Promedio de horas hábiles radicación → cierre |
+| Tasa Aprobación | Ambas hojas | % de solicitudes con estado APROBADO |
+| Fuera de SLA | Col AD solicitudes | Solicitudes con > 4 horas hábiles de gestión |
+
+**Gráficos disponibles (con data labels):**
+
+| Gráfico | Tipo | Datos |
+|---------|------|-------|
+| Producción Diaria | Línea con área | Cantidad de solicitudes cerradas por día |
+| Distribución por Estado | Donut | Aprobadas / Negadas / Aplazadas con porcentaje |
+| Productividad por Analista | Barras horizontales | Top 10 analistas por volumen |
+| Cumplimiento SLA | Barras agrupadas | Dentro de SLA vs Fuera de SLA por día |
+
+**Filtros disponibles:**
+- Rango de fechas libre (desde/hasta)
+- Atajos: Hoy, Última semana, Último mes
+
+### 4.9 Seguimiento de Analistas con Filtro de Fecha
+
+El panel "Seguimiento de Analistas" permite consultar la actividad por fecha (predeterminado: hoy).
+
+**Comportamiento según la fecha seleccionada:**
+
+| Fecha | Columna "Gestionadas" | Columna "Pendientes/Asignadas" | Último Resultado |
+|-------|----------------------|-------------------------------|-----------------|
+| **Hoy** | Solicitudes cerradas hoy | Pendientes actuales (asignadas sin resultado) | Con tiempo transcurrido (verde/amarillo/rojo) |
+| **Fecha pasada** | Solicitudes cerradas ese día | Asignadas ese día | Solo hora (sin tiempo transcurrido) |
+
+**Modal de detalle por analista:** También respeta la fecha seleccionada, mostrando gestionadas y pendientes/asignadas según el contexto temporal.
+
 ---
 
 ## 5. ⏰ Automatizaciones y Procesos en Segundo Plano
@@ -405,16 +486,16 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | AA | 26 | Fecha de asignación |
 | AB | 27 | Email del analista asignado |
 | AC | 28 | Fecha fin de gestión |
-| AD | 29 | Tiempo total de resolución (horas hábiles SLA) |
+| AD | 29 | Tiempo total de resolución (horas hábiles SLA, asignación → cierre) |
 | AE | 30 | Nombre del analista |
 | AF | 31 | Motivo de aplazamiento |
 | AG | 32 | Motivo de negación |
-| AH | 33 | Fecha de gestión (solo día) |
-| AI | 34 | Tiempo de gestión (minutos) |
-| AJ | 35 | Marcador (REASIGNADA) |
-| AK | 36 | Canal |
+| AH | 33 | Fecha de gestión (solo día dd/MM/yyyy) |
+| AI | 34 | Tiempo de gestión (minutos brutos, asignación → cierre) |
+| AJ | 35 | Canal |
+| AK | 36 | Tiempo general — radicación (horas hábiles, radicación → cierre) |
 
-### Estructura de la Hoja "ORIGEN" (Reestudios) — 14 Columnas
+### Estructura de la Hoja "ORIGEN" (Reestudios) — 16 Columnas
 
 | Col | Índice | Campo | Origen |
 |-----|--------|-------|--------|
@@ -432,6 +513,8 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | L | 11 | motivoAplazamiento | Gestión del analista |
 | M | 12 | motivoNegacion | Gestión del analista |
 | N | 13 | observaciones | Gestión del analista |
+| O | 14 | tiempoTotalResolucion (minutos, radicación → cierre) | Cálculo al guardar |
+| P | 15 | tiempoGestion (minutos, asignación → cierre) | Cálculo al guardar |
 
 ### Instrucciones de Despliegue
 
@@ -493,5 +576,5 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 ---
 
 > 📅 **Última actualización:** Junio 2026  
-> 🔄 **Versión:** 2.0  
+> 🔄 **Versión:** 2.1  
 > 📝 **Mantenedor:** Equipo de Desarrollo - El Libertador
