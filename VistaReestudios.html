@@ -328,8 +328,14 @@
                 </h6>
 
                 <div class="row g-3">
+                  <!-- Póliza -->
+                  <div class="col-md-6">
+                    <label><i class="bi bi-shield-check me-1"></i>Póliza</label>
+                    <input type="number" id="d_poliza" class="form-control fw-bold" placeholder="Ej: 483" min="1" step="1">
+                  </div>
+
                   <!-- Estado -->
-                  <div class="col-md-12">
+                  <div class="col-md-6">
                     <label><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión</label>
                     <select id="d_estado_q" class="form-select fw-bold" onchange="actualizarCamposGestion()">
                       <option value="" selected disabled>Seleccione una opción</option>
@@ -711,6 +717,9 @@
       const estado = $('#d_estado_q').val();
       if (!estado) { Swal.fire({ title: 'Atención', text: 'Selecciona un estado de gestión.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
 
+      const poliza = ($('#d_poliza').val() || '').trim();
+      if (!poliza) { Swal.fire({ title: 'Atención', text: 'El campo Póliza es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+
       const estadoUpper = estado.toUpperCase();
       if (estadoUpper.includes('APLAZ') && !$('#d_motivo_aplazamiento').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
       if (estadoUpper.includes('NEGAD') && !$('#d_motivo_negacion').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
@@ -720,7 +729,8 @@
         estadoGestion: estado,
         motivoAplazamiento: $('#d_motivo_aplazamiento').val() || '',
         motivoNegacion: $('#d_motivo_negacion').val() || '',
-        observaciones: $('#d_observaciones').val() || ''
+        observaciones: $('#d_observaciones').val() || '',
+        poliza: ($('#d_poliza').val() || '').trim()
       };
 
       Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });

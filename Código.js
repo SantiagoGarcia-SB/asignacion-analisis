@@ -647,14 +647,14 @@ function guardarCambiosInternos(data) {
       const fechaRadicacionR = sheetReestudios.getRange(targetRowReest, 1).getValue();
       const fechaAsignacionR = sheetReestudios.getRange(targetRowReest, 9).getValue();
 
-      let tiempoTotalResolucion = "";
-      let tiempoGestion = "";
+      let tiempoTotalResolucion = 0;
+      let tiempoGestion = 0;
 
       if (fechaRadicacionR instanceof Date && !isNaN(fechaRadicacionR.getTime())) {
-        tiempoTotalResolucion = Math.round((ahora.getTime() - fechaRadicacionR.getTime()) / 60000); 
+        tiempoTotalResolucion = Number(calcularMinutosHabilesSLA(fechaRadicacionR, ahora, ssOrigen).toFixed(2));
       }
       if (fechaAsignacionR instanceof Date && !isNaN(fechaAsignacionR.getTime())) {
-        tiempoGestion = Math.round((ahora.getTime() - fechaAsignacionR.getTime()) / 60000); 
+        tiempoGestion = Number(((ahora.getTime() - fechaAsignacionR.getTime()) / 60000).toFixed(2));
       }
 
       // Guardar resultados en columnas J hasta P
@@ -927,6 +927,7 @@ function parsearFechaApiSegura(fechaRaw) {
 
 
 function calcularMinutosHabilesSLA(desde, hasta, ss) {
+  // Retorna minutos decimales (ej: 7.10 = 7 min 6 seg)
   if (!(desde instanceof Date) || isNaN(desde.getTime())) return 0;
   if (!(hasta instanceof Date) || isNaN(hasta.getTime())) return 0;
   if (desde > hasta) return 0;
@@ -972,7 +973,7 @@ function calcularMinutosHabilesSLA(desde, hasta, ss) {
       if (hasta < limiteFin) limiteFin = hasta;
     }
     if (limiteInicio < limiteFin) {
-      totalMinutos += Math.round((limiteFin.getTime() - limiteInicio.getTime()) / (1000 * 60));
+      totalMinutos += (limiteFin.getTime() - limiteInicio.getTime()) / (1000 * 60);
     }
   }
 
