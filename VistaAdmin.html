@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <base target="_top">
@@ -36,7 +36,6 @@
 }
 *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
 body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--text-main); overflow-x:hidden; }
-
 #loader-container {
     position:fixed; inset:0; z-index:99999;
     display:flex; align-items:center; justify-content:center;
@@ -45,7 +44,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     background-color: #0b0f19; /* Base oscura premium */
 }
 .loader-hidden { opacity:0 !important; visibility:hidden !important; }
-
 .l-bg {
     position:absolute; inset:0;
     overflow: hidden;
@@ -73,9 +71,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     0% { transform: translate(0, 0) scale(1); }
     100% { transform: translate(8%, 12%) scale(1.15); }
 }
-
 .l-grid { display: none; } 
-
 .l-orb {
     position:absolute; z-index: 2;
     width:320px; height:320px;
@@ -89,7 +85,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     0%,100% { transform:translate(-50%,-50%) scale(1); opacity:0.6; }
     50%      { transform:translate(-50%,-50%) scale(1.3); opacity:1; }
 }
-
 .l-card {
     position:relative; z-index:3;
     display:flex; flex-direction:column; align-items:center;
@@ -108,7 +103,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     from { transform:scale(0.8) translateY(30px); opacity:0; }
     to   { transform:scale(1) translateY(0); opacity:1; }
 }
-
 .l-logo-wrap {
     position:relative;
     width:100px; height:100px;
@@ -137,7 +131,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     animation:lSpin 2.8s linear infinite;
 }
 @keyframes lSpin { to { transform:rotate(360deg); } }
-
 .l-logo-inner {
     width:52px; height:52px;
     background:linear-gradient(135deg, rgba(189,15,20,0.2), rgba(37,49,80,0.3));
@@ -147,7 +140,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     backdrop-filter:blur(8px);
 }
 .l-logo-inner img { width:50px; height:34px; object-fit:contain; filter:brightness(10); }
-
 .l-orbit-dot {
     position:absolute; inset:-8px; border-radius:50%;
     animation:lSpin 3s linear infinite;
@@ -159,7 +151,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     border-radius:50%;
     box-shadow:0 0 12px rgba(189,15,20,0.8), 0 0 24px rgba(189,15,20,0.4);
 }
-
 .l-text { text-align:center; }
 .l-title {
     font-size:1.5rem; font-weight:800; color:white;
@@ -167,7 +158,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 }
 .l-title span { color:var(--rojo-mid); }
 .l-sub { font-size:0.82rem; color:rgba(255,255,255,0.5); font-weight:500; }
-
 .l-bar-wrap {
     width:260px; height:4px;
     background:rgba(255,255,255,0.1);
@@ -186,7 +176,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     60%  { width:70%; }
     100% { width:95%; }
 }
-
 .l-steps { display:flex; gap:20px; align-items:center; }
 .l-step-item {
     display:flex; flex-direction:column; align-items:center; gap:6px;
@@ -227,7 +216,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     box-shadow:0 4px 14px rgba(37,49,80,0.35);
 }
 .brand-name { font-size:1.1rem; font-weight:800; color:var(--text-main); letter-spacing:-0.3px; }
-
 .sidebar-section { padding:18px 12px 4px; }
 .sidebar-label {
     font-size:0.62rem; font-weight:700; text-transform:uppercase;
@@ -251,10 +239,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     margin-left:auto; background:var(--rojo); color:white;
     border-radius:6px; padding:2px 7px; font-size:0.67rem; font-weight:700;
 }
-
-/* ================================================================
-   NAVBAR (ELIMINADO - Perfil movido al sidebar)
-   ================================================================ */
 
 /* ================================================================
    SIDEBAR PROFILE (Footer)
@@ -314,7 +298,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 .main-content { margin-left:var(--sidebar-w); padding:32px 28px 48px; min-height:100vh; }
 .page-title { font-size:2rem; font-weight:800; letter-spacing:-0.5px; color:var(--text-main); }
 .page-sub   { font-size:0.83rem; color:var(--text-muted); margin-top:3px; }
-
 .btn-primary-brand {
     display:flex; align-items:center; gap:6px;
     background:var(--grad-azul); color:white; border:none;
@@ -324,7 +307,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     box-shadow:0 4px 14px rgba(37,49,80,0.35); text-decoration:none;
 }
 .btn-primary-brand:hover { filter:brightness(1.1); transform:translateY(-1px); }
-
 .btn-outline-brand {
     display:flex; align-items:center; gap:6px;
     background:white; color:var(--text-main);
@@ -347,7 +329,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     border:1px solid var(--border);
 }
 .metric-card:hover { transform:translateY(-3px); box-shadow:var(--shadow-md); }
-
 .metric-card.filled {
     background:var(--grad-rojo); border:none;
     box-shadow:0 8px 28px rgba(189,15,20,0.35);
@@ -357,7 +338,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 .metric-card.filled .metric-trend { color:rgba(255,255,255,0.6); }
 .metric-card.filled .card-arrow  { border-color:rgba(255,255,255,0.25); color:rgba(255,255,255,0.7); }
 .metric-card.filled .trend-chip  { background:rgba(255,255,255,0.18); color:white; }
-
 .card-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
 .metric-label { font-size:0.8rem; font-weight:600; color:var(--text-muted); }
 .card-arrow {
@@ -396,7 +376,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 .table-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
 .table-title  { font-size:1rem; font-weight:800; color:var(--text-main); }
 .table-sub    { font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
-
 .table { color:var(--text-main) !important; background:transparent !important; margin-bottom:0 !important; }
 .table > :not(caption) > * > * { background:transparent !important; color:var(--text-main) !important; box-shadow:none !important; }
 .table thead th {
@@ -511,7 +490,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 .modal-footer { border-top:1px solid var(--border); padding:18px 26px; background:var(--bg-page); gap:10px; }
 .modal-body { padding:26px; }
 .modal-body label { font-size:0.79rem; font-weight:700; color:var(--text-main) !important; }
-
 .form-control, .form-select {
     background:var(--bg-page) !important; border:1.5px solid var(--border) !important;
     color:var(--text-main) !important; border-radius:10px !important;
@@ -528,7 +506,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     position:absolute; left:13px; top:50%; transform:translateY(-50%);
     color:var(--text-light); font-size:0.9rem; z-index:5; pointer-events:none;
 }
-
 .btn-modal-primary {
     display:flex; align-items:center; gap:6px;
     background:var(--grad-azul); color:white; border:none;
@@ -545,10 +522,8 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     cursor:pointer; transition:all 0.2s; flex:1; text-align:center;
 }
 .btn-modal-secondary:hover { border-color:var(--azul-mid); color:var(--azul); }
-
 .modal-header-inner.rojo { background:var(--grad-rojo); }
 .modal-header-inner.rojo::before { background:radial-gradient(circle, rgba(37,49,80,0.4), transparent 70%); }
-
 @keyframes fadeUp { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:translateY(0);} }
 
 /* Botón Pánico */
@@ -573,7 +548,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     box-shadow: 0 6px 20px rgba(189, 15, 20, 0.5);
     filter: brightness(1.1);
 }
-
 .seccion-admin { animation:fadeUp 0.3s ease; }
 .metric-card:nth-child(1) { animation:fadeUp 0.35s 0.05s both; }
 .metric-card:nth-child(2) { animation:fadeUp 0.35s 0.10s both; }
@@ -582,9 +556,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 ::-webkit-scrollbar { width:5px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
-
-
-
 </style>
 </head>
 <body>
@@ -643,7 +614,8 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         <a href="#" id="link-usuarios" class="nav-link-admin" onclick="mostrarSeccion('usuarios', event)">
             <i class="bi bi-people-fill"></i> Usuarios
         </a>
-        <a href="#" id="link-metricas" class="nav-link-admin" onclick="mostrarSeccion('metricas', event)">
+        <!-- REDIRECCIÓN EXTERNA SEGURA AL NUEVO SCRIPT -->
+        <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
             <i class="bi bi-bar-chart-line-fill"></i> Métricas
         </a>
     </div>
@@ -656,10 +628,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     </div>
 </div>
 
-
-
 <div class="main-content">
-
     <div id="seccion-dashboard" class="seccion-admin">
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="page-title">Dashboard</h1>
@@ -675,7 +644,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                 <i class="bi bi-mortarboard"></i> Inducciones
             </button>
         </div>
-        <button class="btn-panic-premium" onclick="ejecutarPanicoGlobal()">
+        <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()">
             <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
         </button>
         <button class="btn-outline-brand" onclick="refrescarDashboard()">
@@ -686,7 +655,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         </button>
     </div>
 </div>
-
         <div class="metrics-row">
             <div class="metric-card filled" style="cursor:pointer;" onclick="verDetalleTarjeta('sinAsignar')">
                 <div class="card-top">
@@ -723,7 +691,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                 </div>
             </div>
         </div>
-
         <div class="table-container" style="margin-bottom:20px;padding:20px 28px;">
             <div class="d-flex align-items-center gap-3">
                 <div class="d-flex align-items-center gap-2 flex-grow-1" style="position:relative;">
@@ -738,7 +705,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </div>
             <div id="resultadoBusqueda" style="display:none;margin-top:16px;"></div>
         </div>
-
         <div class="table-container">
             <div class="table-header">
                 <div>
@@ -771,7 +737,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </div>
         </div>
     </div>
-
     <div id="seccion-usuarios" class="seccion-admin" style="display:none;">
         <div class="d-flex justify-content-between align-items-start mb-4">
             <div>
@@ -806,174 +771,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </div>
         </div>
     </div>
-
-    <!-- SECCIÓN MÉTRICAS -->
-    <div id="seccion-metricas" class="seccion-admin" style="display:none;">
-        <div class="d-flex justify-content-between align-items-start mb-4">
-            <div>
-                <h1 class="page-title">Métricas del Equipo</h1>
-                <p class="page-sub">Rendimiento, tiempos de respuesta y cumplimiento de SLA</p>
-            </div>
-            <button class="btn-outline-brand" onclick="cargarMetricas()">
-                <i class="bi bi-arrow-clockwise"></i> Actualizar
-            </button>
-        </div>
-
-        <!-- Filtros de fecha -->
-        <div class="d-flex flex-wrap align-items-center gap-3 mb-4 p-3 bg-white rounded-4 border" style="border-color:var(--border);">
-            <div class="d-flex align-items-center gap-2">
-                <label style="font-size:0.78rem;font-weight:700;color:var(--text-muted);">Desde</label>
-                <input type="date" id="metricaDesde" class="form-control" style="width:auto;padding:6px 12px !important;font-size:0.8rem;">
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <label style="font-size:0.78rem;font-weight:700;color:var(--text-muted);">Hasta</label>
-                <input type="date" id="metricaHasta" class="form-control" style="width:auto;padding:6px 12px !important;font-size:0.8rem;">
-            </div>
-            <button class="btn-primary-brand" onclick="aplicarFiltroFechas()" style="border-radius:10px;padding:8px 18px;">
-                <i class="bi bi-funnel"></i> Aplicar
-            </button>
-            <div class="d-flex gap-2 ms-auto">
-                <button class="btn-outline-brand" onclick="setRangoRapido('hoy')" style="padding:6px 14px;font-size:0.75rem;">Hoy</button>
-                <button class="btn-outline-brand" onclick="setRangoRapido('semana')" style="padding:6px 14px;font-size:0.75rem;">Última semana</button>
-                <button class="btn-outline-brand" onclick="setRangoRapido('mes')" style="padding:6px 14px;font-size:0.75rem;">Último mes</button>
-            </div>
-        </div>
-
-        <!-- Spinner de carga -->
-        <div id="metricasSpinner" class="text-center py-5">
-            <div class="spinner-border" role="status" style="color:var(--rojo);width:3rem;height:3rem;"></div>
-            <p class="mt-3 text-muted fw-bold">Calculando métricas...</p>
-        </div>
-
-        <!-- Contenido de métricas -->
-        <div id="metricasContenido" style="display:none;">
-            <!-- Tarjetas KPI -->
-            <div class="metrics-row metrics-row-5 mb-4">
-                <div class="metric-card">
-                    <div class="card-top"><span class="metric-label">Total Gestionadas</span><div class="card-arrow"><i class="bi bi-clipboard-check"></i></div></div>
-                    <div class="metric-value" id="kpiTotal">0</div>
-                    <div class="metric-trend"><span class="trend-chip">Período</span> Solicitudes cerradas</div>
-                </div>
-                <div class="metric-card">
-                    <div class="card-top"><span class="metric-label">Tiempo Gestión</span><div class="card-arrow"><i class="bi bi-stopwatch"></i></div></div>
-                    <div class="metric-value" id="kpiTiempo">0<span style="font-size:1rem;font-weight:600;"> min</span></div>
-                    <div class="metric-trend"><span class="trend-chip">Promedio</span> Asignación → Cierre</div>
-                </div>
-                <div class="metric-card">
-                    <div class="card-top"><span class="metric-label">Tiempo General</span><div class="card-arrow"><i class="bi bi-clock-history"></i></div></div>
-                    <div class="metric-value" id="kpiTiempoGeneral" style="color:#7c3aed;">0<span style="font-size:1rem;font-weight:600;">h</span></div>
-                    <div class="metric-trend"><span class="trend-chip" style="background:#ede9fe;color:#7c3aed;">Promedio</span> Radicación → Cierre</div>
-                </div>
-                <div class="metric-card">
-                    <div class="card-top"><span class="metric-label">Tasa Aprobación</span><div class="card-arrow"><i class="bi bi-check-circle"></i></div></div>
-                    <div class="metric-value" id="kpiAprobacion">0<span style="font-size:1rem;font-weight:600;">%</span></div>
-                    <div class="metric-trend"><span class="trend-chip" style="background:rgba(34,197,94,0.1);color:#15803d;">Aprobadas</span> Del total</div>
-                </div>
-                <div class="metric-card">
-                    <div class="card-top"><span class="metric-label">Fuera de SLA</span><div class="card-arrow"><i class="bi bi-exclamation-triangle"></i></div></div>
-                    <div class="metric-value" id="kpiFueraSLA" style="color:var(--rojo);">0</div>
-                    <div class="metric-trend"><span class="trend-chip" style="background:var(--rojo-light);color:var(--rojo);">Alerta</span> Superaron 4h</div>
-                </div>
-            </div>
-
-            <!-- Gráficos 2x2 -->
-            <div class="row g-4 mb-4">
-                <div class="col-lg-6">
-                    <div class="table-container" style="margin-top:0;">
-                        <div class="table-title mb-3"><i class="bi bi-graph-up me-2" style="color:var(--azul);"></i>Producción Diaria</div>
-                        <canvas id="chartProduccion" height="220"></canvas>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="table-container" style="margin-top:0;">
-                        <div class="table-title mb-3"><i class="bi bi-pie-chart me-2" style="color:var(--azul);"></i>Distribución por Estado</div>
-                        <canvas id="chartEstados" height="220"></canvas>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="table-container" style="margin-top:0;">
-                        <div class="table-title mb-3"><i class="bi bi-people me-2" style="color:var(--azul);"></i>Productividad por Analista</div>
-                        <canvas id="chartAnalistas" height="220"></canvas>
-                    </div>
-                </div>
-                <div class="col-lg-6">
-                    <div class="table-container" style="margin-top:0;">
-                        <div class="table-title mb-3"><i class="bi bi-shield-check me-2" style="color:var(--azul);"></i>Cumplimiento SLA</div>
-                        <canvas id="chartSLA" height="220"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tabla de rendimiento por analista -->
-            <div class="table-container">
-                <div class="table-header">
-                    <div>
-                        <div class="table-title">Rendimiento Individual</div>
-                        <div class="table-sub">Detalle por analista en el período seleccionado</div>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                    <table id="tablaMetricasAnalistas" class="table w-100">
-                        <thead>
-                            <tr>
-                                <th>Analista</th>
-                                <th>Total</th>
-                                <th>Aprobadas</th>
-                                <th>Negadas</th>
-                                <th>Aplazadas</th>
-                                <th>T. Gestión</th>
-                                <th>T. General</th>
-                                <th>Fuera SLA</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cuerpoMetricasAnalistas"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Panel: Seguimiento de Analistas -->
-            <div class="table-container mt-4">
-                <div class="table-header">
-                    <div>
-                        <div class="table-title"><i class="bi bi-activity me-2" style="color:var(--azul);"></i>Seguimiento de Analistas</div>
-                        <div class="table-sub">Productividad, carga y actividad de cada analista activo</div>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <input type="date" id="filtroFechaSeguimiento" class="form-control" onchange="cargarAsesoresActivosPrimerResultado()" style="width:160px;padding:6px 10px !important;font-size:0.78rem;border-radius:9px !important;">
-                        <button class="btn-outline-brand" onclick="cargarAsesoresActivosPrimerResultado()" style="padding:6px 14px;font-size:0.75rem;">
-                            <i class="bi bi-arrow-clockwise"></i> Actualizar
-                        </button>
-                    </div>
-                </div>
-                <div id="spinnerPrimerResultado" class="text-center py-4" style="display:none;">
-                    <div class="spinner-border spinner-border-sm" role="status" style="color:var(--azul);"></div>
-                    <span class="ms-2 text-muted" style="font-size:0.8rem;">Cargando...</span>
-                </div>
-                <div class="table-responsive">
-                    <table id="tablaAsesoresPrimerResultado" class="table w-100">
-                        <thead>
-                            <tr>
-                                <th>Asesor</th>
-                                <th>Especialidad</th>
-                                <th>Estado</th>
-                                <th>Gestionadas</th>
-                                <th>Pendientes</th>
-                                <th>Prom. Gestión</th>
-                                <th>Prom. General</th>
-                                <th>Primer Resultado</th>
-                                <th>Último Resultado</th>
-                                <th class="text-center">Detalle</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cuerpoAsesoresPrimerResultado">
-                            <tr><td colspan="10" class="text-center text-muted py-3">Cargando datos...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
 </div>
 
 <div class="modal fade" id="modalUsuario" tabindex="-1">
@@ -1174,6 +971,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         </div>
     </div>
 </div>
+
 <div class="modal fade" id="modalCuotas" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -1230,13 +1028,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 <script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
-
 <script>
-Chart.register(ChartDataLabels);
-Chart.defaults.set('plugins.datalabels', { display: false });
-
 function badgeEspecialidad(v) {
     if (v === 'ESTUDIO DIGITAL')     return '<span class="badge-pill badge-esp-digital"><i class="bi bi-laptop"></i> ' + v + '</span>';
     if (v === 'PENDIENTE_BIOMETRIA') return '<span class="badge-pill badge-esp-desplaz"><i class="bi bi-fingerprint"></i> ' + v + '</span>';
@@ -1269,6 +1061,7 @@ function ocultarLoader() {
         setTimeout(function() { loader.style.display = 'none'; }, 800);
     }
 }
+
 window.onload = function() {
     google.script.run.withSuccessHandler(function(email) {
         if (email) {
@@ -1277,70 +1070,53 @@ window.onload = function() {
             document.getElementById('adminEmail').innerText = nombre;
         }
     }).getEmailUsuario();
-        google.script.run.withSuccessHandler(function(res) {
-        document.querySelectorAll('.seg-btn').forEach(btn => {
+
+    google.script.run.withSuccessHandler(function(res) {
+        document.querySelectorAll('.seg-btn').forEach(function(btn) {
             btn.classList.remove('active');
             if (btn.getAttribute('data-value') === res) btn.classList.add('active');
         });
     }).admin_getPrioridadGlobal();
 
     refrescarDashboard();
-
-    // Inicializar filtro de fecha de seguimiento con la fecha de hoy
-    const hoy = new Date();
-    const yyyy = hoy.getFullYear();
-    const mm = String(hoy.getMonth() + 1).padStart(2, '0');
-    const dd = String(hoy.getDate()).padStart(2, '0');
-    const fechaInput = document.getElementById('filtroFechaSeguimiento');
-    if (fechaInput) {
-        fechaInput.value = yyyy + '-' + mm + '-' + dd;
-        fechaInput.max = yyyy + '-' + mm + '-' + dd;
-    }
-    cargarAsesoresActivosPrimerResultado();
 };
+
 // ==============================================================
 // CONTROL DE PRIORIDAD (FRONTEND - SEGMENTED BUTTONS)
 // ==============================================================
-
 function seleccionarPrioridad(botonClick) {
-    // 1. Obtenemos los datos del botón presionado
     const nuevaPrioridad = botonClick.getAttribute('data-value');
     const textoPrioridad = botonClick.innerText.trim();
 
-    // Si el administrador hace clic en el botón que ya está activo, no hacemos nada
     if (botonClick.classList.contains('active')) return;
 
     Swal.fire({
         title: '¿Cambiar la Prioridad?',
-        text: `El motor de asignación empezará a entregar primero: ${textoPrioridad}`,
+        text: 'El motor de asignación empezará a entregar primero: ' + textoPrioridad,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#253150',
         cancelButtonColor: '#64748b',
         confirmButtonText: 'Sí, aplicar cambio'
-    }).then((result) => {
+    }).then(function(result) {
         if (result.isConfirmed) {
             Swal.fire({ 
                 title: 'Actualizando Motor...', 
                 allowOutsideClick: false, 
-                didOpen: () => Swal.showLoading() 
+                didOpen: function() { Swal.showLoading(); }
             });
             
-            // 2. Enviamos la orden a tu función del backend
             google.script.run
                 .withSuccessHandler(function(res) {
                     if(res && res.success) {
                         Swal.fire('¡Prioridad Actualizada!', 'La nueva regla de asignación ya está activa para todo el equipo.', 'success');
-                        
-                        // 3. Magia visual: Quitamos la clase 'active' de todos los botones y se la ponemos al elegido
-                        document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(btn => {
+                        document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(function(btn) {
                             btn.classList.remove('active');
                         });
                         botonClick.classList.add('active');
-
                     } else {
                         Swal.fire('Error', res.message || 'Error desconocido', 'error');
-                        cargarPrioridadActual(); // Revertimos visualmente en caso de fallo
+                        cargarPrioridadActual();
                     }
                 })
                 .withFailureHandler(function(err) {
@@ -1353,10 +1129,9 @@ function seleccionarPrioridad(botonClick) {
 }
 
 function cargarPrioridadActual() {
-    // Busca en el servidor cuál es la prioridad real guardada para sincronizar la vista al cargar la página
     google.script.run.withSuccessHandler(function(prioridadGuardada) {
         if (prioridadGuardada) {
-            document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(btn => {
+            document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(function(btn) {
                 if (btn.getAttribute('data-value') === prioridadGuardada) {
                     btn.classList.add('active');
                 } else {
@@ -1367,7 +1142,6 @@ function cargarPrioridadActual() {
     }).admin_getPrioridadGlobal();
 }
 
-// Cargar la posición correcta del botón apenas se abra el dashboard
 document.addEventListener("DOMContentLoaded", function() {
     cargarPrioridadActual();
 });
@@ -1380,29 +1154,24 @@ function mostrarSeccion(id, e) {
     $('#link-' + id).addClass('active');
     if (id === 'usuarios') cargarUsuarios();
     if (id === 'dashboard') refrescarDashboard();
-    if (id === 'metricas') mostrarSeccionMetricas();
 }
 
 function refrescarDashboard() {
     google.script.run.withSuccessHandler(function(res) {
-        // Cache data for tarjeta drill-down
         window._dashData = res;
-
-        // Update metrics
+        
         document.getElementById('countNube').innerText = res.sinAsignar || 0;
         document.getElementById('countEnGestion').innerText = (res.listaGestion ? res.listaGestion.length : 0);
         document.getElementById('countGestionadasHoy').innerText = res.gestionadasHoyEquipo || 0;
         document.getElementById('countActivos').innerText = res.activos || 0;
         document.getElementById('countInactivos').innerText = res.inactivos || 0;
 
-        // Render desglose bars
         if (res.desglose) {
             renderDesgloseBar('desgloseSinAsignar', res.desglose.sinAsignar);
             renderDesgloseBar('desgloseEnGestion', res.desglose.enGestion);
             renderDesgloseBar('desgloseGestionadasHoy', res.desglose.gestionadasHoy);
         }
 
-        // Update sync time (mejora 8)
         const ahora = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
         document.getElementById('adminSyncTime').innerText = ahora;
 
@@ -1422,9 +1191,7 @@ function refrescarDashboard() {
         if (res.listaGestion && res.listaGestion.length > 0) {
             for (let i = 0; i < res.listaGestion.length; i++) {
                 let item = res.listaGestion[i];
-
                 if (!item.correo || item.correo === "Sin analista" || item.correo.trim() === "") continue;
-
                 let estadoTexto = item.estado;
                 let detalleHora = '';
                 if (estadoTexto && estadoTexto.toString().indexOf('[') === 0) {
@@ -1441,7 +1208,6 @@ function refrescarDashboard() {
                     } catch(err) {}
                 }
 
-                // Badge de tipo (mejora 3)
                 let tipoBadge = '';
                 if (item.tipo === 'biometria') {
                     tipoBadge = '<span class="badge-pill" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;"><i class="bi bi-fingerprint"></i> Bio</span>';
@@ -1460,7 +1226,6 @@ function refrescarDashboard() {
                 html += '<td>' + badgeEstado(estadoTexto) + detalleHora + '</td>';
                 html += '<td><span style="font-size:0.85rem">' + item.asesor + '</span></td>';
                 
-                // Mejora 9: incluir nombre del asesor en el botón
                 html += '<td class="text-center">';
                 html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\')" title="Devolver a la nube">';
                 html += '<i class="bi bi-arrow-return-left"></i> Quitar';
@@ -1470,7 +1235,6 @@ function refrescarDashboard() {
                 html += '</tr>';
             }
         }
-
         $('#cuerpoMonitoreo').html(html);
         $('#tablaMonitoreo').DataTable({
             language: { 
@@ -1483,32 +1247,26 @@ function refrescarDashboard() {
             responsive: true,
             dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
         });
-
         ocultarLoader();
     }).obtenerDatosDashboard();
 }
 
-// Mejora 7: Filtro rápido por estado
 function filtrarTablaMonitoreo() {
     const filtro = document.getElementById('filtroEstadoMonitoreo').value;
-    const tabla = $('#tablaMonitoreo').DataTable();
-    tabla.column(3).search(filtro).draw();
+    const table = $('#tablaMonitoreo').DataTable();
+    table.column(3).search(filtro).draw();
 }
 
-// Buscador de solicitud por ID
 function buscarSolicitudAdmin() {
     const input = document.getElementById('inputBuscarSolicitud');
     const idSolicitud = (input.value || '').trim();
     const contenedor = document.getElementById('resultadoBusqueda');
-
     if (!idSolicitud) {
         Swal.fire({ icon: 'warning', title: 'Campo vacío', text: 'Ingresa un número de solicitud.', confirmButtonColor: '#253150', timer: 2000, showConfirmButton: false });
         return;
     }
-
     contenedor.style.display = 'block';
     contenedor.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm" style="color:var(--azul);"></div><span class="ms-2" style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">Buscando...</span></div>';
-
     google.script.run
         .withSuccessHandler(function(res) {
             if (!res.success) {
@@ -1526,8 +1284,6 @@ function buscarSolicitudAdmin() {
 function renderResultadoBusqueda(res) {
     const d = res.datos;
     const fuente = res.fuente;
-
-    // Determine status color
     let statusColor = '#64748b';
     let statusBg = '#f1f5f9';
     const estado = (d.estadoGeneral || d.estadoGestion || '').toUpperCase();
@@ -1537,7 +1293,6 @@ function renderResultadoBusqueda(res) {
     else if (estado.includes('BIOMETRIA')) { statusColor = '#4338ca'; statusBg = '#e0e7ff'; }
     else if (estado.includes('ESTUDIO') || estado.includes('BORRADOR')) { statusColor = '#1d4ed8'; statusBg = '#dbeafe'; }
 
-    // Determine tipo badge
     let tipoBadge = '';
     if (fuente === 'solicitud') {
         const estadoUp = (d.estadoGeneral || '').toUpperCase();
@@ -1550,7 +1305,6 @@ function renderResultadoBusqueda(res) {
             tipoBadge = '<span style="background:#dbeafe;color:#1d4ed8;padding:6px 12px;border-radius:10px;font-size:0.72rem;font-weight:700;border:1px solid #bfdbfe;"><i class="bi bi-laptop me-1"></i>Digital</span>';
         }
     } else {
-        // Hoja ORIGEN: UAR si origen=CORREO y tipo incluye Adicional o Nueva
         const origenUp = (d.origen || '').toUpperCase();
         const tipoUp = (d.tipoDeProceso || '').toUpperCase();
         if (origenUp === 'CORREO' && (tipoUp.includes('ADICIONAL') || tipoUp.includes('NUEVA'))) {
@@ -1559,10 +1313,7 @@ function renderResultadoBusqueda(res) {
             tipoBadge = '<span style="background:#ede9fe;color:#7c3aed;padding:6px 12px;border-radius:10px;font-size:0.72rem;font-weight:700;border:1px solid #ddd6fe;"><i class="bi bi-layers me-1"></i>Reestudio</span>';
         }
     }
-
     let html = '<div style="border:1px solid var(--border);border-radius:16px;overflow:hidden;background:white;">';
-
-    // Header with ID and status
     html += '<div style="padding:16px 20px;background:var(--grad-azul);display:flex;align-items:center;justify-content:space-between;">';
     html += '<div style="display:flex;align-items:center;gap:12px;">';
     html += '<i class="bi bi-file-earmark-text" style="color:white;font-size:1.3rem;"></i>';
@@ -1572,10 +1323,7 @@ function renderResultadoBusqueda(res) {
     html += '<span style="background:' + statusBg + ';color:' + statusColor + ';padding:6px 14px;border-radius:10px;font-size:0.78rem;font-weight:800;">' + (d.estadoGeneral || d.estadoGestion || 'Sin estado') + '</span>';
     html += tipoBadge;
     html += '</div></div>';
-
-    // Body with details
     html += '<div style="padding:20px;display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;">';
-
     if (fuente === 'solicitud') {
         html += campoResultado('Póliza', d.poliza);
         html += campoResultado('Inquilino', d.nombreInquilino);
@@ -1604,8 +1352,8 @@ function renderResultadoBusqueda(res) {
         html += campoResultado('Fecha Asignación', d.fechaAsignacion || '—');
         html += campoResultado('Fecha Fin Gestión', d.fechaFinGestion || '—');
         html += campoResultado('Estado Gestión', d.estadoGestion || '—');
-        html += campoResultado('Tiempo Total (Radicación → Fin)', formatearDuracion(d.tiempoResolucion));
-        html += campoResultado('Tiempo Gestión (Asignación → Fin)', formatearDuracion(d.tiempoGestion));
+        html += campoResultado('Tiempo Total (Radicación -> Fin)', formatearDuracion(d.tiempoResolucion));
+        html += campoResultado('Tiempo Gestión (Asignación -> Fin)', formatearDuracion(d.tiempoGestion));
         html += campoResultado('Motivo Aplazamiento', d.motivoAplazamiento || '—');
         html += campoResultado('Motivo Negación', d.motivoNegacion || '—');
         html += campoResultado('Observaciones', d.observaciones || '—');
@@ -1613,9 +1361,7 @@ function renderResultadoBusqueda(res) {
             html += '<div style="grid-column:span 2;"><a href="' + d.linkDrive + '" target="_blank" style="display:inline-flex;align-items:center;gap:6px;background:#e8edf6;color:var(--azul);padding:8px 14px;border-radius:10px;font-size:0.78rem;font-weight:700;text-decoration:none;border:1px solid rgba(37,49,80,0.15);"><i class="bi bi-folder2-open"></i> Abrir carpeta Drive</a></div>';
         }
     }
-
     html += '</div></div>';
-
     return html;
 }
 
@@ -1637,31 +1383,12 @@ function formatearDuracion(valor) {
     return h + 'h ' + m + 'min';
 }
 
-/**
- * Formatea horas hábiles (valor decimal) en formato legible.
- * @param {string} valor - Horas hábiles como string (ej: "4.5")
- * @returns {string} Formato legible (ej: "4h 30min") o "—" si no hay dato
- */
-function formatearTiempoGeneral(valor) {
-    if (!valor || valor === '—' || valor === '' || valor === '0') return '—';
-    const horas = parseFloat(String(valor).replace(',', '.'));
-    if (isNaN(horas) || horas <= 0) return '—';
-    const h = Math.floor(horas);
-    const m = Math.round((horas - h) * 60);
-    if (h === 0) return m + ' min';
-    if (m === 0) return h + 'h';
-    return h + 'h ' + m + 'min';
-}
-
-// Tarjetas interactivas - drill-down
 function verDetalleTarjeta(tipo) {
     const data = window._dashData;
     if (!data) { Swal.fire('Cargando...', 'Espera a que el dashboard termine de cargar.', 'info'); return; }
-
     let title = '';
     let items = [];
     let color = '#253150';
-
     if (tipo === 'sinAsignar') {
         title = '<i class="bi bi-cloud-arrow-down me-2"></i>Sin Asignar (' + data.sinAsignar + ')';
         items = (data.listaSinAsignar || []).map(function(i) {
@@ -1705,15 +1432,11 @@ function verDetalleTarjeta(tipo) {
         });
         return;
     }
-
     let htmlContent = '';
-
-    // Build desglose header for the 3 main card types
     let desgloseKey = '';
     if (tipo === 'sinAsignar') desgloseKey = 'sinAsignar';
     else if (tipo === 'enGestion') desgloseKey = 'enGestion';
     else if (tipo === 'gestionadasHoy') desgloseKey = 'gestionadasHoy';
-
     if (desgloseKey && data.desglose && data.desglose[desgloseKey]) {
         const dg = data.desglose[desgloseKey];
         const tiposInfo = [
@@ -1736,7 +1459,6 @@ function verDetalleTarjeta(tipo) {
         });
         htmlContent += '</div>';
     }
-
     if (items.length === 0 && !desgloseKey) {
         htmlContent += '<div style="text-align:center;padding:30px;"><i class="bi bi-check-all" style="font-size:2rem;color:#22c55e;"></i><p style="color:#64748b;margin-top:10px;">Sin registros</p></div>';
     } else if (items.length === 0) {
@@ -1747,7 +1469,6 @@ function verDetalleTarjeta(tipo) {
             htmlContent += '<p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:10px;">Mostrando 50 de ' + data.sinAsignar + '</p>';
         }
     }
-
     Swal.fire({
         title: title,
         html: htmlContent,
@@ -1768,11 +1489,9 @@ function getBadgeTipo(tipo) {
     return '<span style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:700;margin-left:auto;">Digital</span>';
 }
 
-// Renderiza los mini-chips de desglose por tipo en cada tarjeta
 function renderDesgloseBar(containerId, data) {
     const el = document.getElementById(containerId);
     if (!el || !data) return;
-
     const tipos = [
         { key: 'digital', icon: 'bi-laptop', label: 'Digital' },
         { key: 'biometria', icon: 'bi-fingerprint', label: 'Bio' },
@@ -1780,7 +1499,6 @@ function renderDesgloseBar(containerId, data) {
         { key: 'uar', icon: 'bi-exclamation-diamond', label: 'UAR' },
         { key: 'reestudios', icon: 'bi-layers', label: 'Reest' }
     ];
-
     let html = '';
     tipos.forEach(function(t) {
         const val = data[t.key] || 0;
@@ -1788,7 +1506,6 @@ function renderDesgloseBar(containerId, data) {
             html += '<span class="dg-chip dg-' + t.key + '"><i class="bi ' + t.icon + '"></i> ' + val + '</span>';
         }
     });
-
     el.innerHTML = html || '<span style="font-size:0.68rem;color:var(--text-muted);font-weight:600;">Sin registros</span>';
 }
 
@@ -1818,7 +1535,6 @@ function cargarUsuarios() {
             let espEsc    = u.especialidad.replace(/'/g, "\\'");
             let estEsc    = ultimoEstado.replace(/'/g, "\\'");
             let rolEsc    = rol.replace(/'/g, "\\'");
-
             html += '<tr>';
             html += '<td class="fw-bold">' + u.nombreComercial + '</td>';
             html += '<td><span class="badge-pill badge-cap">' + (u.cargaActual || 0) + ' / ' + cap + '</span></td>';
@@ -1907,17 +1623,16 @@ function guardarNuevoUsuario() {
 function confirmarDesasignacion(idSolicitud, nombreAsesor) {
     Swal.fire({
         title: 'Devolver a la cola',
-        html: `Vas a quitarle la solicitud <strong>${idSolicitud}</strong> a <strong>${nombreAsesor || 'el asesor actual'}</strong>.`,
+        html: 'Vas a quitarle la solicitud <strong>' + idSolicitud + '</strong> a <strong>' + (nombreAsesor || 'el asesor actual') + '</strong>.',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#BD0F14',
         cancelButtonColor: '#64748b',
         confirmButtonText: 'Sí, desasignar',
         cancelButtonText: 'Cancelar'
-    }).then((result) => {
+    }).then(function(result) {
         if (result.isConfirmed) {
-            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-            
+            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
             google.script.run.withSuccessHandler(function(res) {
                 if (res.success) {
                     Swal.fire('¡Hecho!', res.message, 'success');
@@ -1930,530 +1645,8 @@ function confirmarDesasignacion(idSolicitud, nombreAsesor) {
         }
     });
 }
-// ===================================================================
-// MÓDULO DE MÉTRICAS - Frontend
-// ===================================================================
 
-let chartProduccion = null;
-let chartEstados = null;
-let chartAnalistas = null;
-let chartSLA = null;
-let metricasInicializado = false;
-
-function mostrarSeccionMetricas() {
-    // Asegurar que los inputs estén visibles antes de setear valores
-    setTimeout(function() {
-        if (!metricasInicializado) {
-            metricasInicializado = true;
-            setRangoRapido('semana');
-        } else {
-            cargarMetricas();
-        }
-        cargarAsesoresActivosPrimerResultado();
-    }, 300);
-}
-
-function setRangoRapido(tipo) {
-    const hoy = new Date();
-    let desde = new Date();
-    
-    if (tipo === 'hoy') {
-        desde = new Date(hoy);
-    } else if (tipo === 'semana') {
-        desde.setDate(hoy.getDate() - 7);
-    } else if (tipo === 'mes') {
-        desde.setDate(hoy.getDate() - 30);
-    }
-    
-    document.getElementById('metricaDesde').value = formatDateInput(desde);
-    document.getElementById('metricaHasta').value = formatDateInput(hoy);
-    cargarMetricas();
-}
-
-function formatDateInput(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
-
-function formatDateBackend(inputValue) {
-    // Convierte "yyyy-MM-dd" (input type=date) a "dd/MM/yyyy" (backend)
-    if (!inputValue) return '';
-    const parts = inputValue.split('-');
-    return `${parts[2]}/${parts[1]}/${parts[0]}`;
-}
-
-function aplicarFiltroFechas() {
-    const desde = document.getElementById('metricaDesde').value;
-    const hasta = document.getElementById('metricaHasta').value;
-    
-    if (!desde || !hasta) {
-        Swal.fire({ icon: 'warning', title: 'Fechas incompletas', text: 'Selecciona ambas fechas.', confirmButtonColor: '#253150' });
-        return;
-    }
-    if (new Date(desde) > new Date(hasta)) {
-        Swal.fire({ icon: 'warning', title: 'Rango inválido', text: 'La fecha "Desde" no puede ser posterior a "Hasta".', confirmButtonColor: '#253150' });
-        return;
-    }
-    cargarMetricas();
-}
-
-function cargarMetricas() {
-    const desdeInput = document.getElementById('metricaDesde').value;
-    const hastaInput = document.getElementById('metricaHasta').value;
-    const desde = formatDateBackend(desdeInput);
-    const hasta = formatDateBackend(hastaInput);
-    
-    console.log('cargarMetricas - desde:', desde, 'hasta:', hasta);
-    
-    if (!desde || !hasta) {
-        console.warn('cargarMetricas: fechas vacías, abortando');
-        return;
-    }
-    
-    document.getElementById('metricasSpinner').style.display = 'block';
-    document.getElementById('metricasContenido').style.display = 'none';
-    
-    google.script.run
-        .withSuccessHandler(renderizarMetricas)
-        .withFailureHandler(function(err) {
-            console.error('Error en obtenerDatosMetricas:', err);
-            document.getElementById('metricasSpinner').style.display = 'none';
-            document.getElementById('metricasContenido').style.display = 'block';
-            Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'No se pudieron cargar las métricas.', confirmButtonColor: '#253150' });
-        })
-        .obtenerDatosMetricas(desde, hasta);
-}
-
-function renderizarMetricas(datos) {
-    document.getElementById('metricasSpinner').style.display = 'none';
-    document.getElementById('metricasContenido').style.display = 'block';
-    
-    actualizarTarjetas(datos);
-    renderGraficoProduccion(datos.produccionDiaria);
-    renderGraficoEstados(datos.distribucionEstados);
-    renderGraficoAnalistas(datos.porAnalista);
-    renderGraficoSLA(datos.slaDiario);
-    renderTablaAnalistas(datos.porAnalista);
-}
-
-function actualizarTarjetas(datos) {
-    document.getElementById('kpiTotal').textContent = datos.totalGestionadas;
-    document.getElementById('kpiTiempo').innerHTML = formatearDuracion(datos.tiempoPromedioMinutos);
-    document.getElementById('kpiTiempoGeneral').innerHTML = formatearTiempoGeneral(datos.tiempoPromedioGeneralHoras);
-    document.getElementById('kpiAprobacion').innerHTML = datos.tasaAprobacion + '<span style="font-size:1rem;font-weight:600;">%</span>';
-    document.getElementById('kpiFueraSLA').textContent = datos.fueraDeSLA;
-}
-
-function renderGraficoProduccion(produccionDiaria) {
-    if (chartProduccion) chartProduccion.destroy();
-    const ctx = document.getElementById('chartProduccion').getContext('2d');
-    
-    if (!produccionDiaria || produccionDiaria.length === 0) {
-        chartProduccion = new Chart(ctx, { type: 'line', data: { labels: ['Sin datos'], datasets: [{ data: [0] }] }, options: { plugins: { title: { display: true, text: 'Sin datos para el período seleccionado' } } } });
-        return;
-    }
-    
-    chartProduccion = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: produccionDiaria.map(d => d.fecha),
-            datasets: [{
-                label: 'Solicitudes gestionadas',
-                data: produccionDiaria.map(d => d.cantidad),
-                borderColor: '#253150',
-                backgroundColor: 'rgba(37,49,80,0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3,
-                pointBackgroundColor: '#253150',
-                pointRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { display: false },
-                datalabels: {
-                    display: true,
-                    anchor: 'end',
-                    align: 'top',
-                    color: '#253150',
-                    font: { weight: '700', size: 11, family: 'Manrope' },
-                    formatter: function(value) { return value; }
-                }
-            },
-            scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-        }
-    });
-}
-
-function renderGraficoEstados(dist) {
-    if (chartEstados) chartEstados.destroy();
-    const ctx = document.getElementById('chartEstados').getContext('2d');
-    
-    chartEstados = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Aprobadas', 'Negadas', 'Aplazadas'],
-            datasets: [{
-                data: [dist.aprobadas, dist.negadas, dist.aplazadas],
-                backgroundColor: ['#22c55e', '#ef4444', '#f59e0b'],
-                borderWidth: 2,
-                borderColor: '#ffffff'
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom', labels: { padding: 16, font: { family: 'Manrope', weight: '700', size: 11 } } },
-                datalabels: {
-                    display: true,
-                    color: '#fff',
-                    font: { weight: '800', size: 12, family: 'Manrope' },
-                    formatter: function(value, ctx) {
-                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                        const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-                        return value > 0 ? value + ' (' + pct + '%)' : '';
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(ctx) {
-                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                            const pct = total > 0 ? Math.round((ctx.parsed / total) * 100) : 0;
-                            return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-function renderGraficoAnalistas(porAnalista) {
-    if (chartAnalistas) chartAnalistas.destroy();
-    const ctx = document.getElementById('chartAnalistas').getContext('2d');
-    
-    const top10 = porAnalista.slice(0, 10);
-    
-    chartAnalistas = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: top10.map(a => a.nombre),
-            datasets: [{
-                label: 'Solicitudes',
-                data: top10.map(a => a.total),
-                backgroundColor: 'rgba(37,49,80,0.8)',
-                borderRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            indexAxis: 'y',
-            plugins: {
-                legend: { display: false },
-                datalabels: {
-                    display: true,
-                    anchor: 'end',
-                    align: 'end',
-                    color: '#253150',
-                    font: { weight: '800', size: 11, family: 'Manrope' },
-                    formatter: function(value) { return value; }
-                }
-            },
-            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
-        }
-    });
-}
-
-function renderGraficoSLA(slaDiario) {
-    if (chartSLA) chartSLA.destroy();
-    const ctx = document.getElementById('chartSLA').getContext('2d');
-    
-    if (!slaDiario || slaDiario.length === 0) {
-        chartSLA = new Chart(ctx, { type: 'bar', data: { labels: ['Sin datos'], datasets: [{ data: [0] }] } });
-        return;
-    }
-    
-    chartSLA = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: slaDiario.map(d => d.fecha),
-            datasets: [
-                { label: 'Dentro SLA (≤4h)', data: slaDiario.map(d => d.dentroSLA), backgroundColor: 'rgba(34,197,94,0.7)', borderRadius: 4 },
-                { label: 'Fuera SLA (>4h)', data: slaDiario.map(d => d.fueraSLA), backgroundColor: 'rgba(239,68,68,0.7)', borderRadius: 4 }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom', labels: { font: { family: 'Manrope', weight: '700', size: 11 } } },
-                datalabels: {
-                    display: function(context) { return context.dataset.data[context.dataIndex] > 0; },
-                    anchor: 'end',
-                    align: 'end',
-                    color: function(context) { return context.datasetIndex === 0 ? '#15803d' : '#b91c1c'; },
-                    font: { weight: '700', size: 10, family: 'Manrope' },
-                    formatter: function(value) { return value; }
-                }
-            },
-            scales: { x: { stacked: false }, y: { beginAtZero: true, ticks: { precision: 0 } } }
-        }
-    });
-}
-
-function renderTablaAnalistas(porAnalista) {
-    if ($.fn.DataTable.isDataTable('#tablaMetricasAnalistas')) {
-        $('#tablaMetricasAnalistas').DataTable().destroy();
-    }
-    
-    let html = '';
-    porAnalista.forEach(a => {
-        const fueraSLAClass = a.fueraSLA > 0 ? 'style="background:rgba(239,68,68,0.1);color:#b91c1c;font-weight:700;"' : '';
-        html += '<tr>';
-        html += '<td class="fw-bold">' + a.nombre + '</td>';
-        html += '<td>' + a.total + '</td>';
-        html += '<td style="color:#15803d;font-weight:700;">' + a.aprobadas + '</td>';
-        html += '<td style="color:#b91c1c;font-weight:700;">' + a.negadas + '</td>';
-        html += '<td style="color:#d97706;font-weight:700;">' + a.aplazadas + '</td>';
-        html += '<td>' + formatearDuracion(a.tiempoPromedio) + '</td>';
-        html += '<td style="color:#7c3aed;font-weight:700;">' + formatearTiempoGeneral(a.tiempoPromedioGeneral) + '</td>';
-        html += '<td ' + fueraSLAClass + '>' + a.fueraSLA + '</td>';
-        html += '</tr>';
-    });
-    
-    $('#cuerpoMetricasAnalistas').html(html);
-    $('#tablaMetricasAnalistas').DataTable({
-        language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json' },
-        pageLength: 10,
-        order: [[1, 'desc']],
-        responsive: true
-    });
-}
-
-// ===================================================================
-// ASESORES ACTIVOS — PRIMER RESULTADO HOY (Frontend)
-// ===================================================================
-
-function cargarAsesoresActivosPrimerResultado() {
-    document.getElementById('spinnerPrimerResultado').style.display = 'block';
-
-    const fechaInput = document.getElementById('filtroFechaSeguimiento');
-    const fechaSeleccionada = fechaInput ? fechaInput.value : '';
-
-    google.script.run
-        .withSuccessHandler(renderAsesoresPrimerResultado)
-        .withFailureHandler(function(err) {
-            document.getElementById('spinnerPrimerResultado').style.display = 'none';
-            document.getElementById('cuerpoAsesoresPrimerResultado').innerHTML =
-                '<tr><td colspan="10" class="text-center text-danger py-3"><i class="bi bi-exclamation-circle me-1"></i>' + (err.message || 'Error al cargar') + '</td></tr>';
-        })
-        .admin_obtenerAsesoresActivosPrimerResultado(fechaSeleccionada || null);
-}
-
-function renderAsesoresPrimerResultado(respuesta) {
-    document.getElementById('spinnerPrimerResultado').style.display = 'none';
-
-    if ($.fn.DataTable.isDataTable('#tablaAsesoresPrimerResultado')) {
-        $('#tablaAsesoresPrimerResultado').DataTable().destroy();
-    }
-
-    // Extraer datos de la respuesta (nueva estructura con esHoy, fecha, datos)
-    const esHoy = respuesta.esHoy;
-    const datos = respuesta.datos;
-
-    // Actualizar encabezados de columna según si es hoy o histórico
-    const thRow = document.querySelector('#tablaAsesoresPrimerResultado thead tr');
-    if (thRow) {
-        const ths = thRow.querySelectorAll('th');
-        ths[3].textContent = 'Gestionadas';
-        ths[4].textContent = esHoy ? 'Pendientes' : 'Asignadas';
-        ths[5].textContent = 'Prom. Gestión';
-        ths[6].textContent = 'Prom. General';
-    }
-
-    // Actualizar subtítulo
-    const subEl = document.querySelector('#tablaAsesoresPrimerResultado').closest('.table-container').querySelector('.table-sub');
-    if (subEl) {
-        subEl.textContent = esHoy
-            ? 'Productividad, carga y actividad en tiempo real de cada analista activo'
-            : 'Actividad histórica del ' + respuesta.fecha + ' — gestionadas y asignadas ese día';
-    }
-
-    let html = '';
-    if (!datos || datos.length === 0) {
-        html = '<tr><td colspan="10" class="text-center text-muted py-3">No hay datos para la fecha seleccionada</td></tr>';
-    } else {
-        const ahora = new Date();
-
-        datos.forEach(function(a) {
-            // Primer resultado
-            const horaDisplay = a.primerResultado
-                ? '<span class="badge-hora"><i class="bi bi-check-circle-fill" style="color:#15803d;"></i> ' + a.primerResultado + '</span>'
-                : '<span style="color:var(--rojo);font-weight:700;font-size:0.78rem;"><i class="bi bi-hourglass-split me-1"></i>Sin resultado</span>';
-
-            // Último resultado con tiempo transcurrido (solo relevante para hoy)
-            let ultimoDisplay = '';
-            if (a.ultimoResultado) {
-                if (esHoy) {
-                    const partesHora = a.ultimoResultado.split(':');
-                    const ultimoDate = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(),
-                        parseInt(partesHora[0], 10), parseInt(partesHora[1], 10), parseInt(partesHora[2] || 0, 10));
-                    const diffMs = ahora - ultimoDate;
-                    const diffMin = Math.floor(diffMs / 60000);
-
-                    let tiempoTexto = '';
-                    let tiempoColor = '#15803d';
-                    if (diffMin < 0) { tiempoTexto = 'ahora'; }
-                    else if (diffMin < 60) {
-                        tiempoTexto = 'hace ' + diffMin + ' min';
-                        if (diffMin > 30) tiempoColor = '#d97706';
-                    } else {
-                        const horas = Math.floor(diffMin / 60);
-                        const mins = diffMin % 60;
-                        tiempoTexto = 'hace ' + horas + 'h ' + mins + 'min';
-                        tiempoColor = '#b91c1c';
-                    }
-                    ultimoDisplay = '<span class="badge-hora"><i class="bi bi-clock"></i> ' + a.ultimoResultado + '</span>' +
-                        '<br><small style="font-size:0.68rem;font-weight:700;color:' + tiempoColor + ';">' + tiempoTexto + '</small>';
-                } else {
-                    ultimoDisplay = '<span class="badge-hora"><i class="bi bi-clock"></i> ' + a.ultimoResultado + '</span>';
-                }
-            } else {
-                ultimoDisplay = '<span style="color:var(--rojo);font-weight:700;font-size:0.78rem;"><i class="bi bi-x-circle me-1"></i>Sin actividad</span>';
-            }
-
-            // Especialidad badge
-            let espBadge = badgeEspecialidad(a.especialidad);
-
-            // Gestionadas / Pendientes o Asignadas
-            const gestionadasBadge = a.gestionadas > 0
-                ? '<span style="background:#dcfce7;color:#15803d;padding:4px 10px;border-radius:8px;font-size:0.78rem;font-weight:800;">' + a.gestionadas + '</span>'
-                : '<span style="color:#94a3b8;font-weight:700;font-size:0.78rem;">0</span>';
-            const pendientesBadge = a.pendientes > 0
-                ? '<span style="background:#dbeafe;color:#1d4ed8;padding:4px 10px;border-radius:8px;font-size:0.78rem;font-weight:800;">' + a.pendientes + '</span>'
-                : '<span style="color:#94a3b8;font-weight:700;font-size:0.78rem;">0</span>';
-
-            html += '<tr>';
-            html += '<td class="fw-bold">' + a.nombre + '</td>';
-            html += '<td>' + espBadge + '</td>';
-            html += '<td>' + badgeEstado(a.estado) + '</td>';
-            html += '<td class="text-center">' + gestionadasBadge + '</td>';
-            html += '<td class="text-center">' + pendientesBadge + '</td>';
-            html += '<td class="text-center">' + formatearDuracion(a.promedioGestion) + '</td>';
-            html += '<td class="text-center" style="color:#7c3aed;font-weight:700;">' + formatearTiempoGeneral(a.promedioGeneral) + '</td>';
-            html += '<td>' + horaDisplay + '</td>';
-            html += '<td>' + ultimoDisplay + '</td>';
-            html += '<td class="text-center"><button class="btn-action" onclick="verDetalleAnalista(\'' + a.correo.replace(/'/g, "\\'") + '\')" title="Ver detalle"><i class="bi bi-eye"></i></button></td>';
-            html += '</tr>';
-        });
-    }
-
-    document.getElementById('cuerpoAsesoresPrimerResultado').innerHTML = html;
-
-    if (datos && datos.length > 0) {
-        $('#tablaAsesoresPrimerResultado').DataTable({
-            language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json' },
-            pageLength: 10,
-            order: [[3, 'desc'], [0, 'asc']],
-            responsive: true,
-            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
-        });
-    }
-}
-
-// Detalle por analista — modal con solicitudes gestionadas y pendientes
-function verDetalleAnalista(correo) {
-    Swal.fire({ title: 'Cargando detalle...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-    const fechaInput = document.getElementById('filtroFechaSeguimiento');
-    const fechaSeleccionada = fechaInput ? fechaInput.value : '';
-
-    google.script.run
-        .withSuccessHandler(function(res) {
-            if (!res.success) { Swal.fire('Error', res.message, 'error'); return; }
-
-            const esHoy = res.esHoy;
-            const labelGestionadas = esHoy ? 'Gestionadas Hoy' : 'Gestionadas (' + res.fecha + ')';
-            const labelPendientes = esHoy ? 'Pendientes' : 'Asignadas (' + res.fecha + ')';
-
-            let htmlModal = '';
-
-            // Header resumen
-            htmlModal += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f1f5f9;">';
-            htmlModal += '<div><span style="font-size:1.1rem;font-weight:800;color:var(--text-main);">' + res.nombre + '</span><br><span style="font-size:0.72rem;color:var(--text-muted);">' + res.correo + '</span></div>';
-            htmlModal += '<div style="display:flex;gap:10px;">';
-            htmlModal += '<div style="text-align:center;background:#dcfce7;padding:8px 14px;border-radius:10px;"><span style="font-size:1.2rem;font-weight:800;color:#15803d;">' + res.gestionadas.length + '</span><br><span style="font-size:0.65rem;font-weight:700;color:#15803d;">Gestionadas</span></div>';
-            htmlModal += '<div style="text-align:center;background:#dbeafe;padding:8px 14px;border-radius:10px;"><span style="font-size:1.2rem;font-weight:800;color:#1d4ed8;">' + res.pendientes.length + '</span><br><span style="font-size:0.65rem;font-weight:700;color:#1d4ed8;">' + (esHoy ? 'Pendientes' : 'Asignadas') + '</span></div>';
-            htmlModal += '</div></div>';
-
-            if (res.gestionadas.length > 0) {
-                htmlModal += '<h6 style="font-weight:800;font-size:0.78rem;color:#15803d;margin-bottom:10px;"><i class="bi bi-check-circle-fill me-1"></i>' + labelGestionadas + ' (' + res.gestionadas.length + ')</h6>';
-                htmlModal += '<div style="max-height:220px;overflow-y:auto;margin-bottom:16px;border:1px solid #f1f5f9;border-radius:12px;">';
-                htmlModal += '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
-                htmlModal += '<thead><tr style="background:#f8fafc;position:sticky;top:0;">';
-                htmlModal += '<th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Solicitud</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Tipo</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Estado</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">T. Gestión</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">T. General</th>';
-                htmlModal += '</tr></thead><tbody>';
-                res.gestionadas.forEach(function(s) {
-                    htmlModal += '<tr style="border-bottom:1px solid #f8fafc;">';
-                    htmlModal += '<td style="padding:8px 12px;font-weight:800;color:#253150;">' + s.id + '</td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:center;">' + getBadgeTipo(s.tipo.toLowerCase()) + '</td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:center;"><span style="font-size:0.72rem;font-weight:700;color:#15803d;">' + s.estado + '</span></td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:right;font-weight:600;color:var(--text-muted);">' + formatearDuracion(s.duracion) + '</td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:right;font-weight:600;color:#7c3aed;">' + formatearTiempoGeneral(s.tiempoGeneral) + '</td>';
-                    htmlModal += '</tr>';
-                });
-                htmlModal += '</tbody></table></div>';
-            }
-
-            if (res.pendientes.length > 0) {
-                htmlModal += '<h6 style="font-weight:800;font-size:0.78rem;color:#1d4ed8;margin-bottom:10px;"><i class="bi bi-hourglass-split me-1"></i>' + labelPendientes + ' (' + res.pendientes.length + ')</h6>';
-                htmlModal += '<div style="max-height:220px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:12px;">';
-                htmlModal += '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">';
-                htmlModal += '<thead><tr style="background:#f8fafc;position:sticky;top:0;">';
-                htmlModal += '<th style="padding:8px 12px;text-align:left;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Solicitud</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:center;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Tipo</th>';
-                htmlModal += '<th style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text-muted);font-size:0.68rem;text-transform:uppercase;">Asignada</th>';
-                htmlModal += '</tr></thead><tbody>';
-                res.pendientes.forEach(function(s) {
-                    htmlModal += '<tr style="border-bottom:1px solid #f8fafc;">';
-                    htmlModal += '<td style="padding:8px 12px;font-weight:800;color:#253150;">' + s.id + '</td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:center;">' + getBadgeTipo(s.tipo.toLowerCase()) + '</td>';
-                    htmlModal += '<td style="padding:8px 12px;text-align:right;font-size:0.72rem;color:var(--text-muted);">' + s.fechaAsignacion + '</td>';
-                    htmlModal += '</tr>';
-                });
-                htmlModal += '</tbody></table></div>';
-            }
-
-            if (res.gestionadas.length === 0 && res.pendientes.length === 0) {
-                htmlModal += '<div style="text-align:center;padding:30px;"><i class="bi bi-inbox" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:8px;font-size:0.85rem;">Sin solicitudes ' + (esHoy ? 'hoy' : 'en esta fecha') + '</p></div>';
-            }
-
-            Swal.fire({
-                title: '<i class="bi bi-person-lines-fill me-2"></i>Detalle del Analista',
-                html: htmlModal,
-                showConfirmButton: true,
-                confirmButtonText: 'Cerrar',
-                confirmButtonColor: '#253150',
-                width: 640,
-                showCloseButton: true,
-                customClass: { popup: 'rounded-4' }
-            });
-        })
-        .withFailureHandler(function(err) {
-            Swal.fire('Error', err.message, 'error');
-        })
-        .admin_obtenerDetallePorAnalista(correo, fechaSeleccionada || null);
-}
-
-
-function ejecutarPanicoGlobal() {
+function ejecutarPanicGlobal() {
     Swal.fire({
         title: '¿ESTÁS SEGURO?',
         text: "Pondrás a TODOS los analistas en INACTIVO inmediatamente. Esto detendrá la asignación automática de casos.",
@@ -2463,15 +1656,14 @@ function ejecutarPanicoGlobal() {
         cancelButtonColor: '#64748b',
         confirmButtonText: 'SÍ, PAUSAR TODO',
         cancelButtonText: 'Cancelar'
-    }).then((result) => {
+    }).then(function(result) {
         if (result.isConfirmed) {
             Swal.fire({ 
                 title: 'Pausando sistema...', 
                 html: 'Cambiando estados en la base de datos',
                 allowOutsideClick: false,
-                didOpen: () => Swal.showLoading() 
+                didOpen: function() { Swal.showLoading(); }
             });
-
             google.script.run
                 .withSuccessHandler(function(res) {
                     if(res.success) {
@@ -2494,10 +1686,8 @@ function ejecutarPanicoGlobal() {
     });
 }
 
-
 function abrirModalCuotas() {
-    Swal.fire({ title: 'Cargando cuotas...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    
+    Swal.fire({ title: 'Cargando cuotas...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
     google.script.run.withSuccessHandler(function(res) {
         Swal.close();
         document.getElementById('cuota_nuevas').value = res.nuevas;
@@ -2505,7 +1695,6 @@ function abrirModalCuotas() {
         document.getElementById('cuota_inducciones').value = res.inducciones;
         document.getElementById('cuota_biometria').value = res.biometria;
         document.getElementById('cuota_uar').value = res.uar;
-        
         new bootstrap.Modal(document.getElementById('modalCuotas')).show();
     }).withFailureHandler(function(err) {
         Swal.fire('Error', err.message, 'error');
@@ -2520,13 +1709,11 @@ function guardarCuotas() {
         biometria: parseInt(document.getElementById('cuota_biometria').value) || 0,
         uar: parseInt(document.getElementById('cuota_uar').value) || 0
     };
-
-    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    
+    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
     google.script.run.withSuccessHandler(function(res) {
         if (res.success) {
             bootstrap.Modal.getInstance(document.getElementById('modalCuotas')).hide();
-            Swal.fire({ icon: 'success', title: '¡Cuotas Actualizadas!', text: res.message, confirmButtonColor: '#253150' });
+                Swal.fire({ icon: 'success', title: '¡Cuotas Actualizadas!', text: res.message, confirmButtonColor: '#253150' });
         } else {
             Swal.fire('Error', res.message, 'error');
         }
@@ -2534,7 +1721,6 @@ function guardarCuotas() {
         Swal.fire('Error', err.message, 'error');
     }).admin_setCuotasGlobales(cuotas);
 }
-
 </script>
 </body>
 </html>
