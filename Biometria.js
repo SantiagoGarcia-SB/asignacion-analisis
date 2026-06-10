@@ -393,7 +393,31 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         hoja.getRange(filaReal, 15).setValue(fechaParaLooker);
         hoja.getRange(filaReal, 16).setValue("GESTIONADO");
 
+        // Fecha y hora radicación SAI (ingresada manualmente por el analista)
+        if (datosFormulario.fechaRadicacionSai) {
+          hoja.getRange(filaReal, 17).setValue(datosFormulario.fechaRadicacionSai);
+        }
+
         SpreadsheetApp.flush();
+
+        // Guardar fechaRadicacionSai en Historico_Gestiones del warehouse (columna AL = 38)
+        if (datosFormulario.fechaRadicacionSai) {
+          try {
+            const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+            const sheetSolicitud = ssWarehouse.getSheetByName("solicitud");
+            const ids = sheetSolicitud.getRange('A:A').getValues();
+            for (let j = 1; j < ids.length; j++) {
+              if (String(ids[j][0]).trim() === String(idSolicitud).trim()) {
+                sheetSolicitud.getRange(j + 1, 38).setValue(datosFormulario.fechaRadicacionSai);
+                SpreadsheetApp.flush();
+                break;
+              }
+            }
+          } catch (e) {
+            // No bloquear la gestión si falla la escritura en warehouse
+          }
+        }
+
         lock.releaseLock();
 
         let mensaje = "Gestión guardada correctamente.";

@@ -1386,6 +1386,26 @@
         </select>
       </div>
 
+      <!-- Fecha y Hora Radicación SAI -->
+      <div class="col-md-6 gestion-group">
+        <label class="gestion-label">
+          <i class="bi bi-calendar-plus me-1"></i>
+          Fecha y Hora Radicación SAI
+        </label>
+        <input type="datetime-local" id="d_fecha_radicacion_sai"
+               class="form-control gestion-select"
+               step="60">
+      </div>
+
+      <!-- Botón para precargar fecha/hora actual -->
+      <div class="col-md-6 gestion-group d-flex align-items-end">
+        <button type="button" class="btn btn-sm fw-bold px-3 py-2" id="btnAhoraSai"
+                onclick="document.getElementById('d_fecha_radicacion_sai').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);"
+                style="border-radius: 10px; background: var(--azul-light); color: var(--color-secundario); border: 1.5px solid var(--border); transition: all 0.2s;">
+          <i class="bi bi-clock-fill me-1"></i> Ahora
+        </button>
+      </div>
+
       <!-- Observaciones -->
       <div class="col-12 gestion-group">
         <label class="gestion-label">

@@ -510,6 +510,17 @@
                             <h6 class="fw-bold mb-3 text-dark"><i class="bi bi-clipboard-check me-2 text-primary"></i>Datos de Gestión</h6>
                             <div class="row g-3">
                                 <div class="col-md-6">
+                                    <label><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
+                                    <div class="input-group">
+                                        <input type="datetime-local" id="fechaRadicacionSai" class="form-control fw-bold" step="60">
+                                        <button type="button" class="btn fw-bold" id="btnAhoraSaiBio"
+                                                onclick="document.getElementById('fechaRadicacionSai').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);"
+                                                style="background: var(--azul-light); color: var(--color-secundario); border: 1.5px solid var(--border); border-radius: 0 10px 10px 0 !important;">
+                                            <i class="bi bi-clock-fill me-1"></i>Ahora
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
                                     <label>Resultado Llamada</label>
                                     <select id="resLlamada" class="form-select fw-bold">
                                         <option value="" disabled selected>Seleccione...</option>
@@ -967,7 +978,8 @@ function abrirModal(id) {
             resLlamada: $('#resLlamada').val(),
             resAnterior: $('#resAnterior').val(),
             resFinal: $('#resFinal').val(),
-            fueAprobada: $('#fueAprobada').val()
+            fueAprobada: $('#fueAprobada').val(),
+            fechaRadicacionSai: ($('#fechaRadicacionSai').val() || '').trim()
         };
 
         // 👇 NUEVA VALIDACIÓN ESTRICTA 👇

@@ -493,7 +493,8 @@ function manejarGuardarCambios() {
     estado_q: $('#d_estado_q').val(),
     motivo_aplazamiento: ($('#d_motivo_aplazamiento').val() || '').trim(),
     motivo_negacion: ($('#d_motivo_negacion').val() || '').trim(),
-    tipoSolicitudActual: tipoSolicitudActual // 🚀 ESTA ES LA ÚNICA LÍNEA NUEVA QUE FALTABA
+    tipoSolicitudActual: tipoSolicitudActual,
+    fecha_radicacion_sai: ($('#d_fecha_radicacion_sai').val() || '').trim()
   };
 
   if (!datos.estado_q || (!datos.biometria && tipoSolicitudActual !== 'induccion')) {

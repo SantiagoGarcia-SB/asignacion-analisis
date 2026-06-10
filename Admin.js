@@ -1,15 +1,4 @@
 /**
- * CONSTANTES DE CONFIGURACIÓN DEL SISTEMA
- * (Comentadas aquí porque ya se encuentran declaradas en otro archivo de tu proyecto)
- * 
- * const TARGET_SOLICITUDES_SS_ID = "1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0";
- * const SHEET_NAME_SOLICITUDES = "Historico_Gestiones";
- * const ID_HOJA_REESTUDIOS = "1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U";
- * const NOMBRE_PESTANA_REESTUDIOS = "ORIGEN";
- * const TIMEZONE = "America/Bogota";
- */
-
-/**
  * Verifica si el usuario activo tiene rol de administrador en la base de datos.
  * @throws {Error} Si el usuario no tiene permisos o no existe.
  */

@@ -577,7 +577,7 @@ function guardarCambiosInternos(data) {
       const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
       let minutosDeGestion = 0;
       if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-        minutosDeGestion = Math.round((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60));
+        minutosDeGestion = Number(((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60)).toFixed(2));
       }
       
       const valorActualW = sheetOrigen.getRange(targetRow, 23).getValue();
@@ -608,18 +608,22 @@ function guardarCambiosInternos(data) {
       sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
       sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
 
-      // Tiempo general
-      let horasHabilesGeneral = 0;
+      // Tiempo general (minutos hábiles desde radicación hasta gestión)
+      let minutosHabilesGeneral = 0;
       if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
-        const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
-        horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
+        minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
       }
-      sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
+      sheetOrigen.getRange(targetRow, 37).setValue(Number(minutosHabilesGeneral.toFixed(2)));
+
+      // Fecha y hora radicación SAI (ingresada manualmente por el analista)
+      if (data.fecha_radicacion_sai) {
+        sheetOrigen.getRange(targetRow, 38).setValue(data.fecha_radicacion_sai);
+      }
 
       SpreadsheetApp.flush();
       
       // Guardar en Historico principal
-      const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 37).getValues()[0];
+      const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
       let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
       if (!hojaHistorico) hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
       hojaHistorico.appendRow(filaActualizada);
