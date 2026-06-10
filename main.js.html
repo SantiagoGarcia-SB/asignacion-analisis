@@ -400,24 +400,6 @@ function renderizarTabla(data) {
     
     $('#d_biometria').val(fila[23] || '');
     $('#d_comentarios_gestion').val(fila[24] || '');
-
-    // Precargar fecha radicación SAI en formato datetime-local
-    // Priorizar fechaDiligenciadaRadicación (idx 37) si existe, sino usar fechaRadicación (idx 17)
-    const fechaRadRaw = String(fila[37] || fila[17] || '').trim();
-    if (fechaRadRaw) {
-      const partesRad = fechaRadRaw.split(/[\s\/\:]+/);
-      if (partesRad.length >= 5) {
-        const valDatetime = partesRad[2] + '-' + partesRad[1].padStart(2,'0') + '-' + partesRad[0].padStart(2,'0') + 'T' + partesRad[3].padStart(2,'0') + ':' + partesRad[4].padStart(2,'0');
-        $('#d_fecha_radicacion_sai').val(valDatetime);
-      } else if (partesRad.length >= 3) {
-        const valDate = partesRad[2] + '-' + partesRad[1].padStart(2,'0') + '-' + partesRad[0].padStart(2,'0') + 'T08:00';
-        $('#d_fecha_radicacion_sai').val(valDate);
-      } else {
-        $('#d_fecha_radicacion_sai').val('');
-      }
-    } else {
-      $('#d_fecha_radicacion_sai').val('');
-    }
     
     $('#d_estado_q').val(fila[16] || '').trigger('change');
     
@@ -511,7 +493,7 @@ function manejarGuardarCambios() {
     estado_q: $('#d_estado_q').val(),
     motivo_aplazamiento: ($('#d_motivo_aplazamiento').val() || '').trim(),
     motivo_negacion: ($('#d_motivo_negacion').val() || '').trim(),
-    fecha_radicacion_sai: ($('#d_fecha_radicacion_sai').val() || '').trim()
+    tipoSolicitudActual: tipoSolicitudActual // 🚀 ESTA ES LA ÚNICA LÍNEA NUEVA QUE FALTABA
   };
 
   if (!datos.estado_q || (!datos.biometria && tipoSolicitudActual !== 'induccion')) {
@@ -520,16 +502,6 @@ function manejarGuardarCambios() {
       text: tipoSolicitudActual === 'induccion' 
         ? 'Por favor completa el campo obligatorio (Estado Final).' 
         : 'Por favor completa todos los campos obligatorios (Estado Final y Biometría).', 
-      icon: 'warning',
-      confirmButtonColor: '#253150'
-    });
-    return;
-  }
-
-  if (!datos.fecha_radicacion_sai) {
-    Swal.fire({
-      title: 'Fecha de radicación requerida',
-      text: 'Por favor ingresa la fecha y hora de radicación que aparece en SAI.',
       icon: 'warning',
       confirmButtonColor: '#253150'
     });

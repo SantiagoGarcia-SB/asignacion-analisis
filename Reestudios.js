@@ -156,11 +156,6 @@ function guardarGestionReestudio(datos) {
       tiempoGestion                       // P: tiempo de gestión (asignación → fin)
     ]]);
 
-    // Escribir póliza en columna Q si fue proporcionada
-    if (datos.poliza) {
-      hoja.getRange(targetRow, 17).setValue(datos.poliza);
-    }
-
     // Formatear fecha
     hoja.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
 

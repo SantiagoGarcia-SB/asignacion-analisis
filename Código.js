@@ -25,7 +25,7 @@ const HEADER_SOLICITUDES = [
   "clase", "uar", "tiempoderespuestafinaldelasolicitud", "biometría", "observaciones", 
   "tracking", "fecha asignación", "asignacion", "fecha fin gestión", "tiempo total de resolución de la solicitud",
   "Nombre", "Motivo de aplazamiento", "Motivo de negación", "fecha de gestion", "Tiempo de gestion",
-  "Canal", "Tiempo general (radicación)", "fechaDiligenciadaRadicación"
+  "Canal", "Tiempo general (radicación)"
 ];
 
 const props = PropertiesService.getScriptProperties();
@@ -261,11 +261,10 @@ function actualizarSolicitudesNuevasAPI() {
   const sIni = formatDateCustom(fechaInicio);
   const sFin = formatDateCustom(hoy);
   const ESTADOS_EXCLUIR = new Set(["RECHAZADO", "APROBADO","CODEUDORES_REQUERIDOS"]);
-  const TIPOS_EXCLUIR   = new Set(["AD", "AC"]);
+  const TIPOS_EXCLUIR   = new Set(["AC"]); 
 
   Logger.log(`Rango de consulta: Desde ${sIni} hasta ${sFin}`);
   
-
   const solicitudesHomologadas = [];
   const mapaTipos = {
     "TS":  "NUEVA",
@@ -276,7 +275,6 @@ function actualizarSolicitudesNuevasAPI() {
     "IND": "INDUCCION"
   };
   
-
   try {
     do {
       const url = `${endpointBase}?startDate=${sIni}&endDate=${sFin}&page=${paginaActual}&size=200`;
@@ -301,48 +299,53 @@ function actualizarSolicitudesNuevasAPI() {
 
         let guardadosEnPagina = 0;
 
-contenido.forEach(item => {
-  let esUar = (item.uar === true || String(item.uar).toLowerCase() === "true");
+        contenido.forEach(item => {
+          let esUar = (item.uar === true || String(item.uar).toLowerCase() === "true");
+          if (esUar) {
+            return;
+          }
 
+          const estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
+          const tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
 
-  const estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
-  const tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
+          const estadoExcluido = ESTADOS_EXCLUIR.has(estadoGeneral);
+          const tipoExcluido   = TIPOS_EXCLUIR.has(tipoSolicitud);
 
-  const estadoExcluido = ESTADOS_EXCLUIR.has(estadoGeneral);
-  const tipoExcluido   = TIPOS_EXCLUIR.has(tipoSolicitud);
+          if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido) {
 
-  if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido) {
+            const tipoOriginal = String(item.requestType || "").toUpperCase().trim();
+            let claseNormalizada = mapaTipos[tipoOriginal] || tipoOriginal;
+            if (estadoGeneral.includes("EN ESTUDIO") && claseNormalizada === "") {
+              claseNormalizada = "NUEVA";
+            }
 
-    const tipoOriginal = (item.requestType || "").toUpperCase();
-    const claseNormalizada = mapaTipos[tipoOriginal] || tipoOriginal;
-
-    solicitudesHomologadas.push({
-      solicitud: item.consecutive,
-      poliza: item.policyNumber,
-      identificacionInquilino: item.evaluatedDocument || item.holderDocument,
-      tipoIdentificacion: item.evaluatedDocumentType || item.holderDocumentType,
-      nombreInquilino: item.tenantName,
-      correoInquilino: item.tenantEmail,
-      telefonoInquilino: item.tenantPhone,
-      ingresos: item.income,
-      fechaExpedicion: item.expeditionDate,
-      canon: item.monthlyRent,
-      cuota: item.managementFee,
-      direccionInmueble: item.address,
-      destinoInmueble: item.propertyUse,
-      ciudadInmueble: item.cityName,
-      nombreAsesor: item.executiveName,
-      correoAsesor: item.advisorEmail,
-      estadoGeneral: item.studyStatus,
-      fechaRadicacion: item.registrationDate,
-      fechaResultado: item.lastResultDate || item.lastMovementDate,
-      clase: claseNormalizada,
-      digitalUar: esUar ? "Si" : "No",
-      canal : String(item.channel || "").trim()
-    });
-    guardadosEnPagina++;
-  }
-});
+            solicitudesHomologadas.push({
+              solicitud: item.consecutive,
+              poliza: item.policyNumber,
+              identificacionInquilino: item.evaluatedDocument || item.holderDocument,
+              tipoIdentificacion: item.evaluatedDocumentType || item.holderDocumentType,
+              nombreInquilino: item.tenantName,
+              correoInquilino: item.tenantEmail,
+              telefonoInquilino: item.tenantPhone,
+              ingresos: item.income,
+              fechaExpedicion: item.expeditionDate,
+              canon: item.monthlyRent,
+              cuota: item.managementFee,
+              direccionInmueble: item.address,
+              destinoInmueble: item.propertyUse,
+              ciudadInmueble: item.cityName,
+              nombreAsesor: item.executiveName,
+              correoAsesor: item.advisorEmail,
+              estadoGeneral: item.studyStatus,
+              fechaRadicacion: item.registrationDate,
+              fechaResultado: item.lastResultDate || item.lastMovementDate,
+              clase: claseNormalizada,
+              digitalUar: "No",
+              canal : String(item.channel || "").trim()
+            });
+            guardadosEnPagina++;
+          }
+        });
         
         Logger.log(`Registros extraídos: ${guardadosEnPagina}`);
         paginaActual++;
@@ -364,7 +367,6 @@ contenido.forEach(item => {
     return;
   }
 
-
   if (solicitudesHomologadas.length > 0) {
     Logger.log(`Ejecutando guardado final: ${solicitudesHomologadas.length} solicitudes válidas encontradas.`);
     procesarYGuardarLote(solicitudesHomologadas);
@@ -373,7 +375,6 @@ contenido.forEach(item => {
     Logger.log("Proceso finalizado. No hay solicitudes útiles en este periodo.");
   }
 }
-
 function formatDateCustom(date) {
   const year = date.getFullYear();
   const month = ("0" + (date.getMonth() + 1)).slice(-2);
@@ -502,6 +503,14 @@ function getSetDeIds(sheet) {
   return new Set(values.flat().map(String).map(s => s.trim()));
 }
 
+// ===================================================================
+// GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
+// ===================================================================
+
+// ===================================================================
+// GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
+// ===================================================================
+
 function guardarCambiosInternos(data) {
   if (!data || !data.solicitudId) {
     return { success: false, message: "ID de solicitud no proporcionado." };
@@ -511,6 +520,7 @@ function guardarCambiosInternos(data) {
   let motivo_aplazamiento = (data.motivo_aplazamiento || "").trim();
   let motivo_negacion = (data.motivo_negacion || "").trim();
 
+  // Validación de motivos
   if (estado_q.includes("APLAZ")) {
     motivo_negacion = "";
     if (!motivo_aplazamiento) return { success: false, message: "El motivo de aplazamiento es obligatorio." };
@@ -527,7 +537,7 @@ function guardarCambiosInternos(data) {
   try {
     lock.waitLock(15000);
   } catch(e) {
-    return { success: false, message: "El sistema está muy ocupado guardando gestiones de otros compañeros. Por favor, dale a 'Guardar' nuevamente en unos segundos." };
+    return { success: false, message: "El sistema está muy ocupado guardando gestiones. Por favor, dale a 'Guardar' nuevamente en unos segundos." };
   }
 
   let disparaAsignacion = false;
@@ -535,13 +545,25 @@ function guardarCambiosInternos(data) {
   let mensajeAdicional = "";
 
   try {
+    // Definición de las 2 Bases de Datos
     const ID_WAREHOUSE = "1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0";
     const ssOrigen = SpreadsheetApp.openById(ID_WAREHOUSE);
     const sheetOrigen = ssOrigen.getSheetByName("solicitud");
     
+    const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
+    const sheetReestudios = ssReestudios.getSheetByName("ORIGEN");
+
+    const ahora = new Date();
+    const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
+    const fechaTexto = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy HH:mm:ss');
+    
+    const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
+    disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
+
+    // 1. BUSCAMOS EN EL EXCEL PRINCIPAL (Estudios, Bio, Inducciones)
     const ids = sheetOrigen.getRange('A:A').getValues(); 
     let targetRow = -1;
-    
     for (let i = 1; i < ids.length; i++) {
       if (String(ids[i][0]).trim() === String(data.solicitudId).trim()) {
         targetRow = i + 1;
@@ -549,76 +571,111 @@ function guardarCambiosInternos(data) {
       }
     }
 
-    if (targetRow === -1) return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en la base central.` };
-
-    const ahora = new Date();
-    const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
-    
-    const fechaAsignacion = sheetOrigen.getRange(targetRow, 27).getValue(); 
-    let fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
-
-    // Si el analista proporcionó la fecha de radicación SAI, guardarla en col 38 (fechaDiligenciadaRadicación)
-    let fechaRadicacionParaTiempo = fechaRadicacion;
-    if (data.fecha_radicacion_sai) {
-      const fechaSaiDate = new Date(data.fecha_radicacion_sai);
-      if (fechaSaiDate instanceof Date && !isNaN(fechaSaiDate.getTime())) {
-        sheetOrigen.getRange(targetRow, 38).setValue(fechaSaiDate).setNumberFormat("dd/mm/yyyy HH:mm:ss");
-        fechaRadicacionParaTiempo = fechaSaiDate;
+    if (targetRow !== -1) {
+      // 🟢 RUTA A: ES UNA SOLICITUD DE LA BASE PRINCIPAL
+      const fechaAsignacion = sheetOrigen.getRange(targetRow, 27).getValue(); 
+      const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
+      let minutosDeGestion = 0;
+      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
+        minutosDeGestion = Math.round((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60));
       }
+      
+      const valorActualW = sheetOrigen.getRange(targetRow, 23).getValue();
+      let historialFechasW = !valorActualW ? fechaTexto : fechaTexto + "\n" + valorActualW;
+
+      // 🚀 TALLADO DE CLASE PERMANENTE PARA NO PERDER EL CONTEO
+      let valorClaseActual = sheetOrigen.getRange(targetRow, 21).getValue();
+      if (data.tipoSolicitudActual === 'biometria') valorClaseActual = 'BIOMETRIA';
+      else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
+
+      const valorUarActual = sheetOrigen.getRange(targetRow, 22).getValue();
+      
+      let minutosHabilesSLA = 0;
+      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
+        minutosHabilesSLA = calcularMinutosHabilesSLA(fechaAsignacion, ahora, ssOrigen);
+      }
+      let horasHabilesSLA = Number((minutosHabilesSLA / 60).toFixed(2));
+
+      // Guardar en hoja principal
+      sheetOrigen.getRange(targetRow, 17).setValue(estado_q); 
+      sheetOrigen.getRange(targetRow, 21, 1, 5).setValues([[
+        valorClaseActual, valorUarActual, historialFechasW, data.biometria || '', data.comentarios_gestion || ''
+      ]]);
+      
+      sheetOrigen.getRange(targetRow, 32, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
+      sheetOrigen.getRange(targetRow, 29).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss"); 
+      sheetOrigen.getRange(targetRow, 30).setValue(horasHabilesSLA); 
+      sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
+      sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
+
+      // Tiempo general
+      let horasHabilesGeneral = 0;
+      if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
+        const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
+        horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
+      }
+      sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
+
+      SpreadsheetApp.flush();
+      
+      // Guardar en Historico principal
+      const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 37).getValues()[0];
+      let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
+      if (!hojaHistorico) hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
+      hojaHistorico.appendRow(filaActualizada);
+
+    } else {
+      // 🔵 RUTA B: NO ESTÁ EN PRINCIPAL, BUSCAMOS EN EXCEL DE REESTUDIOS/UAR
+      const idsReest = sheetReestudios.getRange('B:B').getValues(); 
+      let targetRowReest = -1;
+      for (let i = 1; i < idsReest.length; i++) {
+        if (String(idsReest[i][0]).trim() === String(data.solicitudId).trim()) {
+          targetRowReest = i + 1;
+          break;
+        }
+      }
+
+      if (targetRowReest === -1) {
+        return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
+      }
+
+      // Guardar en hoja secundaria (Reestudios)
+      const fechaRadicacionR = sheetReestudios.getRange(targetRowReest, 1).getValue();
+      const fechaAsignacionR = sheetReestudios.getRange(targetRowReest, 9).getValue();
+
+      let tiempoTotalResolucion = "";
+      let tiempoGestion = "";
+
+      if (fechaRadicacionR instanceof Date && !isNaN(fechaRadicacionR.getTime())) {
+        tiempoTotalResolucion = Math.round((ahora.getTime() - fechaRadicacionR.getTime()) / 60000); 
+      }
+      if (fechaAsignacionR instanceof Date && !isNaN(fechaAsignacionR.getTime())) {
+        tiempoGestion = Math.round((ahora.getTime() - fechaAsignacionR.getTime()) / 60000); 
+      }
+
+      // Guardar resultados en columnas J hasta P
+      sheetReestudios.getRange(targetRowReest, 10, 1, 7).setValues([[
+        ahora,                              // J: fechaFinGestion
+        estado_q,                           // K: estadoGestion
+        motivo_aplazamiento,                // L: motivoAplazamiento
+        motivo_negacion,                    // M: motivoNegacion
+        data.comentarios_gestion || "",     // N: observaciones
+        tiempoTotalResolucion,              // O: tiempo total
+        tiempoGestion                       // P: tiempo gestión
+      ]]);
+      sheetReestudios.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+
+      SpreadsheetApp.flush();
+
+      // Guardar en Historico Secundario
+      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
+      let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
+      if (!hojaHistoricoR) {
+        hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
+      }
+      hojaHistoricoR.appendRow(filaActualizadaR);
     }
 
-    let minutosDeGestion = 0;
-    if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-      minutosDeGestion = Math.round((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60));
-    }
-    
-    const fechaTexto = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy HH:mm:ss');
-    const valorActualW = sheetOrigen.getRange(targetRow, 23).getValue();
-    let historialFechasW = !valorActualW ? fechaTexto : fechaTexto + "\n" + valorActualW;
-
-    const valorClaseActual = sheetOrigen.getRange(targetRow, 21).getValue();
-    const valorUarActual = sheetOrigen.getRange(targetRow, 22).getValue();
-    
-    let minutosHabilesSLA = 0;
-    if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-      minutosHabilesSLA = calcularMinutosHabilesSLA(fechaAsignacion, ahora, ssOrigen);
-    }
-    let horasHabilesSLA = Number((minutosHabilesSLA / 60).toFixed(2));
-
-    sheetOrigen.getRange(targetRow, 17).setValue(estado_q); 
-    sheetOrigen.getRange(targetRow, 21, 1, 5).setValues([[
-      valorClaseActual, 
-      valorUarActual, 
-      historialFechasW, 
-      data.biometria || '', 
-      data.comentarios_gestion || ''
-    ]]);
-    
-    sheetOrigen.getRange(targetRow, 32, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
-    sheetOrigen.getRange(targetRow, 29).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss"); 
-    sheetOrigen.getRange(targetRow, 30).setValue(horasHabilesSLA); 
-    sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
-    sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
-
-    // Tiempo general: horas hábiles desde radicación diligenciada hasta resultado
-    let horasHabilesGeneral = 0;
-    if (fechaRadicacionParaTiempo instanceof Date && !isNaN(fechaRadicacionParaTiempo.getTime())) {
-      const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacionParaTiempo, ahora, ssOrigen);
-      horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
-    }
-    sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
-
-    const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
-    disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
-
-    SpreadsheetApp.flush();
-    const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
-
-    let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
-    if (!hojaHistorico) {
-      hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
-    }
-    hojaHistorico.appendRow(filaActualizada);
     if (estado_q.includes("APLAZ")) {
       mensajeAdicional = " (La solicitud queda cerrada para tu gestión y guardada en el sistema).";
     }
@@ -631,8 +688,8 @@ function guardarCambiosInternos(data) {
     }
   }
 
+  // Despertar al Motor Omnicanal para traer el siguiente caso
   let mensajeAsignacion = "";
-
   if (disparaAsignacion) {
     try {
       const resultadoAuto = RequestLead(); 

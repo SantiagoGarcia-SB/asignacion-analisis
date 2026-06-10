@@ -681,6 +681,9 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         <button class="btn-outline-brand" onclick="refrescarDashboard()">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
+        <button class="btn-outline-brand" onclick="abrirModalCuotas()" style="border-color: #253150; color: #253150;">
+            <i class="bi bi-sliders me-1"></i> Cuotas
+        </button>
     </div>
 </div>
 
@@ -955,13 +958,15 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                                 <th>Estado</th>
                                 <th>Gestionadas</th>
                                 <th>Pendientes</th>
+                                <th>Prom. Gestión</th>
+                                <th>Prom. General</th>
                                 <th>Primer Resultado</th>
                                 <th>Último Resultado</th>
                                 <th class="text-center">Detalle</th>
                             </tr>
                         </thead>
                         <tbody id="cuerpoAsesoresPrimerResultado">
-                            <tr><td colspan="8" class="text-center text-muted py-3">Cargando datos...</td></tr>
+                            <tr><td colspan="10" class="text-center text-muted py-3">Cargando datos...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1164,6 +1169,56 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                 <button type="button" class="btn-modal-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" onclick="guardarNuevoUsuario()" class="btn-modal-primary" style="background:var(--grad-rojo);box-shadow:0 4px 14px rgba(189,15,20,0.3);">
                     <i class="bi bi-person-check"></i> Registrar Analista
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="modalCuotas" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-header-inner" style="width:100%; background: var(--grad-azul);">
+                    <div class="modal-header-title">
+                        <div class="modal-header-icon"><i class="bi bi-sliders"></i></div>
+                        <div>
+                            <div class="modal-title">Cuotas por Analista</div>
+                            <div class="modal-subtitle">Meta diaria de asignación para cada asesor</div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" style="position:relative;z-index:1;"></button>
+                </div>
+            </div>
+            <div class="modal-body p-4">
+                <form id="formCuotas">
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <label class="small fw-bold mb-2" style="color: #1d4ed8;"><i class="bi bi-laptop me-1"></i>Nuevas (Digital)</label>
+                            <input type="number" id="cuota_nuevas" class="form-control fw-bold fs-5 text-center" min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small fw-bold mb-2" style="color: #7c3aed;"><i class="bi bi-layers me-1"></i>Reestudios</label>
+                            <input type="number" id="cuota_reestudios" class="form-control fw-bold fs-5 text-center" min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small fw-bold mb-2" style="color: #b45309;"><i class="bi bi-easel me-1"></i>Inducciones</label>
+                            <input type="number" id="cuota_inducciones" class="form-control fw-bold fs-5 text-center" min="0">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small fw-bold mb-2" style="color: #4338ca;"><i class="bi bi-fingerprint me-1"></i>Biometría</label>
+                            <input type="number" id="cuota_biometria" class="form-control fw-bold fs-5 text-center" min="0">
+                        </div>
+                        <div class="col-md-12 text-center border-top pt-3">
+                            <label class="small fw-bold mb-2" style="color: #be185d;"><i class="bi bi-exclamation-diamond me-1"></i>UAR</label>
+                            <input type="number" id="cuota_uar" class="form-control fw-bold fs-5 text-center mx-auto" style="width: 50%;" min="0">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer d-flex">
+                <button type="button" class="btn-modal-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" onclick="guardarCuotas()" class="btn-modal-primary">
+                    <i class="bi bi-save me-2"></i> Guardar Cuotas
                 </button>
             </div>
         </div>
@@ -1407,11 +1462,7 @@ function refrescarDashboard() {
                 
                 // Mejora 9: incluir nombre del asesor en el botón
                 html += '<td class="text-center">';
-                if (item.tipo === 'reestudio' || item.tipo === 'uar') {
-                    html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacionReestudios(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\')" title="Devolver a la cola">';
-                } else {
-                    html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\')" title="Devolver a la nube">';
-                }
+                html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\')" title="Devolver a la nube">';
                 html += '<i class="bi bi-arrow-return-left"></i> Quitar';
                 html += '</button>';
                 html += '</td>';
@@ -1879,32 +1930,6 @@ function confirmarDesasignacion(idSolicitud, nombreAsesor) {
         }
     });
 }
-
-function confirmarDesasignacionReestudios(idSolicitud, nombreAsesor) {
-    Swal.fire({
-        title: 'Devolver a la cola (Reestudios)',
-        html: `Vas a quitarle la solicitud <strong>${idSolicitud}</strong> a <strong>${nombreAsesor || 'el asesor actual'}</strong>.<br><small class="text-muted">Se devolverá a la cola de reestudios para reasignación.</small>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#BD0F14',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Sí, desasignar',
-        cancelButtonText: 'Cancelar'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-            
-            google.script.run.withSuccessHandler(function(res) {
-                if (res.success) {
-                    Swal.fire('¡Hecho!', res.message, 'success');
-                    refrescarDashboard();
-                } else {
-                    Swal.fire('Error', res.message, 'error');
-                }
-            }).desasignarSolicitudReestudios(idSolicitud);
-        }
-    });
-}
 // ===================================================================
 // MÓDULO DE MÉTRICAS - Frontend
 // ===================================================================
@@ -2223,7 +2248,7 @@ function cargarAsesoresActivosPrimerResultado() {
         .withFailureHandler(function(err) {
             document.getElementById('spinnerPrimerResultado').style.display = 'none';
             document.getElementById('cuerpoAsesoresPrimerResultado').innerHTML =
-                '<tr><td colspan="8" class="text-center text-danger py-3"><i class="bi bi-exclamation-circle me-1"></i>' + (err.message || 'Error al cargar') + '</td></tr>';
+                '<tr><td colspan="10" class="text-center text-danger py-3"><i class="bi bi-exclamation-circle me-1"></i>' + (err.message || 'Error al cargar') + '</td></tr>';
         })
         .admin_obtenerAsesoresActivosPrimerResultado(fechaSeleccionada || null);
 }
@@ -2245,6 +2270,8 @@ function renderAsesoresPrimerResultado(respuesta) {
         const ths = thRow.querySelectorAll('th');
         ths[3].textContent = 'Gestionadas';
         ths[4].textContent = esHoy ? 'Pendientes' : 'Asignadas';
+        ths[5].textContent = 'Prom. Gestión';
+        ths[6].textContent = 'Prom. General';
     }
 
     // Actualizar subtítulo
@@ -2257,7 +2284,7 @@ function renderAsesoresPrimerResultado(respuesta) {
 
     let html = '';
     if (!datos || datos.length === 0) {
-        html = '<tr><td colspan="8" class="text-center text-muted py-3">No hay datos para la fecha seleccionada</td></tr>';
+        html = '<tr><td colspan="10" class="text-center text-muted py-3">No hay datos para la fecha seleccionada</td></tr>';
     } else {
         const ahora = new Date();
 
@@ -2315,6 +2342,8 @@ function renderAsesoresPrimerResultado(respuesta) {
             html += '<td>' + badgeEstado(a.estado) + '</td>';
             html += '<td class="text-center">' + gestionadasBadge + '</td>';
             html += '<td class="text-center">' + pendientesBadge + '</td>';
+            html += '<td class="text-center">' + formatearDuracion(a.promedioGestion) + '</td>';
+            html += '<td class="text-center" style="color:#7c3aed;font-weight:700;">' + formatearTiempoGeneral(a.promedioGeneral) + '</td>';
             html += '<td>' + horaDisplay + '</td>';
             html += '<td>' + ultimoDisplay + '</td>';
             html += '<td class="text-center"><button class="btn-action" onclick="verDetalleAnalista(\'' + a.correo.replace(/'/g, "\\'") + '\')" title="Ver detalle"><i class="bi bi-eye"></i></button></td>';
@@ -2360,7 +2389,6 @@ function verDetalleAnalista(correo) {
             htmlModal += '<div style="text-align:center;background:#dbeafe;padding:8px 14px;border-radius:10px;"><span style="font-size:1.2rem;font-weight:800;color:#1d4ed8;">' + res.pendientes.length + '</span><br><span style="font-size:0.65rem;font-weight:700;color:#1d4ed8;">' + (esHoy ? 'Pendientes' : 'Asignadas') + '</span></div>';
             htmlModal += '</div></div>';
 
-            // Gestionadas
             if (res.gestionadas.length > 0) {
                 htmlModal += '<h6 style="font-weight:800;font-size:0.78rem;color:#15803d;margin-bottom:10px;"><i class="bi bi-check-circle-fill me-1"></i>' + labelGestionadas + ' (' + res.gestionadas.length + ')</h6>';
                 htmlModal += '<div style="max-height:220px;overflow-y:auto;margin-bottom:16px;border:1px solid #f1f5f9;border-radius:12px;">';
@@ -2384,7 +2412,6 @@ function verDetalleAnalista(correo) {
                 htmlModal += '</tbody></table></div>';
             }
 
-            // Pendientes / Asignadas
             if (res.pendientes.length > 0) {
                 htmlModal += '<h6 style="font-weight:800;font-size:0.78rem;color:#1d4ed8;margin-bottom:10px;"><i class="bi bi-hourglass-split me-1"></i>' + labelPendientes + ' (' + res.pendientes.length + ')</h6>';
                 htmlModal += '<div style="max-height:220px;overflow-y:auto;border:1px solid #f1f5f9;border-radius:12px;">';
@@ -2425,7 +2452,6 @@ function verDetalleAnalista(correo) {
         .admin_obtenerDetallePorAnalista(correo, fechaSeleccionada || null);
 }
 
-// ===================================================================
 
 function ejecutarPanicoGlobal() {
     Swal.fire({
@@ -2466,6 +2492,47 @@ function ejecutarPanicoGlobal() {
                 .admin_desactivarTodosAsesores(); 
         }
     });
+}
+
+
+function abrirModalCuotas() {
+    Swal.fire({ title: 'Cargando cuotas...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
+    google.script.run.withSuccessHandler(function(res) {
+        Swal.close();
+        document.getElementById('cuota_nuevas').value = res.nuevas;
+        document.getElementById('cuota_reestudios').value = res.reestudios;
+        document.getElementById('cuota_inducciones').value = res.inducciones;
+        document.getElementById('cuota_biometria').value = res.biometria;
+        document.getElementById('cuota_uar').value = res.uar;
+        
+        new bootstrap.Modal(document.getElementById('modalCuotas')).show();
+    }).withFailureHandler(function(err) {
+        Swal.fire('Error', err.message, 'error');
+    }).admin_getCuotasGlobales();
+}
+
+function guardarCuotas() {
+    const cuotas = {
+        nuevas: parseInt(document.getElementById('cuota_nuevas').value) || 0,
+        reestudios: parseInt(document.getElementById('cuota_reestudios').value) || 0,
+        inducciones: parseInt(document.getElementById('cuota_inducciones').value) || 0,
+        biometria: parseInt(document.getElementById('cuota_biometria').value) || 0,
+        uar: parseInt(document.getElementById('cuota_uar').value) || 0
+    };
+
+    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    
+    google.script.run.withSuccessHandler(function(res) {
+        if (res.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalCuotas')).hide();
+            Swal.fire({ icon: 'success', title: '¡Cuotas Actualizadas!', text: res.message, confirmButtonColor: '#253150' });
+        } else {
+            Swal.fire('Error', res.message, 'error');
+        }
+    }).withFailureHandler(function(err) {
+        Swal.fire('Error', err.message, 'error');
+    }).admin_setCuotasGlobales(cuotas);
 }
 
 </script>
