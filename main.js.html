@@ -62,7 +62,7 @@ function actualizarCamposGestion() {
       .fadeIn(200);
 
     selectAplaz.prop('required', true);
-    selectNeg.val('');
+    tsSetVal('d_motivo_negacion', '');
   }
 
   else if (
@@ -77,13 +77,13 @@ function actualizarCamposGestion() {
 
     selectNeg.prop('required', true);
 
-    selectAplaz.val('');
+    tsSetVal('d_motivo_aplazamiento', '');
   }
 
   else {
 
-    selectAplaz.val('');
-    selectNeg.val('');
+    tsSetVal('d_motivo_aplazamiento', '');
+    tsSetVal('d_motivo_negacion', '');
   }
 }
 
@@ -725,130 +725,124 @@ function seleccionarNovedad(novedad) {
     cambiarMiEstado(novedad);
 }
 
-// ====== Gestión Reestudio/UAR desde vista Digital (SweetAlert2) ======
+// ====== Gestión Reestudio/UAR desde vista Digital (modal Bootstrap) ======
 function abrirGestionReestudioDigital(solicitudId, fila) {
   var tipo = String(fila[20] || '').toUpperCase();
-  var tipoBadgeColor = tipo.includes('NUEVA UAR') ? '#be185d' : tipo.includes('DEUDOR') ? '#b91c1c' : '#7c3aed';
-  var tipoBadgeBg   = tipo.includes('NUEVA UAR') ? '#fce7f3' : tipo.includes('DEUDOR') ? '#fee2e2' : '#ede9fe';
-  var tipoLabel     = tipo.includes('NUEVA UAR') ? 'Nueva UAR' : tipo.includes('DEUDOR') ? 'Deudor UAR' : (tipo || 'Reestudio');
+  var tipoLabel = tipo.includes('NUEVA UAR') ? 'Nueva UAR' : tipo.includes('DEUDOR') ? 'Deudor UAR' : (String(fila[20] || 'Reestudio'));
 
-  var formHtml =
-    '<div style="text-align:left;">' +
-    '<p style="font-size:0.8rem;color:#64748b;margin-bottom:16px;">' +
-      '<b>' + solicitudId + '</b> &nbsp;' +
-      '<span style="background:' + tipoBadgeBg + ';color:' + tipoBadgeColor + ';padding:3px 9px;border-radius:6px;font-size:0.72rem;">' + tipoLabel + '</span>' +
-      '<br><span style="font-size:0.72rem;">Origen: ' + (fila[1] || '—') + ' | Radicación: ' + (fila[17] || '—') + '</span>' +
-    '</p>' +
-    '<label style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Póliza *</label>' +
-    '<input id="swal_rmd_poliza" type="number" class="swal2-input" placeholder="Número de póliza" style="margin:4px 0 12px 0;width:100%;">' +
-    '<label style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Estado de Gestión *</label>' +
-    '<select id="swal_rmd_estado" class="swal2-select" style="width:100%;margin:4px 0 12px 0;" onchange="swalRmdEstadoCambio()">' +
-      '<option value="" disabled selected>Selecciona...</option>' +
-      '<option value="APROBADA">APROBADA</option>' +
-      '<option value="APLAZADA">APLAZADA</option>' +
-      '<option value="NEGADA">NEGADA</option>' +
-    '</select>' +
-    '<div id="swal_rmd_aplaz" style="display:none;">' +
-      '<label style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Motivo Aplazamiento *</label>' +
-      '<select id="swal_rmd_mot_aplaz" class="swal2-select" style="width:100%;margin:4px 0 12px 0;">' +
-        '<option value="">Selecciona...</option>' +
-        '<option value="Un deudor solidario">Un deudor solidario</option>' +
-        '<option value="Dos deudores solidarios">Dos deudores solidarios</option>' +
-        '<option value="Extractos bancarios">Extractos bancarios</option>' +
-        '<option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>' +
-        '<option value="Pendiente validación de datos">Pendiente validación de datos</option>' +
-        '<option value="Pendiente biometria">Pendiente biometría</option>' +
-        '<option value="Certificado laboral">Certificado laboral</option>' +
-        '<option value="Documento de identidad legible">Documento de identidad legible</option>' +
-        '<option value="Pendiente resultado lote">Pendiente resultado lote</option>' +
-        '<option value="Error de terceros">Error de terceros</option>' +
-      '</select>' +
-    '</div>' +
-    '<div id="swal_rmd_neg" style="display:none;">' +
-      '<label style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Motivo Negación *</label>' +
-      '<select id="swal_rmd_mot_neg" class="swal2-select" style="width:100%;margin:4px 0 12px 0;">' +
-        '<option value="">Selecciona...</option>' +
-        '<option value="Capacidad de endeudamiento">Capacidad de endeudamiento</option>' +
-        '<option value="Referencias negativas">Referencias negativas</option>' +
-        '<option value="Documentación insuficiente">Documentación insuficiente</option>' +
-        '<option value="Perfil no aplica">Perfil no aplica</option>' +
-        '<option value="Solicitud duplicada">Solicitud duplicada</option>' +
-      '</select>' +
-    '</div>' +
-    '<label style="font-size:0.72rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Observaciones</label>' +
-    '<textarea id="swal_rmd_obs" class="swal2-textarea" placeholder="Notas adicionales..." style="margin:4px 0 0 0;width:100%;height:70px;"></textarea>' +
-    '</div>';
+  // Reset tabs al General
+  var tabGeneral = document.querySelector('#modalReestudioDigital button[data-bs-target="#rmd-tab-general"]');
+  if (tabGeneral) new bootstrap.Tab(tabGeneral).show();
 
-  Swal.fire({
-    title: 'Gestión de Reestudio',
-    html: formHtml,
-    confirmButtonText: '<i class="bi bi-cloud-arrow-up me-1"></i> Guardar',
-    confirmButtonColor: '#253150',
-    cancelButtonText: 'Cancelar',
-    showCancelButton: true,
-    cancelButtonColor: '#64748b',
-    width: '500px',
-    preConfirm: function() {
-      var estado = document.getElementById('swal_rmd_estado').value;
-      var poliza = (document.getElementById('swal_rmd_poliza').value || '').trim();
-      if (!estado) { Swal.showValidationMessage('Selecciona un estado de gestión'); return false; }
-      if (!poliza) { Swal.showValidationMessage('El campo Póliza es obligatorio'); return false; }
-      if (estado === 'APLAZADA' && !document.getElementById('swal_rmd_mot_aplaz').value) {
-        Swal.showValidationMessage('El motivo de aplazamiento es obligatorio'); return false;
-      }
-      if (estado === 'NEGADA' && !document.getElementById('swal_rmd_mot_neg').value) {
-        Swal.showValidationMessage('El motivo de negación es obligatorio'); return false;
-      }
-      return {
-        solicitudId: solicitudId,
-        estado_q: estado,
-        poliza: poliza,
-        motivo_aplazamiento: estado === 'APLAZADA' ? document.getElementById('swal_rmd_mot_aplaz').value : '',
-        motivo_negacion: estado === 'NEGADA' ? document.getElementById('swal_rmd_mot_neg').value : '',
-        comentarios_gestion: document.getElementById('swal_rmd_obs').value || '',
-        biometria: '',
-        tipoSolicitudActual: 'reestudio'
-      };
-    }
-  }).then(function(result) {
-    if (!result.isConfirmed) return;
-    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
-    google.script.run.withSuccessHandler(function(r) {
-      if (r.success) {
-        if (typeof UX !== 'undefined') {
-          UX.showSuccessCheck(function() {
-            UX.showToast('Gestión guardada: ' + result.value.estado_q, 'success');
-            yaSeIntentoAsignar = false;
-            cargarDatos();
-          });
-        } else {
-          Swal.fire({ icon: 'success', title: 'Guardado', text: r.message, confirmButtonColor: '#253150' }).then(function() {
-            yaSeIntentoAsignar = false;
-            cargarDatos();
-          });
-        }
+  // Tab General — cards superiores
+  $('#rmd_header_sol').text(solicitudId);
+  $('#rmd_d_solicitud').text(solicitudId);
+  $('#rmd_d_origen').text(fila[1] || '—');
+  $('#rmd_d_radicacion').text(fila[17] || '—');
+  $('#rmd_d_asignacion').text(fila[26] || '—');
+
+  // Detalles del proceso
+  $('#rmd_d_tipo').text(tipoLabel);
+  $('#rmd_d_analista').text(fila[27] || '—');
+
+  // Botón Drive
+  var linkDrive = fila[2] || '';
+  var btnDrive = $('#btnDriveReestudio');
+  if (linkDrive && linkDrive.startsWith('http')) {
+    btnDrive.attr('href', linkDrive).removeClass('d-none');
+  } else {
+    btnDrive.addClass('d-none').attr('href', '#');
+  }
+
+  // Tab Gestión — reset form
+  $('#rmd_solicitudId').val(solicitudId);
+  $('#rmd_poliza').val('');
+  $('#rmd_estado_q').val('');
+  $('#rmd_motivo_aplazamiento').val('');
+  $('#rmd_motivo_negacion').val('');
+  $('#rmd_observaciones').val('');
+  $('#rmd_cont_aplaz').addClass('d-none');
+  $('#rmd_cont_neg').addClass('d-none');
+
+  new bootstrap.Modal('#modalReestudioDigital').show();
+}
+
+function rmdActualizarEstadoModal() {
+  var estado = ($('#rmd_estado_q').val() || '').toUpperCase();
+  if (estado === 'APLAZADA') {
+    $('#rmd_cont_aplaz').removeClass('d-none').hide().slideDown(250);
+    $('#rmd_cont_neg').slideUp(200, function() { $(this).addClass('d-none'); });
+    tsSetVal('rmd_motivo_negacion', '');
+  } else if (estado === 'NEGADA') {
+    $('#rmd_cont_neg').removeClass('d-none').hide().slideDown(250);
+    $('#rmd_cont_aplaz').slideUp(200, function() { $(this).addClass('d-none'); });
+    tsSetVal('rmd_motivo_aplazamiento', '');
+  } else {
+    $('#rmd_cont_aplaz').slideUp(200, function() { $(this).addClass('d-none'); });
+    $('#rmd_cont_neg').slideUp(200, function() { $(this).addClass('d-none'); });
+    tsSetVal('rmd_motivo_aplazamiento', '');
+    tsSetVal('rmd_motivo_negacion', '');
+  }
+}
+
+function guardarReestudioDesdeModal() {
+  var estado = $('#rmd_estado_q').val();
+  var poliza = ($('#rmd_poliza').val() || '').trim();
+  if (!estado) { Swal.fire({ title: 'Atención', text: 'Selecciona un estado de gestión.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+  if (!poliza) { Swal.fire({ title: 'Atención', text: 'El campo Póliza es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+  if (estado === 'APLAZADA' && !$('#rmd_motivo_aplazamiento').val()) {
+    Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return;
+  }
+  if (estado === 'NEGADA' && !$('#rmd_motivo_negacion').val()) {
+    Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return;
+  }
+
+  var datos = {
+    solicitudId: $('#rmd_solicitudId').val(),
+    estado_q: estado,
+    poliza: poliza,
+    motivo_aplazamiento: $('#rmd_motivo_aplazamiento').val() || '',
+    motivo_negacion: $('#rmd_motivo_negacion').val() || '',
+    comentarios_gestion: $('#rmd_observaciones').val() || '',
+    biometria: '',
+    tipoSolicitudActual: 'reestudio'
+  };
+
+  Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+
+  var btnGuardar = document.getElementById('btnGuardarReestudioModal');
+  if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, true);
+
+  google.script.run.withSuccessHandler(function(r) {
+    if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+    if (r.success) {
+      if (typeof UX !== 'undefined') UX.updateSyncTime();
+      Swal.close();
+      if (typeof UX !== 'undefined') {
+        UX.showSuccessCheck(function() {
+          UX.showToast('Gestión guardada: ' + datos.estado_q, 'success');
+          bootstrap.Modal.getInstance(document.getElementById('modalReestudioDigital')).hide();
+          yaSeIntentoAsignar = false;
+          cargarDatos();
+        });
       } else {
-        Swal.fire({ title: 'Error', text: r.message, icon: 'error', confirmButtonColor: '#BD0F14' });
+        Swal.fire({ icon: 'success', title: '¡Operación Exitosa!', html: r.message ? r.message.replace(/\n/g, '<br>') : 'Gestión guardada correctamente.', confirmButtonColor: '#253150' }).then(function() {
+          bootstrap.Modal.getInstance(document.getElementById('modalReestudioDigital')).hide();
+          yaSeIntentoAsignar = false;
+          cargarDatos();
+        });
       }
-    }).withFailureHandler(function(e) {
-      Swal.fire({ title: 'Error', text: e.message, icon: 'error', confirmButtonColor: '#BD0F14' });
-    }).guardarCambiosInternos(result.value);
-  });
-}
-
-function swalRmdEstadoCambio() {
-  var estado = document.getElementById('swal_rmd_estado').value;
-  var aplaz = document.getElementById('swal_rmd_aplaz');
-  var neg = document.getElementById('swal_rmd_neg');
-  if (aplaz) aplaz.style.display = estado === 'APLAZADA' ? '' : 'none';
-  if (neg)   neg.style.display   = estado === 'NEGADA'   ? '' : 'none';
-}
-
-function rmdActualizarEstado() {
-  // Legacy — kept for compatibility
+    } else {
+      Swal.fire({ title: 'Error', text: r.message, icon: 'error', confirmButtonColor: '#BD0F14' });
+    }
+  }).withFailureHandler(function(e) {
+    if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+    Swal.fire({ title: 'Error Crítico', text: 'Fallo: ' + e.message, icon: 'error', confirmButtonColor: '#BD0F14' });
+  }).guardarCambiosInternos(datos);
 }
 
 function guardarGestionReestudioDesdeDigital() {
-  // Legacy — kept for compatibility
+  // Legacy — redirige al nuevo handler
+  guardarReestudioDesdeModal();
 }
 </script>

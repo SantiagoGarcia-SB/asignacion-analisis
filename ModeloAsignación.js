@@ -45,6 +45,10 @@ function RequestLead() {
 
     if (estadoUsuario !== "ACTIVO") return "❌ Tu usuario no está Activo.";
 
+    // Validar horario de asignación configurado por el admin
+    const horarioCheck = verificarHorarioAsignacion();
+    if (!horarioCheck.permitido) return "⏰ " + horarioCheck.mensaje;
+
     // Determinar equipo según especialidad para leer cupos correctos
     let equipoCupos = 'DIGITAL';
     if (especialidad.toUpperCase().includes("REESTUDIO")) equipoCupos = 'REESTUDIOS';

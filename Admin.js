@@ -891,3 +891,41 @@ function admin_desactivarTodosAsesores() {
     return { success: false, message: e.message };
   }
 }
+
+/**
+ * Obtiene la configuración de horarios de asignación.
+ * @returns {Object} Mapa de día -> { activo, inicio, fin }
+ */
+function admin_getHorariosAsignacion() {
+  verificarPermisoAdmin();
+  const DEFAULT = {
+    lunes:     { activo: true,  inicio: '08:00', fin: '18:00' },
+    martes:    { activo: true,  inicio: '08:00', fin: '18:00' },
+    miercoles: { activo: true,  inicio: '08:00', fin: '18:00' },
+    jueves:    { activo: true,  inicio: '08:00', fin: '18:00' },
+    viernes:   { activo: true,  inicio: '08:00', fin: '18:00' },
+    sabado:    { activo: false, inicio: '08:00', fin: '12:00' },
+    domingo:   { activo: false, inicio: '08:00', fin: '12:00' }
+  };
+  const raw = PropertiesService.getScriptProperties().getProperty('HORARIOS_ASIGNACION');
+  if (!raw) return DEFAULT;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    return DEFAULT;
+  }
+}
+
+/**
+ * Guarda la configuración de horarios de asignación.
+ * @param {Object} horarios - Mapa de día -> { activo, inicio, fin }
+ * @returns {{ success: boolean, message: string }}
+ */
+function admin_setHorariosAsignacion(horarios) {
+  verificarPermisoAdmin();
+  if (!horarios || typeof horarios !== 'object') {
+    return { success: false, message: 'Datos de horarios inválidos.' };
+  }
+  PropertiesService.getScriptProperties().setProperty('HORARIOS_ASIGNACION', JSON.stringify(horarios));
+  return { success: true, message: 'Horarios de asignación guardados correctamente.' };
+}

@@ -620,6 +620,9 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         <a href="#" id="link-novedades" class="nav-link-admin" onclick="mostrarSeccion('novedades', event)">
             <i class="bi bi-clock-history"></i> Novedades
         </a>
+        <a href="#" id="link-horarios" class="nav-link-admin" onclick="mostrarSeccion('horarios', event)">
+            <i class="bi bi-calendar-week-fill"></i> Horarios
+        </a>
         <!-- REDIRECCIÓN EXTERNA SEGURA AL NUEVO SCRIPT -->
         <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
             <i class="bi bi-bar-chart-line-fill"></i> Métricas
@@ -997,6 +1000,39 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </div>
         </div>
     </div>
+
+    <!-- SECCION HORARIOS -->
+    <div id="seccion-horarios" class="seccion-admin" style="display:none;">
+        <div class="d-flex justify-content-between align-items-start mb-4">
+            <div>
+                <h1 class="page-title">Horarios de Asignación</h1>
+                <p class="page-sub">Define en qué horas y días los analistas pueden recibir casos nuevos.</p>
+            </div>
+            <button class="btn-outline-brand" onclick="cargarHorarios()">
+                <i class="bi bi-arrow-clockwise"></i>
+            </button>
+        </div>
+
+        <div class="p-3 mb-4 rounded-3 d-flex align-items-start gap-3" style="background:#f0f9ff;border:1px solid #bae6fd;">
+            <i class="bi bi-info-circle-fill" style="font-size:1.1rem;color:#0284c7;flex-shrink:0;margin-top:2px;"></i>
+            <div>
+                <span class="fw-bold" style="color:#0c4a6e;font-size:0.85rem;">¿Cómo funciona?</span>
+                <span class="text-muted" style="font-size:0.82rem;"> Si un analista intenta pedir un caso fuera del horario configurado, recibirá un mensaje de bloqueo y no podrá recibir asignaciones. Los días marcados como inactivos bloquean todo el día.</span>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-3 mb-4" id="grid-horarios">
+            <div class="text-center w-100 py-4" style="color:var(--text-muted);">
+                <div class="spinner-border spinner-border-sm me-2"></div>Cargando horarios...
+            </div>
+        </div>
+
+        <div class="text-end">
+            <button class="btn-primary-brand" onclick="guardarHorarios()">
+                <i class="bi bi-save me-2"></i> Guardar Horarios
+            </button>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="modalUsuario" tabindex="-1">
@@ -1331,6 +1367,7 @@ function mostrarSeccion(id, e) {
     if (id === 'dashboard') refrescarDashboard();
     if (id === 'cupos') cargarCuposGenerales();
     if (id === 'novedades') cargarNovedades();
+    if (id === 'horarios') cargarHorarios();
 }
 
 function refrescarDashboard() {
@@ -2213,6 +2250,142 @@ function resetearCuposIndividual() {
             }).admin_setCuposIndividual(_analistaSeleccionado, null);
         }
     });
+}
+
+// ========== HORARIOS DE ASIGNACIÓN ==========
+var DIAS_CONFIG = [
+    { key: 'lunes',     label: 'Lunes',     color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' },
+    { key: 'martes',    label: 'Martes',    color: '#0369a1', bg: '#e0f2fe', border: '#bae6fd' },
+    { key: 'miercoles', label: 'Miércoles', color: '#0f766e', bg: '#ccfbf1', border: '#99f6e4' },
+    { key: 'jueves',    label: 'Jueves',    color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
+    { key: 'viernes',   label: 'Viernes',   color: '#b45309', bg: '#fef3c7', border: '#fde68a' },
+    { key: 'sabado',    label: 'Sábado',    color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' },
+    { key: 'domingo',   label: 'Domingo',   color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
+];
+
+function cargarHorarios() {
+    document.getElementById('grid-horarios').innerHTML =
+        '<div class="text-center w-100 py-4" style="color:var(--text-muted);"><div class="spinner-border spinner-border-sm me-2"></div>Cargando horarios...</div>';
+    google.script.run
+        .withSuccessHandler(function(horarios) { renderGridHorarios(horarios); })
+        .withFailureHandler(function(err) {
+            document.getElementById('grid-horarios').innerHTML =
+                '<div class="alert alert-danger">Error al cargar: ' + err.message + '</div>';
+        })
+        .admin_getHorariosAsignacion();
+}
+
+function renderGridHorarios(horarios) {
+    var html = '';
+    DIAS_CONFIG.forEach(function(dia) {
+        var cfg = (horarios && horarios[dia.key]) ? horarios[dia.key] : { activo: false, inicio: '08:00', fin: '18:00' };
+        var activo = cfg.activo !== false;
+        var colorActual = activo ? dia.color : '#94a3b8';
+        var bgActual    = activo ? dia.bg    : '#f9fafb';
+        var bordActual  = activo ? dia.border : '#e2e8f0';
+        var badgeHtml = activo
+            ? '<span style="background:' + dia.color + ';color:white;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-check-circle"></i>Activo</span>'
+            : '<span style="background:#e2e8f0;color:#64748b;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-dash-circle"></i>Inactivo</span>';
+
+        html += '<div style="flex:1;min-width:150px;max-width:210px;">';
+        html += '<div id="card-dia-' + dia.key + '" class="p-3 rounded-3 h-100" style="border:2px solid ' + bordActual + ';background:' + bgActual + ';transition:all 0.2s;">';
+
+        // Encabezado: nombre + toggle
+        html += '<div class="d-flex align-items-center justify-content-between mb-2">';
+        html += '<div class="d-flex align-items-center gap-2">';
+        html += '<i id="dia-icon-' + dia.key + '" class="bi bi-calendar-day" style="font-size:0.95rem;color:' + colorActual + ';"></i>';
+        html += '<span id="dia-label-' + dia.key + '" class="fw-bold" style="font-size:0.9rem;color:' + colorActual + ';">' + dia.label + '</span>';
+        html += '</div>';
+        html += '<div class="form-check form-switch mb-0" style="padding-left:2.5em;">';
+        html += '<input class="form-check-input" type="checkbox" id="toggle-dia-' + dia.key + '" ' + (activo ? 'checked' : '') + ' onchange="toggleDiaHorario(\'' + dia.key + '\')" style="cursor:pointer;">';
+        html += '</div>';
+        html += '</div>';
+
+        // Badge de estado
+        html += '<div id="dia-badge-' + dia.key + '" class="mb-3">' + badgeHtml + '</div>';
+
+        // Inputs de hora (visibles solo si activo)
+        html += '<div id="campos-hora-' + dia.key + '" style="display:' + (activo ? 'block' : 'none') + ';">';
+        html += '<label class="mb-1 d-block" style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Inicio</label>';
+        html += '<input type="time" id="inicio-' + dia.key + '" class="form-control form-control-sm mb-2 text-center fw-bold" value="' + (cfg.inicio || '08:00') + '">';
+        html += '<label class="mb-1 d-block" style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Fin</label>';
+        html += '<input type="time" id="fin-' + dia.key + '" class="form-control form-control-sm text-center fw-bold" value="' + (cfg.fin || '18:00') + '">';
+        html += '</div>';
+
+        // Mensaje día inactivo
+        html += '<div id="msg-inactivo-' + dia.key + '" style="display:' + (activo ? 'none' : 'block') + ';">';
+        html += '<span style="font-size:0.78rem;color:#94a3b8;">Sin asignaciones este día</span>';
+        html += '</div>';
+
+        html += '</div></div>';
+    });
+    document.getElementById('grid-horarios').innerHTML = html;
+}
+
+function toggleDiaHorario(diaKey) {
+    var checkbox  = document.getElementById('toggle-dia-' + diaKey);
+    var activo    = checkbox.checked;
+    var diaConfig = null;
+    for (var i = 0; i < DIAS_CONFIG.length; i++) { if (DIAS_CONFIG[i].key === diaKey) { diaConfig = DIAS_CONFIG[i]; break; } }
+    if (!diaConfig) return;
+
+    var card       = document.getElementById('card-dia-' + diaKey);
+    var icon       = document.getElementById('dia-icon-' + diaKey);
+    var label      = document.getElementById('dia-label-' + diaKey);
+    var badge      = document.getElementById('dia-badge-' + diaKey);
+    var camposHora = document.getElementById('campos-hora-' + diaKey);
+    var msgInact   = document.getElementById('msg-inactivo-' + diaKey);
+
+    if (activo) {
+        card.style.borderColor = diaConfig.border;
+        card.style.background  = diaConfig.bg;
+        icon.style.color       = diaConfig.color;
+        label.style.color      = diaConfig.color;
+        camposHora.style.display = 'block';
+        msgInact.style.display   = 'none';
+        badge.innerHTML = '<span style="background:' + diaConfig.color + ';color:white;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-check-circle"></i>Activo</span>';
+    } else {
+        card.style.borderColor = '#e2e8f0';
+        card.style.background  = '#f9fafb';
+        icon.style.color       = '#94a3b8';
+        label.style.color      = '#94a3b8';
+        camposHora.style.display = 'none';
+        msgInact.style.display   = 'block';
+        badge.innerHTML = '<span style="background:#e2e8f0;color:#64748b;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-dash-circle"></i>Inactivo</span>';
+    }
+}
+
+function guardarHorarios() {
+    var horarios = {};
+    var errores  = [];
+
+    DIAS_CONFIG.forEach(function(dia) {
+        var activo = document.getElementById('toggle-dia-' + dia.key).checked;
+        var inicio = document.getElementById('inicio-' + dia.key) ? document.getElementById('inicio-' + dia.key).value || '08:00' : '08:00';
+        var fin    = document.getElementById('fin-' + dia.key)    ? document.getElementById('fin-' + dia.key).value    || '18:00' : '18:00';
+
+        if (activo && inicio >= fin) {
+            errores.push('<strong>' + dia.label + ':</strong> la hora de inicio (' + inicio + ') debe ser anterior a la de fin (' + fin + ').');
+        }
+        horarios[dia.key] = { activo: activo, inicio: inicio, fin: fin };
+    });
+
+    if (errores.length > 0) {
+        Swal.fire({ title: 'Error en horarios', html: errores.join('<br>'), icon: 'error', confirmButtonColor: '#253150' });
+        return;
+    }
+
+    Swal.fire({ title: 'Guardando horarios...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (res.success) {
+                Swal.fire({ icon: 'success', title: '¡Horarios Guardados!', text: res.message, confirmButtonColor: '#253150' });
+            } else {
+                Swal.fire('Error', res.message, 'error');
+            }
+        })
+        .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+        .admin_setHorariosAsignacion(horarios);
 }
 </script>
 </body>

@@ -152,7 +152,7 @@
 
   <!-- Modal Gestión -->
   <div class="modal fade" id="modalDetalles" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header-inner">
           <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
@@ -180,27 +180,35 @@
             <!-- Tab Info -->
             <div class="tab-pane fade show active" id="tab-info" role="tabpanel">
               <div class="row g-3 mb-4 text-center">
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="p-3 border rounded-4 bg-white h-100" style="border-top: 4px solid var(--color-primario) !important;">
                     <label class="d-block mb-1"><i class="bi bi-hash me-1"></i>Solicitud</label>
                     <div id="d_solicitud" class="fw-bold fs-6 text-dark"></div>
                   </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="p-3 border rounded-4 bg-white h-100">
                     <label class="d-block mb-1"><i class="bi bi-box-arrow-in-right me-1"></i>Origen</label>
                     <div id="d_origen" class="fw-bold fs-6 text-dark"></div>
                   </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                   <div class="p-3 border rounded-4 bg-white h-100">
                     <label class="d-block mb-1"><i class="bi bi-calendar-event me-1"></i>Radicación</label>
                     <div id="d_fechaRadicacion" class="fw-bold fs-6 text-dark"></div>
                   </div>
                 </div>
+                <div class="col-md-3">
+                  <div class="p-3 border rounded-4 bg-white h-100">
+                    <label class="d-block mb-1"><i class="bi bi-calendar-check me-1"></i>Fecha Asignación</label>
+                    <div id="d_fechaAsignacion" class="fw-bold fs-6 text-dark"></div>
+                  </div>
+                </div>
               </div>
 
-              <div class="bg-white border rounded-4 p-4 mb-3">
+              <h6 class="fw-bold mb-3" style="color: var(--color-secundario); font-size: 0.9rem;">
+                <i class="bi bi-file-earmark-text me-2 text-primary"></i>Detalles del Proceso</h6>
+              <div class="bg-white border rounded-4 p-4 mb-4">
                 <div class="row g-4">
                   <div class="col-md-6">
                     <label class="d-block"><i class="bi bi-tag me-1"></i>Tipo de Proceso</label>
@@ -210,11 +218,7 @@
                     <label class="d-block"><i class="bi bi-bookmark me-1"></i>Clase de Solicitud</label>
                     <p class="fw-bold text-dark mb-0" id="d_clase"></p>
                   </div>
-                  <div class="col-md-6 border-top pt-3">
-                    <label class="d-block"><i class="bi bi-calendar-check me-1"></i>Fecha Asignación</label>
-                    <p class="fw-bold text-dark mb-0" id="d_fechaAsignacion"></p>
-                  </div>
-                  <div class="col-md-6 border-top pt-3">
+                  <div class="col-md-12 border-top pt-3">
                     <label class="d-block"><i class="bi bi-folder2-open me-1"></i>Carpeta Drive</label>
                     <p class="fw-bold mb-0" id="d_linkDrive"></p>
                   </div>
@@ -985,16 +989,16 @@
       if (estado.includes('APLAZ')) {
         contAplaz.removeClass('d-none').hide().slideDown(250);
         contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#d_motivo_negacion').val('');
+        tsSetVal('d_motivo_negacion', '');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
         contNeg.removeClass('d-none').hide().slideDown(250);
         contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#d_motivo_aplazamiento').val('');
+        tsSetVal('d_motivo_aplazamiento', '');
       } else {
         contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
         contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#d_motivo_aplazamiento').val('');
-        $('#d_motivo_negacion').val('');
+        tsSetVal('d_motivo_aplazamiento', '');
+        tsSetVal('d_motivo_negacion', '');
       }
     }
 
@@ -1156,16 +1160,16 @@
       if (estado.includes('APLAZ')) {
         $('#dig_contenedor_aplazamiento').removeClass('d-none').hide().slideDown(250);
         $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#dig_motivo_negacion').val('');
+        tsSetVal('dig_motivo_negacion', '');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
         $('#dig_contenedor_negacion').removeClass('d-none').hide().slideDown(250);
         $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#dig_motivo_aplazamiento').val('');
+        tsSetVal('dig_motivo_aplazamiento', '');
       } else {
         $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
         $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#dig_motivo_aplazamiento').val('');
-        $('#dig_motivo_negacion').val('');
+        tsSetVal('dig_motivo_aplazamiento', '');
+        tsSetVal('dig_motivo_negacion', '');
       }
     }
 
@@ -1300,6 +1304,113 @@
         .obtenerDetalleGestionesHoy();
     }
     // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Motivo Picker: dropdown con búsqueda ──────────────────────────────
+    function sortSelectOptions(id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      var opts = Array.from(sel.options).slice(1);
+      opts.sort(function(a, b) { return a.text.localeCompare(b.text, 'es', { sensitivity: 'base' }); });
+      while (sel.options.length > 1) sel.remove(1);
+      opts.forEach(function(o) { sel.appendChild(o); });
+    }
+
+    function _mpSyncSelection(picker, value) {
+      picker.querySelectorAll('.mp-item').forEach(function(i) { i.classList.remove('mp-selected'); });
+      var found = value ? picker.querySelector('.mp-item[data-value="' + value + '"]') : null;
+      if (found) found.classList.add('mp-selected');
+      var txt = picker.querySelector('.mp-trigger-text');
+      if (!txt) return;
+      if (found && value) { txt.textContent = found.textContent.trim(); txt.classList.remove('mp-placeholder'); }
+      else { txt.textContent = 'Seleccionar motivo...'; txt.classList.add('mp-placeholder'); }
+    }
+
+    function tsInit(id) {
+      var sel = document.getElementById(id);
+      if (!sel) return;
+      var existing = document.querySelector('.motivo-picker[data-for="' + id + '"]');
+      if (existing) { _mpSyncSelection(existing, sel.value); return; }
+      var opts = Array.from(sel.options);
+      var itemsHtml = opts.map(function(o) {
+        return '<div class="mp-item' + (o.value === '' ? ' mp-item-empty' : '') + '" data-value="' + o.value + '">' + o.text + '</div>';
+      }).join('');
+      var picker = document.createElement('div');
+      picker.className = 'motivo-picker';
+      picker.dataset.for = id;
+      picker.innerHTML =
+        '<div class="mp-trigger"><span class="mp-trigger-text mp-placeholder">Seleccionar motivo...</span><i class="bi bi-chevron-down mp-chevron"></i></div>' +
+        '<div class="mp-panel"><div class="mp-search-wrap"><i class="bi bi-search"></i><input type="text" class="mp-search-input" placeholder="Buscar motivo..."></div>' +
+        '<div class="mp-list">' + itemsHtml + '<div class="mp-no-results" style="display:none">Sin resultados</div></div></div>';
+      sel.parentNode.insertBefore(picker, sel.nextSibling);
+      sel.style.display = 'none';
+      picker.querySelector('.mp-trigger').addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isOpen = picker.classList.contains('mp-open');
+        document.querySelectorAll('.motivo-picker.mp-open').forEach(function(p) { if (p !== picker) p.classList.remove('mp-open'); });
+        picker.classList.toggle('mp-open', !isOpen);
+        if (!isOpen) setTimeout(function() { picker.querySelector('.mp-search-input').focus(); }, 50);
+      });
+      picker.querySelector('.mp-panel').addEventListener('click', function(e) { e.stopPropagation(); });
+      picker.querySelector('.mp-search-input').addEventListener('input', function() {
+        var term = this.value.toLowerCase();
+        var count = 0;
+        picker.querySelectorAll('.mp-item:not(.mp-item-empty)').forEach(function(item) {
+          var show = !term || item.textContent.toLowerCase().includes(term);
+          item.style.display = show ? '' : 'none';
+          if (show) count++;
+        });
+        picker.querySelector('.mp-no-results').style.display = count === 0 ? '' : 'none';
+      });
+      picker.querySelector('.mp-list').addEventListener('click', function(e) {
+        var item = e.target.closest('.mp-item');
+        if (!item) return;
+        picker.querySelectorAll('.mp-item').forEach(function(i) { i.classList.remove('mp-selected'); });
+        item.classList.add('mp-selected');
+        sel.value = item.dataset.value;
+        var txt = picker.querySelector('.mp-trigger-text');
+        if (item.dataset.value === '') { txt.textContent = 'Seleccionar motivo...'; txt.classList.add('mp-placeholder'); }
+        else { txt.textContent = item.textContent.trim(); txt.classList.remove('mp-placeholder'); }
+        picker.classList.remove('mp-open');
+        picker.querySelector('.mp-search-input').value = '';
+        picker.querySelectorAll('.mp-item').forEach(function(i) { i.style.display = ''; });
+        picker.querySelector('.mp-no-results').style.display = 'none';
+        $(sel).trigger('change');
+      });
+      _mpSyncSelection(picker, sel.value);
+    }
+
+    function tsSetVal(id, val) {
+      var sel = typeof id === 'string' ? document.getElementById(id) : (id && (id[0] || id));
+      if (!sel) return;
+      sel.value = val || '';
+      var selId = typeof id === 'string' ? id : (sel.id || '');
+      var picker = selId ? document.querySelector('.motivo-picker[data-for="' + selId + '"]') : null;
+      if (picker) {
+        _mpSyncSelection(picker, val || '');
+        picker.classList.remove('mp-open');
+        picker.querySelector('.mp-search-input').value = '';
+        picker.querySelectorAll('.mp-item').forEach(function(i) { i.style.display = ''; });
+        picker.querySelector('.mp-no-results').style.display = 'none';
+      }
+    }
+
+    $(document).ready(function() {
+      ['d_motivo_aplazamiento', 'd_motivo_negacion', 'dig_motivo_aplazamiento', 'dig_motivo_negacion'].forEach(sortSelectOptions);
+      $(document).on('shown.bs.modal', function(e) {
+        var modalId = e.target.id;
+        if (modalId === 'modalDetalles') {
+          tsInit('d_motivo_aplazamiento'); tsInit('d_motivo_negacion');
+        } else if (modalId === 'modalDetallesDigital') {
+          tsInit('dig_motivo_aplazamiento'); tsInit('dig_motivo_negacion');
+        }
+      });
+      $(document).on('click.mp', function(e) {
+        if (!$(e.target).closest('.motivo-picker').length) {
+          document.querySelectorAll('.motivo-picker.mp-open').forEach(function(p) { p.classList.remove('mp-open'); });
+        }
+      });
+    });
+    // ──────────────────────────────────────────────────────────────────────
   </script>
 </body>
 </html>

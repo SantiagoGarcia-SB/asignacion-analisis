@@ -236,6 +236,7 @@ function getTableData() {
           let filaAdaptada = new Array(numCols).fill("");
           filaAdaptada[0] = String(dataReest[i][1]).trim();    // solicitud
           filaAdaptada[1] = String(dataReest[i][3]).trim();    // origen como "poliza"
+          filaAdaptada[2] = String(dataReest[i][2]).trim();    // linkDrive (col C)
           filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
           filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
           filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
@@ -773,10 +774,16 @@ function guardarCambiosInternos(data) {
       ]]);
       sheetReestudios.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
 
+      // Póliza → columna Q (17)
+      if (data.poliza) {
+        var polizaNum = Number(data.poliza);
+        sheetReestudios.getRange(targetRowReest, 17).setValue(isNaN(polizaNum) ? data.poliza : polizaNum);
+      }
+
       SpreadsheetApp.flush();
 
       // Guardar en Historico Secundario
-      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
+      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 17).getValues()[0];
       let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
       if (!hojaHistoricoR) {
         hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
@@ -1426,4 +1433,64 @@ function obtenerDetalleGestionesHoy() {
     Logger.log("Error en obtenerDetalleGestionesHoy: " + e.message);
     return { success: false, total: 0, porTipo: [], listado: [] };
   }
+}
+
+/**
+ * Verifica si la hora y el día actuales están dentro del horario de asignación configurado.
+ * Lee la config desde Script Property 'HORARIOS_ASIGNACION' (JSON).
+ * Si no hay config guardada, aplica el default: Lun-Vie 08:00-18:00.
+ * @returns {{ permitido: boolean, mensaje?: string }}
+ */
+function verificarHorarioAsignacion() {
+  const DIAS_KEY = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+  const ahora = new Date();
+
+  // Obtener hora y fecha en zona Colombia (GMT-5) usando Utilities para evitar ambigüedad de TZ
+  const horaStr = Utilities.formatDate(ahora, TIMEZONE, 'HH:mm');
+  const yyyy    = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'yyyy'), 10);
+  const MM      = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'MM'),   10);
+  const dd      = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'dd'),   10);
+  const diaIndex = new Date(yyyy, MM - 1, dd).getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
+  const diaKey   = DIAS_KEY[diaIndex];
+
+  const partes = horaStr.split(':').map(Number);
+  const minActual = partes[0] * 60 + partes[1];
+
+  const raw = PropertiesService.getScriptProperties().getProperty('HORARIOS_ASIGNACION');
+  let config = null;
+  if (raw) {
+    try {
+      const horarios = JSON.parse(raw);
+      config = horarios[diaKey] || null;
+    } catch (e) { /* JSON inválido — no bloquear */ }
+  }
+
+  // Defaults si no hay configuración: Lun-Vie 08:00-18:00, Sáb-Dom bloqueado
+  if (!config) {
+    if (diaIndex === 0 || diaIndex === 6) {
+      return { permitido: false, mensaje: 'No hay asignaciones habilitadas para el día de hoy.' };
+    }
+    if (minActual < 8 * 60 || minActual >= 18 * 60) {
+      return { permitido: false, mensaje: 'El horario de asignación es de 08:00 a 18:00.' };
+    }
+    return { permitido: true };
+  }
+
+  if (!config.activo) {
+    return { permitido: false, mensaje: 'Las asignaciones no están habilitadas para el día de hoy.' };
+  }
+
+  const inicioPartes = String(config.inicio || '08:00').split(':').map(Number);
+  const finPartes    = String(config.fin    || '18:00').split(':').map(Number);
+  const minInicio = inicioPartes[0] * 60 + inicioPartes[1];
+  const minFin    = finPartes[0]    * 60 + finPartes[1];
+
+  if (minActual < minInicio) {
+    return { permitido: false, mensaje: 'Las asignaciones empiezan a las ' + config.inicio + '. Vuelve más tarde.' };
+  }
+  if (minActual >= minFin) {
+    return { permitido: false, mensaje: 'El horario de asignación ya finalizó hoy (hasta las ' + config.fin + ').' };
+  }
+
+  return { permitido: true };
 }
