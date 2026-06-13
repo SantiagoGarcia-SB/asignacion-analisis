@@ -33,6 +33,67 @@ const props = PropertiesService.getScriptProperties();
 function getKeyFull() { return props.getProperty('KeyEndPointSaiFullProd'); }
 function getEndPointFull() { return props.getProperty('endPointSaiFullStageProd'); }
 
+/**
+ * Obtiene los cupos efectivos para un analista (individuales si existen, o globales del equipo).
+ * @param {string} userEmail - Email del analista
+ * @param {string} equipo - 'DIGITAL', 'BIOMETRIA' o 'REESTUDIOS'
+ * @param {Array} [dataUsuarios] - Datos de la hoja Usuarios (opcional, para evitar releerla)
+ * @returns {Object} { nueva, reestudio, induccion, biometria, uar }
+ */
+function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
+  // Intentar leer cupos individuales de col Y (índice 24)
+  if (dataUsuarios) {
+    for (let i = 1; i < dataUsuarios.length; i++) {
+      if (String(dataUsuarios[i][2]).toLowerCase().trim() === userEmail) {
+        // getDataRange puede no incluir col Y si está vacía; verificar longitud
+        if (dataUsuarios[i].length > 24) {
+          const cuposRaw = String(dataUsuarios[i][24] || '').trim();
+          if (cuposRaw && cuposRaw.startsWith('{')) {
+            try {
+              const c = JSON.parse(cuposRaw);
+              return {
+                nueva: parseInt(c.nuevas) || 0,
+                reestudio: parseInt(c.reestudios) || 0,
+                induccion: parseInt(c.inducciones) || 0,
+                biometria: parseInt(c.biometria) || 0,
+                nuevaUar: parseInt(c.nuevaUar) || 0,
+                deudorUar: parseInt(c.deudorUar) || 0
+              };
+            } catch (e) { /* JSON inválido, usar globales */ }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Fallback: cupos globales del equipo
+  const props2 = PropertiesService.getScriptProperties();
+  const prefix = 'CUPOS_' + equipo.toUpperCase() + '_';
+  function getP(key, def) {
+    const v = props2.getProperty(key);
+    if (v === null || v === '') return def;
+    const p = parseInt(v, 10);
+    return isNaN(p) ? def : p;
+  }
+
+  const defaults = {
+    DIGITAL: { nueva: 70, reestudio: 10, induccion: 8, biometria: 0, nuevaUar: 2, deudorUar: 2 },
+    BIOMETRIA: { nueva: 0, reestudio: 0, induccion: 0, biometria: 8, nuevaUar: 0, deudorUar: 0 },
+    REESTUDIOS: { nueva: 0, reestudio: 10, induccion: 2, biometria: 0, nuevaUar: 3, deudorUar: 2 }
+  };
+  const def = defaults[equipo.toUpperCase()] || defaults.DIGITAL;
+
+  return {
+    nueva: getP(prefix + 'NUEVAS', def.nueva),
+    reestudio: getP(prefix + 'REESTUDIOS', def.reestudio),
+    induccion: getP(prefix + 'INDUCCIONES', def.induccion),
+    biometria: getP(prefix + 'BIOMETRIA', def.biometria),
+    nuevaUar: getP(prefix + 'NUEVA_UAR', def.nuevaUar),
+    deudorUar: getP(prefix + 'DEUDOR_UAR', def.deudorUar)
+  };
+}
+
 function doGet() {
   const userEmail = Session.getActiveUser().getEmail();
   const info = getRolUsuario(userEmail);
@@ -59,7 +120,7 @@ function doGet() {
     } else {
       return HtmlService.createTemplateFromFile('index')
           .evaluate()
-          .setTitle('Gestión de Solicitudes - Asesor')
+          .setTitle('Gestión de Solicitudes - Analista')
           .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     }
   }
@@ -130,7 +191,7 @@ function getTableData() {
   const misFilasPendientes = registros.filter(fila => {
     const asignadoA = String(fila[27]).trim().toLowerCase();
     const fechaFin = String(fila[28]).trim();
-    const fechaAsignacion = String(fila[26].trim())
+    const fechaAsignacion = String(fila[26]).trim();
     
     if (asignadoA === userEmail && fechaFin !== "") {
       gestionadasTotal++;
@@ -147,6 +208,49 @@ function getTableData() {
     fila.push(categoria); 
     return fila;
   });
+
+  // Incluir también reestudios/UAR asignados desde la hoja ORIGEN
+  try {
+    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaReest) {
+      const lastRowR = hojaReest.getLastRow();
+      if (lastRowR > 1) {
+        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getDisplayValues();
+        for (let i = 0; i < dataReest.length; i++) {
+          const asignado = String(dataReest[i][6]).trim().toLowerCase();
+          if (asignado !== userEmail) continue;
+          const fechaFinR = String(dataReest[i][9]).trim();
+          const fechaAsigR = String(dataReest[i][8]).trim();
+          
+          if (fechaFinR !== "") {
+            if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
+            gestionadasTotal++;
+            continue;
+          }
+          if (fechaAsigR === "") continue;
+
+          // Crear fila adaptada a la estructura de la hoja solicitud (para que el frontend la renderice)
+          const tipoProc = String(dataReest[i][4]).trim();
+          const claseR = String(dataReest[i][5]).trim();
+          let filaAdaptada = new Array(numCols).fill("");
+          filaAdaptada[0] = String(dataReest[i][1]).trim();    // solicitud
+          filaAdaptada[1] = String(dataReest[i][3]).trim();    // origen como "poliza"
+          filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
+          filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
+          filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
+          filaAdaptada[26] = fechaAsigR;                       // fechaAsignacion
+          filaAdaptada[27] = asignado;                         // email asignado
+          filaAdaptada[28] = "";                               // fechaFin (vacía = pendiente)
+          filaAdaptada[30] = String(dataReest[i][7]).trim();   // nombre analista
+          filaAdaptada.push("");                                // CategoriaScore
+          misFilasPendientes.push(filaAdaptada);
+        }
+      }
+    }
+  } catch(e) {
+    Logger.log("Error incluyendo reestudios en getTableData: " + e.message);
+  }
 
   return {
     tabla: [headers, ...misFilasPendientes],
@@ -713,6 +817,128 @@ function getEmailUsuario() {
   return Session.getActiveUser().getEmail();
 }
 
+/**
+ * Verifica el estado de cupos del analista actual.
+ * Retorna cuántos ha usado hoy vs su límite, por cada subcategoría.
+ * @param {string} equipo - 'DIGITAL', 'BIOMETRIA' o 'REESTUDIOS'
+ * @returns {Object} { cumplido: boolean, resumen: [{tipo, usado, limite}], mensaje }
+ */
+function verificarMisCupos(equipo) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaUsuarios = ss.getSheetByName("Usuarios");
+    const dataUsuarios = hojaUsuarios.getDataRange().getValues();
+
+    // Auto-detectar equipo si no se pasa, basado en especialidad
+    let equipoFinal = equipo;
+    if (!equipoFinal) {
+      const usuario = dataUsuarios.find(u => String(u[2]).toLowerCase().trim() === userEmail);
+      if (usuario) {
+        const esp = String(usuario[4]).toUpperCase().trim();
+        if (esp.includes("REESTUDIO")) equipoFinal = 'REESTUDIOS';
+        else if (esp.includes("BIOMETRIA")) equipoFinal = 'BIOMETRIA';
+        else equipoFinal = 'DIGITAL';
+      } else {
+        equipoFinal = 'DIGITAL';
+      }
+    }
+
+    const cupos = obtenerCuposEfectivos(userEmail, equipoFinal, dataUsuarios);
+
+    // Calcular fecha hoy en múltiples formatos
+    const hoy = new Date();
+    const d = String(hoy.getDate()).padStart(2, '0');
+    const m = String(hoy.getMonth() + 1).padStart(2, '0');
+    const y = hoy.getFullYear();
+    const hoyFmt1 = d + '/' + m + '/' + y;
+    const hoyFmt2 = y + '-' + m + '-' + d;
+    const hoyFmt3 = hoy.getDate() + '/' + (hoy.getMonth() + 1) + '/' + y;
+
+    function esHoy(val) {
+      if (!val) return false;
+      if (val instanceof Date) return val.getDate() === hoy.getDate() && val.getMonth() === hoy.getMonth() && val.getFullYear() === hoy.getFullYear();
+      const texto = String(val);
+      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
+    }
+
+    let conteoHoy = { nueva: 0, reestudio: 0, induccion: 0, biometria: 0, nuevaUar: 0, deudorUar: 0 };
+
+    // Contar desde hoja solicitudes (Digital + Biometría + Inducciones)
+    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+    if (hojaSol) {
+      const lastRowS = hojaSol.getLastRow();
+      if (lastRowS > 1) {
+        const dataSol = hojaSol.getRange(2, 1, lastRowS - 1, 37).getDisplayValues();
+        for (let i = 0; i < dataSol.length; i++) {
+          const asignado = String(dataSol[i][27]).trim().toLowerCase();
+          if (asignado !== userEmail) continue;
+          const fechaAsig = dataSol[i][26];
+          const fechaFin = dataSol[i][28];
+          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+          const claseNorm = String(dataSol[i][20]).toUpperCase().trim();
+          const estadoNorm = String(dataSol[i][16]).toUpperCase().trim();
+          let tipo = 'nueva';
+          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+          conteoHoy[tipo]++;
+        }
+      }
+    }
+
+    // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR)
+    try {
+      const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (hojaReest) {
+        const lastRowR = hojaReest.getLastRow();
+        if (lastRowR > 1) {
+          const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getValues();
+          for (let i = 0; i < dataReest.length; i++) {
+            const asignado = String(dataReest[i][6]).trim().toLowerCase();
+            if (asignado !== userEmail) continue;
+            const fechaAsig = dataReest[i][8];
+            const fechaFin = dataReest[i][9];
+            if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+            const tipoP = String(dataReest[i][4]).toUpperCase().trim();
+            const claseR = String(dataReest[i][5]).toUpperCase().trim();
+            let tipo = 'reestudio';
+            if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
+            else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
+            conteoHoy[tipo]++;
+          }
+        }
+      }
+    } catch(e) {}
+
+    // Comparar con cupos
+    const resumen = [
+      { tipo: 'Nuevas', usado: conteoHoy.nueva, limite: cupos.nueva },
+      { tipo: 'Reestudios', usado: conteoHoy.reestudio, limite: cupos.reestudio },
+      { tipo: 'Inducciones', usado: conteoHoy.induccion, limite: cupos.induccion },
+      { tipo: 'Biometría', usado: conteoHoy.biometria, limite: cupos.biometria },
+      { tipo: 'Nueva UAR', usado: conteoHoy.nuevaUar, limite: cupos.nuevaUar },
+      { tipo: 'Deudor UAR', usado: conteoHoy.deudorUar, limite: cupos.deudorUar }
+    ];
+
+    // Verificar si todos los cupos con límite > 0 están llenos
+    const cuposActivos = resumen.filter(r => r.limite > 0);
+    const todosCumplidos = cuposActivos.length > 0 && cuposActivos.every(r => r.usado >= r.limite);
+    const totalUsado = resumen.reduce((s, r) => s + r.usado, 0);
+    const totalLimite = resumen.reduce((s, r) => s + r.limite, 0);
+
+    return {
+      cumplido: todosCumplidos,
+      totalUsado: totalUsado,
+      totalLimite: totalLimite,
+      resumen: resumen,
+      mensaje: todosCumplidos ? '¡Felicidades! Has completado todos tus cupos del día.' : ''
+    };
+  } catch (e) {
+    return { cumplido: false, totalUsado: 0, totalLimite: 0, resumen: [], mensaje: '' };
+  }
+}
+
 function actualizarEstadoPropio(nuevoEstado) {
   const lock = LockService.getScriptLock();
   try {
@@ -743,9 +969,52 @@ function actualizarEstadoPropio(nuevoEstado) {
     if (filaEncontrada !== -1) {
       const estadoTextoPlano = nuevoEstado.toUpperCase();
       const ahora = new Date();
-      const fechaHoraISO = ahora.toISOString();
       const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
+      const fechaHoraActual = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
 
+      // Cerrar el registro anterior en Historico_Estados (buscar la última fila de este analista con fin "EN CURSO")
+      if (hojaHistorico) {
+        const lastRowH = hojaHistorico.getLastRow();
+        if (lastRowH > 1) {
+          // Buscar de abajo hacia arriba para eficiencia
+          const rango = Math.min(lastRowH - 1, 200); // revisar últimas 200 filas
+          const dataH = hojaHistorico.getRange(lastRowH - rango + 1, 1, rango, 6).getDisplayValues();
+          for (let j = dataH.length - 1; j >= 0; j--) {
+            const correoH = String(dataH[j][1]).trim().toLowerCase();
+            const finH = String(dataH[j][4]).trim();
+            if (correoH === correoAnalista.toLowerCase().trim() && finH === "EN CURSO") {
+              const filaH = (lastRowH - rango + 1) + j;
+              const inicioH = String(dataH[j][3]).trim();
+              // Calcular duración en minutos
+              let duracion = 0;
+              try {
+                const inicioDate = new Date(inicioH.replace(' ', 'T'));
+                if (!isNaN(inicioDate.getTime())) {
+                  duracion = Math.round((ahora.getTime() - inicioDate.getTime()) / 60000);
+                }
+              } catch(e) {}
+              hojaHistorico.getRange(filaH, 5).setValue(fechaHoraActual); // col E = fecha+hora fin
+              hojaHistorico.getRange(filaH, 6).setValue(duracion);         // col F = duración min
+              break;
+            }
+          }
+        }
+
+        // Escribir nuevo registro directamente en Historico_Estados
+        hojaHistorico.appendRow([
+          fechaDiaHoy,
+          correoAnalista,
+          estadoTextoPlano,
+          fechaHoraActual,
+          "EN CURSO",
+          0
+        ]);
+      }
+
+      // Actualizar estado actual en hoja Usuarios (col F)
+      hojaUsuarios.getRange(filaEncontrada, columnaEstado + 1).setValue(estadoTextoPlano);
+
+      // Actualizar col L con JSON mínimo para compatibilidad con UI del analista
       const celdaHistorial = hojaUsuarios.getRange(filaEncontrada, columnaHistorial + 1);
       let historial = [];
       try {
@@ -753,51 +1022,31 @@ function actualizarEstadoPropio(nuevoEstado) {
         historial = contenido ? JSON.parse(contenido) : [];
       } catch (e) { historial = []; }
 
+      // Si el historial es de otro día, limpiarlo
       if (historial.length > 0) {
-        const primerInicio = historial[0].inicio;
-        const fechaPrimerDia = primerInicio.includes("T")
-          ? primerInicio.split("T")[0]
-          : Utilities.formatDate(new Date(primerInicio), TIMEZONE, "yyyy-MM-dd");
-
-        if (fechaPrimerDia !== fechaDiaHoy && hojaHistorico) {
-          historial.forEach(reg => {
-            const diaRegistro = reg.inicio.includes("T")
-              ? reg.inicio.split("T")[0]
-              : reg.inicio.split(' ')[0];
-            hojaHistorico.appendRow([
-              diaRegistro,
-              correoAnalista,
-              reg.estado,
-              reg.inicio,
-              reg.fin,
-              reg.duracion_min
-            ]);
-          });
-          historial = [];
-        }
+        try {
+          const primerInicio = historial[0].inicio;
+          const fechaPrimer = primerInicio.includes("T") ? primerInicio.split("T")[0] : primerInicio.split(' ')[0];
+          if (fechaPrimer !== fechaDiaHoy) historial = [];
+        } catch(e) { historial = []; }
       }
 
+      // Cerrar último estado en JSON local
       if (historial.length > 0) {
         let ultimo = historial[historial.length - 1];
-        ultimo.fin = fechaHoraISO;
+        ultimo.fin = ahora.toISOString();
         const inicioMs = new Date(ultimo.inicio).getTime();
-        if (!isNaN(inicioMs)) {
-          ultimo.duracion_min = Math.round((ahora.getTime() - inicioMs) / 60000);
-        } else {
-          ultimo.duracion_min = 0;
-        }
+        if (!isNaN(inicioMs)) ultimo.duracion_min = Math.round((ahora.getTime() - inicioMs) / 60000);
       }
 
       historial.push({
         estado: estadoTextoPlano,
-        inicio: fechaHoraISO,
+        inicio: ahora.toISOString(),
         fin: "EN CURSO",
         duracion_min: 0
       });
 
-      hojaUsuarios.getRange(filaEncontrada, columnaEstado + 1).setValue(estadoTextoPlano);
       celdaHistorial.setValue(JSON.stringify(historial));
-
       SpreadsheetApp.flush();
       return { success: true, message: "Estado actualizado y sincronizado." };
 
@@ -831,37 +1080,83 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
   if(filaEncontrada !== -1){
     const estadoTextoPlano = nuevoEstado.toUpperCase();
     const ahora = new Date();
-    const fechaHoraISO = ahora.toISOString();
-    const celdaHistorial = hojaUsuarios.getRange(filaEncontrada, columnaHistorial +1);
+    const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
+    const fechaHoraActual = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
 
-    let historial =[]
-    try{
+    // Cerrar registro anterior en Historico_Estados
+    if (hojaHistorico) {
+      const lastRowH = hojaHistorico.getLastRow();
+      if (lastRowH > 1) {
+        const rango = Math.min(lastRowH - 1, 200);
+        const dataH = hojaHistorico.getRange(lastRowH - rango + 1, 1, rango, 6).getDisplayValues();
+        for (let j = dataH.length - 1; j >= 0; j--) {
+          const correoH = String(dataH[j][1]).trim().toLowerCase();
+          const finH = String(dataH[j][4]).trim();
+          if (correoH === correoAsesor.toLowerCase().trim() && finH === "EN CURSO") {
+            const filaH = (lastRowH - rango + 1) + j;
+            const inicioH = String(dataH[j][3]).trim();
+            let duracion = 0;
+            try {
+              const inicioDate = new Date(inicioH.replace(' ', 'T'));
+              if (!isNaN(inicioDate.getTime())) {
+                duracion = Math.round((ahora.getTime() - inicioDate.getTime()) / 60000);
+              }
+            } catch(e) {}
+            hojaHistorico.getRange(filaH, 5).setValue(fechaHoraActual);
+            hojaHistorico.getRange(filaH, 6).setValue(duracion);
+            break;
+          }
+        }
+      }
+
+      // Escribir nuevo registro
+      hojaHistorico.appendRow([
+        fechaDiaHoy,
+        correoAsesor,
+        estadoTextoPlano,
+        fechaHoraActual,
+        "EN CURSO",
+        0
+      ]);
+    }
+
+    // Actualizar estado en Usuarios
+    hojaUsuarios.getRange(filaEncontrada, columnaEstado + 1).setValue(estadoTextoPlano);
+
+    // Actualizar JSON local para UI
+    const celdaHistorial = hojaUsuarios.getRange(filaEncontrada, columnaHistorial + 1);
+    let historial = [];
+    try {
       const contenido = celdaHistorial.getValue();
       historial = contenido ? JSON.parse(contenido) : [];
-    } catch(e){
-      historial = [];
+    } catch(e) { historial = []; }
+
+    if (historial.length > 0) {
+      try {
+        const primerInicio = historial[0].inicio;
+        const fechaPrimer = primerInicio.includes("T") ? primerInicio.split("T")[0] : primerInicio.split(' ')[0];
+        if (fechaPrimer !== fechaDiaHoy) historial = [];
+      } catch(e) { historial = []; }
     }
-    if(historial.length > 0){
+
+    if (historial.length > 0) {
       let ultimo = historial[historial.length - 1];
-      ultimo.fin = fechaHoraISO;
+      ultimo.fin = ahora.toISOString();
       const inicioMs = new Date(ultimo.inicio).getTime();
-      if (!isNaN(inicioMs)) {
-        ultimo.duracion_min = Math.round((ahora.getTime() - inicioMs) / 60000);
-      } else {
-        ultimo.duracion_min = 0;
-      }
+      if (!isNaN(inicioMs)) ultimo.duracion_min = Math.round((ahora.getTime() - inicioMs) / 60000);
     }
+
     historial.push({
       estado: estadoTextoPlano,
-      inicio: fechaHoraISO,
+      inicio: ahora.toISOString(),
       fin: "EN CURSO",
       duracion_min: 0,
       modificadoPor: "ADMIN"
-    })
-    celdaHistorial.setValue(JSON.stringify(historial))
-    return true
+    });
+    celdaHistorial.setValue(JSON.stringify(historial));
+    return true;
   }
-  return false
+  return false;
 }
 
 function autoAsignarAlEntrar() {

@@ -872,6 +872,7 @@
       <div class="l-text">
         <div class="l-title">Cargando <span>Sistema</span></div>
         <div class="l-sub">Preparando tus solicitudes...</div>
+        <div class="l-sub" id="loader-nombre-usuario" style="margin-top:8px;font-weight:600;color:#e2e8f0;font-size:0.9rem;opacity:0;transition:opacity 0.5s;"></div>
       </div>
       <div class="l-bar-wrap">
         <div class="l-bar"></div>
@@ -1607,6 +1608,82 @@
             .getEmailUsuario();
     });
   </script>
+
+  <!-- Modal Gestión Reestudio/UAR (para analistas Digital con casos mixtos) -->
+  <div class="modal fade" id="modalReestudioDigital" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
+      <div class="modal-content" style="border-radius:20px;border:none;box-shadow:0 20px 60px rgba(0,0,0,0.15);">
+        <div class="modal-header-inner" style="border-radius:20px 20px 0 0;padding:20px 24px;">
+          <div>
+            <h5 class="fw-bold text-white mb-0" style="font-size:1rem;">Gestión — <span id="rmd_header_sol"></span></h5>
+            <p class="small mb-0" style="color:rgba(255,255,255,0.65);">
+              Origen: <span id="rmd_origen"></span> &nbsp;|&nbsp; Tipo: <span id="rmd_tipo"></span><br>
+              Radicación: <span id="rmd_radicacion"></span> &nbsp;|&nbsp; Asignado: <span id="rmd_asignacion"></span>
+            </p>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <input type="hidden" id="rmd_solicitudId">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="small fw-bold text-muted text-uppercase">Póliza <span class="text-danger">*</span></label>
+              <input type="number" id="rmd_poliza" class="form-control" placeholder="Número de póliza">
+            </div>
+            <div class="col-12">
+              <label class="small fw-bold text-muted text-uppercase">Estado de Gestión <span class="text-danger">*</span></label>
+              <select id="rmd_estado_q" class="form-select" onchange="rmdActualizarEstado()">
+                <option value="" disabled selected>Selecciona un estado</option>
+                <option value="APROBADA">APROBADA</option>
+                <option value="APLAZADA">APLAZADA</option>
+                <option value="NEGADA">NEGADA</option>
+              </select>
+            </div>
+            <div class="col-12 d-none" id="rmd_cont_aplaz">
+              <label class="small fw-bold text-muted text-uppercase">Motivo Aplazamiento <span class="text-danger">*</span></label>
+              <select id="rmd_motivo_aplazamiento" class="form-select">
+                <option value="">Sin aplazamiento</option>
+                <option value="Un deudor solidario">Un deudor solidario</option>
+                <option value="Dos deudores solidarios">Dos deudores solidarios</option>
+                <option value="Extractos bancarios">Extractos bancarios</option>
+                <option value="Estados financieros">Estados financieros</option>
+                <option value="Cámara de comercio">Cámara de comercio</option>
+                <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
+                <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+                <option value="Pendiente biometria">Pendiente biometría</option>
+                <option value="Certificado laboral">Certificado laboral</option>
+                <option value="Documento de identidad legible">Documento de identidad legible</option>
+                <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+                <option value="Error de terceros">Error de terceros</option>
+              </select>
+            </div>
+            <div class="col-12 d-none" id="rmd_cont_neg">
+              <label class="small fw-bold text-muted text-uppercase">Motivo Negación <span class="text-danger">*</span></label>
+              <select id="rmd_motivo_negacion" class="form-select">
+                <option value="">Selecciona motivo</option>
+                <option value="Capacidad de endeudamiento">Capacidad de endeudamiento</option>
+                <option value="Referencias negativas">Referencias negativas</option>
+                <option value="Documentación insuficiente">Documentación insuficiente</option>
+                <option value="Perfil no aplica">Perfil no aplica</option>
+                <option value="Solicitud duplicada">Solicitud duplicada</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="small fw-bold text-muted text-uppercase">Observaciones</label>
+              <textarea id="rmd_observaciones" class="form-control" rows="2" placeholder="Notas adicionales..."></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0 px-4 pb-4">
+          <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn text-white fw-bold px-4" style="background:#253150;border-radius:10px;" onclick="guardarGestionReestudioDesdeDigital()">
+            <i class="bi bi-cloud-arrow-up me-1"></i>Guardar Gestión
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 
 </html>

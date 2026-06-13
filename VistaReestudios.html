@@ -143,6 +143,7 @@
       <div class="l-text">
         <div class="l-title">Módulo <span>Reestudios</span></div>
         <div class="l-sub">Asignando casos y sincronizando...</div>
+        <div class="l-sub" id="loader-nombre-usuario" style="margin-top:8px;font-weight:600;color:#e2e8f0;font-size:0.9rem;opacity:0;transition:opacity 0.5s;"></div>
       </div>
       <div class="l-bar-wrap"><div class="l-bar"></div></div>
     </div>
@@ -540,6 +541,16 @@
     let estadoGlobalAsesor = "INACTIVO";
 
     $(document).ready(function () {
+      // Mostrar nombre en el loader inmediatamente
+      google.script.run.withSuccessHandler(function(email) {
+        if (email) {
+          var prefijo = email.split('@')[0];
+          var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+          var el = document.getElementById('loader-nombre-usuario');
+          if (el) { el.textContent = 'Hola, ' + nombre; el.style.opacity = '1'; }
+        }
+      }).getEmailUsuarioReestudios();
+
       sincronizarEstadoInicial(true);
       $('#btnGuardarCambios').off('click').on('click', manejarGuardarCambios);
       $('#d_estado_q').on('change', actualizarCamposGestion);
@@ -586,6 +597,25 @@
               animarNumero('countHoy', cruzado.hoyTotal);
             }
           }).obtenerGestionesHoyCruzadas();
+
+          // Verificar cupos del analista
+          google.script.run.withSuccessHandler(function(cuposRes) {
+            if (cuposRes && cuposRes.cumplido) {
+              var detalle = '<div style="text-align:left;margin:12px 0;">';
+              for (var r = 0; r < cuposRes.resumen.length; r++) {
+                var item = cuposRes.resumen[r];
+                if (item.limite > 0) detalle += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9;"><span>' + item.tipo + '</span><strong>' + item.usado + ' / ' + item.limite + '</strong></div>';
+              }
+              detalle += '</div>';
+              Swal.fire({
+                icon: 'success',
+                title: '🎉 ¡Cupos completados!',
+                html: '<p>Has cumplido con todos tus cupos asignados del día.</p>' + detalle + '<p class="fw-bold" style="margin-top:8px;">Total: ' + cuposRes.totalUsado + ' / ' + cuposRes.totalLimite + '</p>',
+                confirmButtonColor: '#253150',
+                confirmButtonText: 'Entendido'
+              });
+            }
+          }).verificarMisCupos();
           
           // UX: Update sync time
           if (typeof UX !== 'undefined') UX.updateSyncTime();

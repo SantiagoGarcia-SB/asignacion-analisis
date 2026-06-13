@@ -2,9 +2,9 @@ const MAX_VIP_CONSECUTIVAS = 2;
 const CATEGORIAS_ROTACION = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ORDEN_PRIORIDAD_POR_MODO = {
-  NUEVAS_PRIMERO:['nueva', 'biometria', 'induccion', 'reestudio', 'uar'],
-  BIOMETRIA_PRIMERO:['biometria', 'nueva', 'induccion', 'reestudio', 'uar'],
-  INDUCCION_PRIMERO:['induccion', 'nueva', 'biometria', 'reestudio', 'uar'],
+  NUEVAS_PRIMERO:['nueva', 'biometria', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
+  BIOMETRIA_PRIMERO:['biometria', 'nueva', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO:['induccion', 'nueva', 'biometria', 'reestudio', 'nuevaUar', 'deudorUar'],
 };
 
 const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
@@ -41,24 +41,15 @@ function RequestLead() {
     const capTotal      = parseInt(usuarioInfo[6]) || 0;
 
     if (estadoUsuario !== "ACTIVO") return "❌ Tu usuario no está Activo.";
-    if (!especialidad.toUpperCase().includes("ESTUDIO DIGITAL")) return "❌ Tu especialidad no es 'Estudio Digital'.";
+
+    // Determinar equipo según especialidad para leer cupos correctos
+    let equipoCupos = 'DIGITAL';
+    if (especialidad.toUpperCase().includes("REESTUDIO")) equipoCupos = 'REESTUDIOS';
+    else if (especialidad.toUpperCase().includes("BIOMETRIA")) equipoCupos = 'BIOMETRIA';
 
     const props = PropertiesService.getScriptProperties();
-    
-    function getCuota(key, defaultVal) {
-      const val = props.getProperty(key);
-      if (val === null || val === '') return defaultVal;
-      const parsed = parseInt(val, 10);
-      return isNaN(parsed) ? defaultVal : parsed;
-    }
 
-    const cuotas = {
-      nueva: getCuota('CUOTA_NUEVAS', 70),
-      reestudio: getCuota('CUOTA_REESTUDIOS', 10),
-      induccion: getCuota('CUOTA_INDUCCIONES', 10),
-      biometria: getCuota('CUOTA_BIOMETRIA', 8),
-      uar: getCuota('CUOTA_UAR', 2)
-    };
+    const cuotas = obtenerCuposEfectivos(userEmail, equipoCupos, dataUsuarios);
 
     const hoy = new Date();
     const d = String(hoy.getDate()).padStart(2, '0');
@@ -77,7 +68,7 @@ function RequestLead() {
       return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
     }
 
-    let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, uar: 0, reestudio: 0 };
+    let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0 };
     let capPendienteReal = 0;
 
     const dataSolicitudes = solicitudesSheet.getRange("A1:AL" + solicitudesSheet.getLastRow()).getDisplayValues();
@@ -112,11 +103,13 @@ function RequestLead() {
       if (asignado === userEmail) {
         const origen = String(row[3]).toUpperCase().trim();
         const tipoP = String(row[4]).toUpperCase().trim();
+        const claseR = String(row[5]).toUpperCase().trim();
         const fechaAsig = row[8]; 
         const fechaFin = row[9];  
         
-        const esUar = (origen === "CORREO" && (tipoP.includes("ADICIONAL") || tipoP.includes("NUEVA")));
-        const tipo = esUar ? 'uar' : 'reestudio';
+        let tipo = 'reestudio';
+        if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
+        else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
 
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
           conteoHoy[tipo]++;
@@ -127,7 +120,7 @@ function RequestLead() {
       }
     }
 
-    Logger.log(`Analista: ${userEmail} | Límite Cuotas: ${JSON.stringify(cuotas)} | Realizado/Asignado Hoy: ${JSON.stringify(conteoHoy)}`);
+    Logger.log(`Analista: ${userEmail} | Límite Cupos Digital: ${JSON.stringify(cuotas)} | Realizado/Asignado Hoy: ${JSON.stringify(conteoHoy)}`);
 
     const capacidadDisponible = capTotal - capPendienteReal;
     if (capacidadDisponible < 1) return "No tienes capacidad disponible. Termina casos pendientes primero.";
@@ -180,10 +173,12 @@ function RequestLead() {
       if (asignado !== "") continue; 
       if (estadoGest !== "") continue; 
       
-      const origen = String(row[3]).toUpperCase().trim();
       const tipoP = String(row[4]).toUpperCase().trim();
-      const esUar = (origen === "CORREO" && (tipoP.includes("ADICIONAL") || tipoP.includes("NUEVA")));
-      const tipo = esUar ? 'uar' : 'reestudio';
+      const claseR = String(row[5]).toUpperCase().trim();
+      
+      let tipo = 'reestudio';
+      if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
+      else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
 
       if (conteoHoy[tipo] >= cuotas[tipo]) continue;
 
@@ -199,7 +194,7 @@ function RequestLead() {
       });
     }
 
-    if (pendientes.length === 0) return "Tu cuota diaria para los tipos de casos disponibles ya está llena, o no hay casos en bandeja.";
+    if (pendientes.length === 0) return "Tu cupo diario para los tipos de casos disponibles ya está lleno, o no hay casos en bandeja.";
 
     const dataScore = scoreSheet.getDataRange().getDisplayValues();
     const buckets = { vip: new Set(), grande: new Set(), mediana: new Set(), pequena: new Set(), gen: new Set(), dev: new Set(), rev: new Set(), otros: new Set() };

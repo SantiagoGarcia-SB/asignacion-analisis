@@ -16,9 +16,6 @@
  *  - Control de concurrencia con LockService
  */
 
-// Tipos que NO se asignan en este módulo (los maneja la API + modelo principal)
-const TIPOS_EXCLUIR_REESTUDIOS = ['NUEVA UAR', 'DEUDOR UAR'];
-
 // Máximo de casos a asignar por invocación
 const MAX_ASIGNAR_REESTUDIOS = 1;
 
@@ -26,6 +23,7 @@ const MAX_ASIGNAR_REESTUDIOS = 1;
  * Motor de asignación equitativa para reestudios.
  * Se ejecuta cuando el analista entra a la vista o al guardar gestión.
  * Asigna casos sin asignar al analista actual hasta llenar su capacidad.
+ * Respeta los cupos diarios del equipo Reestudios.
  *
  * @returns {Object} { success, nueva?, message }
  */
@@ -52,9 +50,15 @@ function RequestLeadReestudios() {
     const capTotal = parseInt(usuarioInfo[6]) || 0;
 
     if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
-    // TODO: Descomentar validación de especialidad en producción
-    // if (!especialidad.includes("REESTUDIOS")) return { success: false, message: "Tu especialidad no es 'Reestudios'." };
     if (capTotal <= 0) return { success: false, message: "Capacidad en 0." };
+
+    // Determinar equipo según especialidad para leer cupos correctos
+    let equipoCupos = 'REESTUDIOS';
+    if (especialidad.includes("ESTUDIO DIGITAL")) equipoCupos = 'DIGITAL';
+    else if (especialidad.includes("BIOMETRIA")) equipoCupos = 'BIOMETRIA';
+
+    // Leer cupos del equipo (individuales o globales)
+    const cupos = obtenerCuposEfectivos(userEmail, equipoCupos, dataUsuarios);
 
     // Abrir hoja de reestudios
     const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
@@ -66,12 +70,45 @@ function RequestLeadReestudios() {
 
     const data = hoja.getRange(2, 1, lastRow - 1, 14).getValues();
 
-    // Contar carga actual del analista (pendientes asignados sin gestionar)
+    // Calcular fecha hoy en múltiples formatos para comparar
+    const hoy = new Date();
+    const d = String(hoy.getDate()).padStart(2, '0');
+    const m = String(hoy.getMonth() + 1).padStart(2, '0');
+    const y = hoy.getFullYear();
+    const hoyFmt1 = d + '/' + m + '/' + y;
+    const hoyFmt2 = y + '-' + m + '-' + d;
+    const hoyFmt3 = hoy.getDate() + '/' + (hoy.getMonth() + 1) + '/' + y;
+
+    function esHoy(val) {
+      if (!val) return false;
+      if (val instanceof Date) {
+        return val.getDate() === hoy.getDate() && val.getMonth() === hoy.getMonth() && val.getFullYear() === hoy.getFullYear();
+      }
+      const texto = String(val);
+      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
+    }
+
+    // Contar carga actual y cupos usados hoy
     let cargaActual = 0;
+    let conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, nueva: 0, induccion: 0, biometria: 0 };
+
     for (const fila of data) {
       const asignado = String(fila[6]).trim().toLowerCase(); // col G
-      const fechaFin = String(fila[9]).trim(); // col J
-      if (asignado === userEmail && fechaFin === "") {
+      if (asignado !== userEmail) continue;
+
+      const fechaAsig = fila[8]; // col I
+      const fechaFin = fila[9];  // col J
+      const tipoProceso = String(fila[4]).toUpperCase().trim(); // col E
+      const claseSolicitud = String(fila[5]).toUpperCase().trim(); // col F
+
+      let tipo = 'reestudio';
+      if (tipoProceso.includes("NUEVA UAR") || claseSolicitud.includes("NUEVA UAR")) tipo = 'nuevaUar';
+      else if (tipoProceso.includes("DEUDOR UAR") || claseSolicitud.includes("DEUDOR UAR")) tipo = 'deudorUar';
+
+      if (esHoy(fechaAsig) || esHoy(fechaFin)) {
+        conteoHoy[tipo]++;
+      }
+      if (String(fechaAsig).trim() !== "" && String(fechaFin).trim() === "") {
         cargaActual++;
       }
     }
@@ -79,9 +116,12 @@ function RequestLeadReestudios() {
     let cupoDisponible = capTotal - cargaActual;
     if (cupoDisponible <= 0) return { success: false, message: "Capacidad llena. Gestiona casos pendientes primero." };
 
-    // Buscar solicitudes sin asignar, excluyendo tipos que no van aquí
-    // Se asigna de a 1 caso a la vez (FIFO)
+    Logger.log('Cupos Reestudios equipo: ' + JSON.stringify(cupos) + ' | Conteo hoy: ' + JSON.stringify(conteoHoy) + ' | capTotal: ' + capTotal + ' | cargaActual: ' + cargaActual);
+
+    // Buscar solicitudes sin asignar, respetando cupos por tipo
     let asignadas = 0;
+    let sinAsignarDisponibles = 0;
+    let saltadasPorCupo = 0;
     const fechaAsignacion = new Date();
 
     for (let i = 0; i < data.length; i++) {
@@ -97,11 +137,15 @@ function RequestLeadReestudios() {
       if (analistaAsignado !== "") continue;
       if (solicitud === "") continue;
 
-      // Excluir tipos que maneja la API
-      const excluirPorTipo = TIPOS_EXCLUIR_REESTUDIOS.some(t =>
-        tipoProceso.includes(t) || claseSolicitud.includes(t)
-      );
-      if (excluirPorTipo) continue;
+      sinAsignarDisponibles++;
+
+      // Determinar tipo para validar cupo
+      let tipo = 'reestudio';
+      if (tipoProceso.includes("NUEVA UAR") || claseSolicitud.includes("NUEVA UAR")) tipo = 'nuevaUar';
+      else if (tipoProceso.includes("DEUDOR UAR") || claseSolicitud.includes("DEUDOR UAR")) tipo = 'deudorUar';
+
+      // Validar cupo diario del tipo
+      if (conteoHoy[tipo] >= cupos[tipo]) { saltadasPorCupo++; continue; }
 
       // Asignar
       const filaReal = i + 2;
@@ -111,10 +155,16 @@ function RequestLeadReestudios() {
 
       asignadas++;
       cupoDisponible--;
+      conteoHoy[tipo]++;
     }
 
     if (asignadas === 0) {
-      return { success: false, nueva: false, message: "No hay solicitudes pendientes para asignar." };
+      Logger.log('Sin asignar para ' + userEmail + ' | capTotal:' + capTotal + ' | cargaActual:' + cargaActual + ' | cupos:' + JSON.stringify(cupos) + ' | conteoHoy:' + JSON.stringify(conteoHoy) + ' | sinAsignarEnCola:' + sinAsignarDisponibles + ' | saltadasPorCupo:' + saltadasPorCupo);
+      var motivo = '';
+      if (sinAsignarDisponibles === 0) motivo = 'No hay solicitudes en cola.';
+      else if (saltadasPorCupo > 0) motivo = 'Cupo diario alcanzado. (Hoy: ' + JSON.stringify(conteoHoy) + ' | Límite: ' + JSON.stringify(cupos) + ')';
+      else motivo = 'No hay solicitudes asignables con los cupos actuales.';
+      return { success: false, nueva: false, message: motivo };
     }
 
     SpreadsheetApp.flush();

@@ -284,6 +284,32 @@ function autoAsignarBiometria() {
     let cupoDisponible = capTotal - cargaActual;
     if (cupoDisponible <= 0) return { success: false, message: "Capacidad llena" };
 
+    // Validar cupo diario del equipo Biometría (individual o global)
+    const cuposBio = obtenerCuposEfectivos(userEmail, 'BIOMETRIA', dataUsuarios);
+    const cupoBioDiario = cuposBio.biometria;
+    
+    // Contar biometrías asignadas hoy a este analista
+    const hoy = new Date();
+    let conteoHoyBio = 0;
+    if (lastRowGestion > 1) {
+      const dataGestionFull = hojaGestion.getRange(2, 1, lastRowGestion - 1, 18).getValues();
+      dataGestionFull.forEach(f => {
+        let analistaColR = f.length > 17 ? String(f[17]).trim().toLowerCase() : "";
+        let analistaColB = String(f[1]).trim().toLowerCase();
+        let analistaFila = analistaColR ? analistaColR : analistaColB;
+        if (analistaFila === userEmail) {
+          const fechaFila = f[0];
+          if (fechaFila instanceof Date && fechaFila.getDate() === hoy.getDate() && fechaFila.getMonth() === hoy.getMonth() && fechaFila.getFullYear() === hoy.getFullYear()) {
+            conteoHoyBio++;
+          }
+        }
+      });
+    }
+    if (conteoHoyBio >= cupoBioDiario) return { success: false, message: "Cupo diario de biometría alcanzado (" + cupoBioDiario + ")." };
+    // Limitar asignación al cupo restante
+    const cupoRestanteBio = cupoBioDiario - conteoHoyBio;
+    if (cupoDisponible > cupoRestanteBio) cupoDisponible = cupoRestanteBio;
+
     const ssOrigen = SpreadsheetApp.openById(ID_SHEET_ORIGEN);
     const hojaOrigen = ssOrigen.getSheetByName("Hoja 2");
     const lastRowOrigen = hojaOrigen.getLastRow();
