@@ -2,10 +2,13 @@ const MAX_VIP_CONSECUTIVAS = 2;
 const CATEGORIAS_ROTACION = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ORDEN_PRIORIDAD_POR_MODO = {
-  NUEVAS_PRIMERO:['nueva', 'biometria', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  BIOMETRIA_PRIMERO:['biometria', 'nueva', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO:['induccion', 'nueva', 'biometria', 'reestudio', 'nuevaUar', 'deudorUar'],
+  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
+  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'reestudio', 'nuevaUar', 'deudorUar'],
 };
+
+// Para analistas del equipo REESTUDIOS, los casos propios (ORIGEN) siempre van primero
+const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'nueva', 'biometria', 'induccion'];
 
 const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
 
@@ -55,33 +58,41 @@ function RequestLead() {
     const d = String(hoy.getDate()).padStart(2, '0');
     const m = String(hoy.getMonth() + 1).padStart(2, '0');
     const y = hoy.getFullYear();
-    const d_s = hoy.getDate(); 
+    const d_s = hoy.getDate();
     const m_s = hoy.getMonth() + 1;
 
-    const hoyFmt1 = `${d}/${m}/${y}`;
-    const hoyFmt2 = `${y}-${m}-${d}`;
-    const hoyFmt3 = `${d_s}/${m_s}/${y}`;
+    const hoyFmt1 = `${d}/${m}/${y}`;          // DD/MM/YYYY  (Colombia con padding)
+    const hoyFmt2 = `${y}-${m}-${d}`;          // YYYY-MM-DD  (ISO)
+    const hoyFmt3 = `${d_s}/${m_s}/${y}`;      // D/M/YYYY    (Colombia sin padding)
+    const hoyFmt4 = `${m_s}/${d_s}/${y}`;      // M/D/YYYY    (US sin padding)
+    const hoyFmt5 = `${m}/${d}/${y}`;          // MM/DD/YYYY  (US con padding)
 
-    function cumpleHoy(strVal) {
-      if (!strVal) return false;
-      const texto = String(strVal);
-      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
+    function cumpleHoy(val) {
+      if (!val) return false;
+      // Comparaci\u00f3n exacta cuando se leen con getValues() \u2014 sin ambig\u00fcedad de formato
+      if (val instanceof Date) {
+        return val.getFullYear() === y && val.getMonth() === (m_s - 1) && val.getDate() === d_s;
+      }
+      const texto = String(val);
+      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3)
+          || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
     let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0 };
     let capPendienteReal = 0;
 
-    const dataSolicitudes = solicitudesSheet.getRange("A1:AL" + solicitudesSheet.getLastRow()).getDisplayValues();
+    // getValues() en lugar de getDisplayValues() para obtener Date reales en col 27/29
+    const dataSolicitudes = solicitudesSheet.getRange("A1:AL" + solicitudesSheet.getLastRow()).getValues();
     for (let i = 1; i < dataSolicitudes.length; i++) {
       const row = dataSolicitudes[i];
       const asignado = String(row[27]).trim().toLowerCase();
-      
+
       if (asignado === userEmail) {
         const fechaAsig = row[26];
-        const fechaFin = row[28];
+        const fechaFin  = row[28];
         const claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const estadoNorm = String(row[16]).trim().toUpperCase();
-        
+
         let tipo = 'nueva';
         if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
         else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
@@ -89,24 +100,24 @@ function RequestLead() {
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
           conteoHoy[tipo]++;
         }
-        if (String(fechaAsig).trim() !== "" && String(fechaFin).trim() === "") {
-          capPendienteReal++;
-        }
+        const tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
+        const tieneFin  = fechaFin  instanceof Date || String(fechaFin).trim()  !== "";
+        if (tieneAsig && !tieneFin) capPendienteReal++;
       }
     }
 
-    const dataReestudios = reestudiosSheet.getDataRange().getDisplayValues();
+    // getValues() para obtener Date reales en cols I (fechaAsig) y J (fechaFin) de ORIGEN
+    const dataReestudios = reestudiosSheet.getDataRange().getValues();
     for (let i = 1; i < dataReestudios.length; i++) {
       const row = dataReestudios[i];
-      const asignado = String(row[6]).trim().toLowerCase(); 
-      
+      const asignado = String(row[6]).trim().toLowerCase();
+
       if (asignado === userEmail) {
-        const origen = String(row[3]).toUpperCase().trim();
-        const tipoP = String(row[4]).toUpperCase().trim();
+        const tipoP  = String(row[4]).toUpperCase().trim();
         const claseR = String(row[5]).toUpperCase().trim();
-        const fechaAsig = row[8]; 
-        const fechaFin = row[9];  
-        
+        const fechaAsig = row[8];
+        const fechaFin  = row[9];
+
         let tipo = 'reestudio';
         if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
         else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
@@ -114,9 +125,9 @@ function RequestLead() {
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
           conteoHoy[tipo]++;
         }
-        if (String(fechaAsig).trim() !== "" && String(fechaFin).trim() === "") {
-          capPendienteReal++;
-        }
+        const tieneAsigR = fechaAsig instanceof Date ? true : String(fechaAsig).trim() !== "";
+        const tieneFinR  = fechaFin  instanceof Date ? true : String(fechaFin).trim()  !== "";
+        if (tieneAsigR && !tieneFinR) capPendienteReal++;
       }
     }
 
@@ -194,7 +205,17 @@ function RequestLead() {
       });
     }
 
-    if (pendientes.length === 0) return "Tu cupo diario para los tipos de casos disponibles ya está lleno, o no hay casos en bandeja.";
+    const _etiquetasTipo = { nueva: 'Nuevas', biometria: 'Biometría', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR' };
+    const cuposLlenosHoy = Object.entries(cuotas)
+      .filter(([tipo, lim]) => lim > 0 && conteoHoy[tipo] >= lim)
+      .map(([tipo]) => `${_etiquetasTipo[tipo]} (${conteoHoy[tipo]}/${cuotas[tipo]})`);
+
+    if (pendientes.length === 0) {
+      if (cuposLlenosHoy.length > 0) {
+        return `⚠️ Sin casos disponibles. Cupos del día completados: ${cuposLlenosHoy.join(', ')}.`;
+      }
+      return "⚠️ No hay casos en bandeja para tus subcategorías disponibles.";
+    }
 
     const dataScore = scoreSheet.getDataRange().getDisplayValues();
     const buckets = { vip: new Set(), grande: new Set(), mediana: new Set(), pequena: new Set(), gen: new Set(), dev: new Set(), rev: new Set(), otros: new Set() };
@@ -213,8 +234,13 @@ function RequestLead() {
       else buckets.otros.add(key);
     }
 
-    const prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
-    const ordenPrioridad  = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO'];
+    let ordenPrioridad;
+    if (equipoCupos === 'REESTUDIOS') {
+      ordenPrioridad = ORDEN_PRIORIDAD_REESTUDIOS;
+    } else {
+      const prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      ordenPrioridad = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO'];
+    }
 
     pendientes.forEach(p => {
       if (p.reasignada) p.tipoPrioridad = -1;
@@ -266,13 +292,19 @@ function RequestLead() {
 
     if (leadSeleccionado.base === 'PRINCIPAL') {
       solicitudesSheet.getRange(leadSeleccionado.rowIndex, 27, 1, 5).setValues([[fechaHora, userEmail, "", "", nombreUsuario]]);
-      solicitudesSheet.getRange(leadSeleccionado.rowIndex, 36).clearContent(); 
+      solicitudesSheet.getRange(leadSeleccionado.rowIndex, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+      solicitudesSheet.getRange(leadSeleccionado.rowIndex, 36).clearContent();
     } else {
       reestudiosSheet.getRange(leadSeleccionado.rowIndex, 7, 1, 3).setValues([[userEmail, nombreUsuario, fechaHora]]);
+      reestudiosSheet.getRange(leadSeleccionado.rowIndex, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
     }
 
     SpreadsheetApp.flush();
-    return `✅ Asignado: 1 caso de ${leadSeleccionado.tipo.toUpperCase()}.`;
+    let _msgAsignacion = `✅ Asignado: 1 caso de ${_etiquetasTipo[leadSeleccionado.tipo] || leadSeleccionado.tipo.toUpperCase()}.`;
+    if (cuposLlenosHoy.length > 0) {
+      _msgAsignacion += `\n⚠️ Cupos del día completados: ${cuposLlenosHoy.join(', ')}`;
+    }
+    return _msgAsignacion;
 
   } catch (err) {
     Logger.log(`❌ Error crítico en RequestLead: ${err.message}`);

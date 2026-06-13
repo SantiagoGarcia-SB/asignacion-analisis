@@ -29,55 +29,111 @@ const ID_HOJA_REESTUDIOS = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
 const NOMBRE_PESTANA_REESTUDIOS = 'ORIGEN';
 
 /**
- * Obtiene los casos de reestudios asignados al analista actual.
- * Retorna pendientes + estadísticas.
+ * Obtiene todos los casos asignados al analista: reestudios + digitales/bio/inducción.
+ * La fuente de cada caso queda en item.fuente = 'REESTUDIO' | 'DIGITAL'.
  */
 function getReestudiosData() {
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
-
-    if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
-
-    const lastRow = hoja.getLastRow();
-    if (lastRow < 2) return { success: true, solicitudes: [], stats: { hoy: 0, pendientes: 0 } };
-
-    const data = hoja.getRange(2, 1, lastRow - 1, 14).getDisplayValues();
     const hoyStr = Utilities.formatDate(new Date(), "GMT-5", "dd/MM/yyyy");
 
     let conteoHoy = 0;
     let listaPendientes = [];
 
-    for (let i = 0; i < data.length; i++) {
-      const fila = data[i];
-      const asignado = String(fila[6]).trim().toLowerCase(); // col G
-      const fechaFin = String(fila[9]).trim(); // col J
-      const fechaAsignacion = String(fila[8]).trim(); // col I
+    // --- Hoja de Reestudios ---
+    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
 
-      if (asignado !== userEmail) continue;
+    const lastRow = hoja.getLastRow();
+    if (lastRow >= 2) {
+      const data = hoja.getRange(2, 1, lastRow - 1, 14).getDisplayValues();
+      for (let i = 0; i < data.length; i++) {
+        const fila = data[i];
+        const asignado = String(fila[6]).trim().toLowerCase();
+        const fechaFin = String(fila[9]).trim();
+        const fechaAsignacion = String(fila[8]).trim();
 
-      // Contar gestionadas hoy
-      if (fechaFin !== "") {
-        if (fechaFin.includes(hoyStr)) {
-          conteoHoy++;
+        if (asignado !== userEmail) continue;
+
+        if (fechaFin !== "") {
+          if (fechaFin.includes(hoyStr)) conteoHoy++;
+          continue;
         }
-        continue; // Ya gestionada
+        if (fechaAsignacion === "") continue;
+
+        listaPendientes.push({
+          fuente: 'REESTUDIO',
+          filaReal: i + 2,
+          solicitud: String(fila[1]).trim(),
+          linkDrive: String(fila[2]).trim(),
+          origen: String(fila[3]).trim(),
+          tipoProceso: String(fila[4]).trim(),
+          claseSolicitud: String(fila[5]).trim(),
+          fechaAsignacion: fechaAsignacion,
+          fechaRadicacion: String(fila[0]).trim()
+        });
       }
+    }
 
-      // Es pendiente si tiene fecha de asignación pero no fecha fin
-      if (fechaAsignacion === "") continue;
+    // --- Hoja principal (digitales, biometría, inducciones) ---
+    try {
+      const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const hojaDigital = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+      if (hojaDigital) {
+        const lastRowD = hojaDigital.getLastRow();
+        if (lastRowD >= 2) {
+          // Leemos hasta col AE (31 columnas) para cubrir nombreAnalista
+          const dataD = hojaDigital.getRange(2, 1, lastRowD - 1, 31).getDisplayValues();
+          for (let i = 0; i < dataD.length; i++) {
+            const fila = dataD[i];
+            const asignado = String(fila[27]).trim().toLowerCase(); // col AB
+            const fechaAsig = String(fila[26]).trim();              // col AA
+            const fechaFin  = String(fila[28]).trim();              // col AC
 
-      listaPendientes.push({
-        filaReal: i + 2,
-        solicitud: String(fila[1]).trim(),        // col B
-        linkDrive: String(fila[2]).trim(),         // col C
-        origen: String(fila[3]).trim(),            // col D
-        tipoProceso: String(fila[4]).trim(),       // col E
-        claseSolicitud: String(fila[5]).trim(),    // col F
-        fechaAsignacion: fechaAsignacion,          // col I
-        fechaRadicacion: String(fila[0]).trim()    // col A
-      });
+            if (asignado !== userEmail) continue;
+            if (fechaAsig === "") continue;
+
+            if (fechaFin !== "") {
+              if (fechaFin.includes(hoyStr)) conteoHoy++;
+              continue;
+            }
+
+            listaPendientes.push({
+              fuente: 'DIGITAL',
+              // Campos para la tabla
+              origen: 'DIGITAL',
+              tipoProceso: String(fila[20]).trim(),
+              claseSolicitud: String(fila[4]).trim(),
+              // Identificación y datos básicos
+              solicitud: String(fila[0]).trim(),
+              poliza: String(fila[1]).trim(),
+              identificacion: String(fila[2]).trim(),
+              tipoIdentificacion: String(fila[3]).trim(),
+              nombreInquilino: String(fila[4]).trim(),
+              correoInquilino: String(fila[5]).trim(),
+              telefonoInquilino: String(fila[6]).trim(),
+              ingresos: String(fila[7]).trim(),
+              fechaExpedicion: String(fila[8]).trim(),
+              canon: String(fila[9]).trim(),
+              cuota: String(fila[10]).trim(),
+              direccionInmueble: String(fila[11]).trim(),
+              destinoInmueble: String(fila[12]).trim(),
+              ciudadInmueble: String(fila[13]).trim(),
+              nombreAsesor: String(fila[14]).trim(),
+              correoAsesor: String(fila[15]).trim(),
+              estadoGeneral: String(fila[16]).trim(),
+              fechaRadicacion: String(fila[17]).trim(),
+              fechaResultado: String(fila[18]).trim(),
+              clase: String(fila[20]).trim(),
+              biometriaActual: String(fila[23]).trim(),
+              fechaAsignacion: fechaAsig
+            });
+          }
+        }
+      }
+    } catch (eDigital) {
+      Logger.log('getReestudiosData - Error leyendo digitales: ' + eDigital.toString());
     }
 
     return {
@@ -183,6 +239,20 @@ function guardarGestionReestudio(datos) {
     return { success: false, message: "Error al guardar: " + error.toString() };
   } finally {
     if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+/**
+ * Wrapper de RequestLead() que devuelve el mismo formato de objeto
+ * que espera VistaReestudios.html ({ success, nueva, message }).
+ */
+function RequestLeadUnificado() {
+  try {
+    const result = RequestLead();
+    const isSuccess = typeof result === 'string' && result.includes('✅');
+    return { success: isSuccess, nueva: isSuccess, message: result || '' };
+  } catch (e) {
+    return { success: false, nueva: false, message: e.toString() };
   }
 }
 

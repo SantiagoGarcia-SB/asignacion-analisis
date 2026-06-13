@@ -78,6 +78,8 @@ function RequestLeadReestudios() {
     const hoyFmt1 = d + '/' + m + '/' + y;
     const hoyFmt2 = y + '-' + m + '-' + d;
     const hoyFmt3 = hoy.getDate() + '/' + (hoy.getMonth() + 1) + '/' + y;
+    const hoyFmt4 = (hoy.getMonth() + 1) + '/' + hoy.getDate() + '/' + y;
+    const hoyFmt5 = m + '/' + d + '/' + y;
 
     function esHoy(val) {
       if (!val) return false;
@@ -85,7 +87,8 @@ function RequestLeadReestudios() {
         return val.getDate() === hoy.getDate() && val.getMonth() === hoy.getMonth() && val.getFullYear() === hoy.getFullYear();
       }
       const texto = String(val);
-      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
+      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3)
+          || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
     // Contar carga actual y cupos usados hoy
@@ -152,6 +155,7 @@ function RequestLeadReestudios() {
       hoja.getRange(filaReal, 7, 1, 3).setValues([
         [userEmail, nombreUsuario, fechaAsignacion]
       ]);
+      hoja.getRange(filaReal, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
 
       asignadas++;
       cupoDisponible--;

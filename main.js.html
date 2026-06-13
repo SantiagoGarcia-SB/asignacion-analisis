@@ -4,9 +4,17 @@
 
 <script>
 let datosGlobales = [];
-let yaSeIntentoAsignar = false; 
-let estadoGlobalAsesor = "INACTIVO"; 
-let tipoSolicitudActual = ""; // Tipo de solicitud actual en el modal (induccion, biometria, digital)
+let yaSeIntentoAsignar = false;
+let estadoGlobalAsesor = "INACTIVO";
+let tipoSolicitudActual = "";
+let cargaInicialHecha = false;
+
+function _miniLoader(on) {
+  const btn = document.getElementById('btnRefrescar');
+  if (!btn) return;
+  if (on) btn.classList.add('btn-refresh-spinning');
+  else btn.classList.remove('btn-refresh-spinning');
+}
 
 $(document).ready(function () {
 
@@ -189,9 +197,10 @@ function sincronizarEstadoInicial(debeCargarTabla = false) {
 
 function cargarDatos() {
   const loader = document.getElementById('loader-container');
-  if (loader) {
-    loader.classList.remove('loader-hidden');
-    loader.style.display = 'flex'; 
+  if (!cargaInicialHecha) {
+    if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
+  } else {
+    _miniLoader(true);
   }
 
   // Cargar conteo cruzado de gestiones del día (todas las vistas)
@@ -254,19 +263,31 @@ function cargarDatos() {
               Swal.fire({
                 icon: 'info',
                 title: 'Nueva Solicitud',
-                text: 'Se te ha asignado un nuevo registro.',
+                text: res.message || 'Se te ha asignado un nuevo registro.',
                 toast: true,
                 position: 'top-end',
                 showConfirmButton: false,
-                timer: 4000,
+                timer: 5000,
                 timerProgressBar: true
               });
-              setTimeout(() => { 
-                yaSeIntentoAsignar = false; 
-                cargarDatos(); 
+              setTimeout(() => {
+                yaSeIntentoAsignar = false;
+                cargarDatos();
               }, 3000);
             } else {
               console.warn("Asignación omitida: " + res.message);
+              if (res.message && res.message.trim() !== '') {
+                Swal.fire({
+                  icon: 'warning',
+                  title: 'Sin nuevos casos',
+                  text: res.message,
+                  toast: true,
+                  position: 'top-end',
+                  showConfirmButton: false,
+                  timer: 7000,
+                  timerProgressBar: true
+                });
+              }
             }
           })
           .withFailureHandler(function(err) {
@@ -281,16 +302,14 @@ function cargarDatos() {
       }
     })
     .withFailureHandler(function (e) {
-      if (loader) {
-        loader.classList.add('loader-hidden');
-        setTimeout(() => loader.style.display = 'none', 800);
-      }
+      if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+      _miniLoader(false);
       console.error("Error crítico en getTableData:", e);
       Swal.fire({
         icon: 'error',
         title: 'Error de Conexión',
         text: 'No se pudieron cargar los datos de la tabla.',
-        confirmButtonColor: '#253150' 
+        confirmButtonColor: '#253150'
       });
     })
     .getTableData();
@@ -363,10 +382,9 @@ function renderizarTabla(data) {
     responsive: true,
     initComplete: function(settings, json) {
       const loader = document.getElementById('loader-container');
-      if (loader) {
-        loader.classList.add('loader-hidden');
-        setTimeout(() => loader.style.display = 'none', 800);
-      }
+      if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+      cargaInicialHecha = true;
+      _miniLoader(false);
     }
   });
 
@@ -444,6 +462,7 @@ function renderizarTabla(data) {
     
     $('#d_biometria').val(fila[23] || '');
     $('#d_comentarios_gestion').val(fila[24] || '');
+    $('#d_fecha_radicacion_sai').val('');
     
     $('#d_estado_q').val(fila[16] || '').trigger('change');
     

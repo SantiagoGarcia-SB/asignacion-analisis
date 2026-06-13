@@ -14,116 +14,13 @@
   <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/limonte-sweetalert2/11.10.1/sweetalert2.all.min.js"></script>
 
+  <?!= include('estilos-compartidos'); ?>
   <style>
-    :root {
-      --color-primario: #BD0F14;
-      --rojo-dark: #8b0a0e;
-      --color-secundario: #253150;
-      --azul-mid: #3a4d7a;
-      --azul-light: #e8edf6;
-      --bg-page: #F4F5F8;
-      --bg-card: #FFFFFF;
-      --text-main: #111827;
-      --text-muted: #64748b;
-      --border: #e5e7eb;
-      --grad-azul: linear-gradient(135deg, #161e33 0%, #253150 60%, #3a4d7a 100%);
-      --grad-rojo: linear-gradient(135deg, #8b0a0e 0%, #BD0F14 55%, #e05555 100%);
-      --shadow: 0 2px 12px rgba(37, 49, 80, 0.08);
-      --shadow-md: 0 8px 28px rgba(37, 49, 80, 0.14);
-    }
-
-    body { font-family: 'Manrope', sans-serif; color: var(--text-main); background-color: var(--bg-page); margin: 0; padding: 0; overflow-x: hidden; min-height: 100vh; padding-top: 105px; }
-    #particles-js { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -2; }
-
-    .navbar-glass { position: fixed; top: 20px; left: 24px; right: 24px; z-index: 1000; background: rgba(37, 49, 80, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 24px; padding: 12px 28px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2); display: flex; justify-content: space-between; align-items: center; }
-    .navbar-glass-brand { display: flex; align-items: center; gap: 12px; color: white; font-weight: 800; font-size: 1.25rem; letter-spacing: -0.5px; }
-    .navbar-glass-brand .brand-icon { width: 40px; height: 40px; background: linear-gradient(135deg, rgba(189, 15, 20, 0.9), rgba(189, 15, 20, 0.6)); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 12px rgba(189, 15, 20, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); }
-    .navbar-glass-right { display: flex; align-items: center; gap: 16px; }
-
-    .status-glass-indicator { background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 14px; padding: 6px 16px; display: flex; align-items: center; gap: 12px; color: white; }
-    .btn-glass-dropdown { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); color: white; border-radius: 14px; padding: 8px 20px; font-weight: 700; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
-    .btn-glass-dropdown:hover, .btn-glass-dropdown:focus { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.3); color: white; }
-    .nav-glass-profile { display: flex; align-items: center; gap: 10px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 50px; padding: 5px 16px 5px 5px; color: white; }
-    .nav-glass-profile .avatar { width: 36px; height: 36px; background: var(--grad-azul); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1rem; }
-    .nav-glass-profile .info { display: flex; flex-direction: column; max-width: 130px; }
-    .nav-glass-profile .name { font-size: 0.8rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .nav-glass-profile .role { font-size: 0.65rem; color: rgba(255, 255, 255, 0.6); font-weight: 600; text-transform: uppercase; }
-    .dropdown-menu-dark-glass { background: rgba(37, 49, 80, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
-    .dropdown-menu-dark-glass .dropdown-item { color: white; font-weight: 500; }
-    .dropdown-menu-dark-glass .dropdown-item:hover { background: rgba(255, 255, 255, 0.1); }
-
-    #loader-container { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; background-color: #0b0f19; transition: opacity 0.8s ease, visibility 0.8s; }
-    .loader-hidden { opacity: 0 !important; visibility: hidden !important; }
-    .l-bg { position: absolute; inset: 0; overflow: hidden; z-index: 1; }
-    .l-bg::before, .l-bg::after { content: ''; position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.45; animation: lPremiumDrift 12s infinite alternate ease-in-out; }
-    .l-bg::before { width: 60vw; height: 60vw; background: var(--color-primario); top: -20%; left: -10%; }
-    .l-bg::after { width: 50vw; height: 50vw; background: var(--azul-mid); bottom: -10%; right: -10%; animation-delay: -6s; }
-    @keyframes lPremiumDrift { 0% { transform: translate(0, 0) scale(1); } 100% { transform: translate(8%, 12%) scale(1.15); } }
-    .l-card { position: relative; z-index: 3; display: flex; flex-direction: column; align-items: center; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 28px; padding: 52px 60px; gap: 30px; box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6); backdrop-filter: blur(25px); }
-    .l-logo-wrap { position: relative; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; }
-    .l-ring { position: absolute; border-radius: 50%; border: 2px solid transparent; }
-    .l-ring-1 { inset: 0; border-top-color: rgba(189, 15, 20, 0.9); animation: lSpin 1.2s linear infinite; }
-    .l-ring-2 { inset: 10px; border-top-color: rgba(255, 120, 120, 0.7); animation: lSpin 1.8s linear infinite reverse; }
-    @keyframes lSpin { to { transform: rotate(360deg); } }
-    .l-logo-inner { width: 52px; height: 52px; background: linear-gradient(135deg, rgba(189, 15, 20, 0.2), rgba(37, 49, 80, 0.3)); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 14px; display: flex; align-items: center; justify-content: center; }
-    .l-logo-inner img { width: 34px; height: 34px; object-fit: contain; filter: brightness(10); }
-    .l-title { font-size: 1.5rem; font-weight: 800; color: white; }
-    .l-title span { color: #f87171; }
-    .l-sub { font-size: 0.82rem; color: rgba(255, 255, 255, 0.5); }
-    .l-bar-wrap { width: 260px; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 99px; overflow: hidden; }
-    .l-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--color-secundario), var(--color-primario), #ff6b6b); animation: lBarFill 2.8s cubic-bezier(0.4,0,0.2,1) forwards; }
-    @keyframes lBarFill { 0% { width: 0%; } 100% { width: 95%; } }
-
-    .card-metrica { border: 1px solid var(--border); border-radius: 20px; background: var(--bg-card); transition: transform 0.25s, box-shadow 0.25s; box-shadow: var(--shadow); }
-    .card-metrica:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
-    .icon-circle-modern { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; border-radius: 14px; font-size: 1.5rem; }
-    .bg-gradient-hoy { background: var(--grad-azul); color: white; box-shadow: 0 4px 14px rgba(37, 49, 80, 0.3); }
-    .bg-gradient-total { background: var(--grad-rojo); color: white; box-shadow: 0 4px 14px rgba(189, 15, 20, 0.3); }
-    .metric-label-modern { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
-    .metric-value-modern { font-size: 2.2rem; font-weight: 800; color: var(--text-main); line-height: 1; letter-spacing: -1px; }
-
-    .table-container { background: var(--bg-card); border-radius: 20px; box-shadow: var(--shadow); border: 1px solid var(--border); padding: 28px; margin-top: 24px; }
-    table.dataTable thead th { background: var(--bg-page) !important; color: var(--text-muted) !important; font-size: 0.67rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border: none !important; padding: 12px 14px; }
-    .table tbody tr { background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border); transition: background 0.2s; }
-    .table tbody tr td { vertical-align: middle; border-bottom: 1px solid var(--border); padding: 12px 14px; font-size: 0.875rem; color: var(--text-main); }
-    .table tbody tr:hover td { background: #fafbff !important; }
-    .btn-action { width: 36px !important; height: 36px !important; border-radius: 12px !important; border: 1.5px solid var(--border) !important; background: var(--bg-card) !important; color: var(--color-secundario) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; transition: all 0.2s ease !important; }
-    .btn-action:hover { background: var(--color-secundario) !important; color: white !important; transform: translateY(-2px) !important; box-shadow: 0 4px 12px rgba(37, 49, 80, 0.2) !important; }
-
-    #modalDetalles .modal-content { border-radius: 20px !important; border: none !important; background-color: var(--bg-page) !important; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.15); }
-    .modal-header-inner { background: var(--grad-azul); padding: 24px 28px; display: flex; align-items: center; justify-content: space-between; border-radius: 20px 20px 0 0; position: relative; overflow: hidden; }
-    .modal-header-inner::before { content: ''; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; background: radial-gradient(circle, rgba(189, 15, 20, 0.3), transparent 70%); border-radius: 50%; }
-    .nav-tabs-modern { background: var(--border); padding: 4px !important; border-radius: 12px; margin: 20px 28px 10px; border: none; display: flex; gap: 4px; }
-    .nav-tabs-modern .nav-link { flex: 1; text-align: center; border: none !important; border-radius: 10px !important; color: var(--text-muted) !important; font-weight: 700; font-size: 0.82rem; padding: 10px; transition: all 0.2s; }
-    .nav-tabs-modern .nav-link.active { background: var(--bg-card) !important; color: var(--color-secundario) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-    .form-select, .form-control { background: var(--bg-card) !important; border: 1.5px solid var(--border) !important; color: var(--text-main) !important; border-radius: 10px !important; font-size: 0.875rem; padding: 10px 14px !important; transition: all 0.2s; }
-    .form-select:focus, .form-control:focus { border-color: var(--azul-mid) !important; box-shadow: 0 0 0 3px rgba(37,49,80,0.1) !important; }
-    .modal-body label { font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-
+    /* ─── Estilos específicos de VistaReestudios ─── */
     .badge-origen { font-size: 0.72rem; padding: 5px 10px; border-radius: 8px; font-weight: 700; }
     .badge-victoria { background: rgba(189,15,20,0.1); color: #BD0F14; border: 1px solid rgba(189,15,20,0.2); }
     .badge-correo { background: rgba(37,49,80,0.1); color: #253150; border: 1px solid rgba(37,49,80,0.2); }
-
-    .dataTables_wrapper .dataTables_filter input { background: var(--bg-page) !important; border: 1.5px solid var(--border) !important; border-radius: 10px !important; padding: 7px 12px !important; font-family: 'Manrope', sans-serif; font-size: 0.82rem; }
-    .dataTables_wrapper .page-item.active .page-link { background: var(--color-secundario) !important; color: white !important; border-radius: 8px !important; }
-
-    /* Modal Novedades */
-    .nav-pills-custom .nav-link { color: var(--text-muted); font-weight: 700; border-radius: 12px; padding: 14px 20px; margin-bottom: 8px; transition: all 0.3s ease; border: 1px solid transparent; text-align: left; display: flex; align-items: center; gap: 12px; font-size: 0.9rem; }
-    .nav-pills-custom .nav-link:hover { background-color: rgba(37,49,80,0.05); color: var(--color-secundario); }
-    .nav-pills-custom .nav-link.active { background-color: white; color: var(--color-primario); border-color: var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-    .btn-novedad { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; text-align: left; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 12px; transition: all 0.2s ease; width: 100%; font-size: 0.82rem; cursor: pointer; }
-    .btn-novedad i { font-size: 1.1rem; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; flex-shrink: 0; }
-    .btn-novedad.falla:hover { border-color: var(--color-primario); box-shadow: 0 4px 15px rgba(189,15,20,0.1); transform: translateY(-2px); color: var(--color-primario); }
-    .btn-novedad.falla i { background: rgba(189,15,20,0.1); color: var(--color-primario); }
-    .btn-novedad.ausencia:hover { border-color: #3b82f6; box-shadow: 0 4px 15px rgba(59,130,246,0.1); transform: translateY(-2px); color: #3b82f6; }
-    .btn-novedad.ausencia i { background: rgba(59,130,246,0.1); color: #3b82f6; }
-    .btn-novedad.reunion:hover { border-color: #10b981; box-shadow: 0 4px 15px rgba(16,185,129,0.1); transform: translateY(-2px); color: #10b981; }
-    .btn-novedad.reunion i { background: rgba(16,185,129,0.1); color: #10b981; }
-    .btn-novedad.operativa:hover { border-color: var(--color-secundario); box-shadow: 0 4px 15px rgba(37,49,80,0.1); transform: translateY(-2px); color: var(--color-secundario); }
-    .btn-novedad.operativa i { background: rgba(37,49,80,0.1); color: var(--color-secundario); }
-    .scroll-premium::-webkit-scrollbar { width: 6px; }
-    .scroll-premium::-webkit-scrollbar-track { background: transparent; }
-    .scroll-premium::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .rh-tipo-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; font-size: 0.72rem; font-weight: 700; }
   </style>
 </head>
 
@@ -199,7 +96,7 @@
   <div class="container mb-3">
     <div class="row g-4 justify-content-center">
       <div class="col-md-5 col-lg-4">
-        <div class="card card-metrica" title="Ver actividad">
+        <div class="card card-metrica card-metrica-clickable" title="Ver resumen de gestiones" onclick="abrirResumenHoy()">
           <div class="card-body p-4">
             <div class="d-flex align-items-center">
               <div class="icon-circle-modern bg-gradient-hoy me-4"><i class="bi bi-lightning-charge-fill"></i></div>
@@ -238,7 +135,13 @@
         </h4>
         <div class="d-flex align-items-center justify-content-between">
           <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
-          <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
+            <button id="btnRefrescar" onclick="cargarDatos()" title="Actualizar tabla"
+                    style="background: none; border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; color: var(--text-muted); font-size: 0.8rem; transition: all 0.2s; display:flex; align-items:center; gap:4px;">
+              <i class="bi bi-arrow-clockwise"></i>
+            </button>
+          </div>
         </div>
       </div>
       <div class="table-responsive">
@@ -322,6 +225,8 @@
             <!-- Tab Gestión -->
             <div class="tab-pane fade" id="tab-gestion" role="tabpanel">
               <input type="hidden" id="form_filaReal">
+              <input type="hidden" id="form_fuente" value="REESTUDIO">
+              <input type="hidden" id="form_solicitud_id" value="">
 
               <div class="p-4">
                 <h6 class="fw-bold mb-4" style="color: var(--color-primario); font-size: 0.95rem;">
@@ -533,12 +438,342 @@
     </div>
   </div>
 
+  <!-- Modal Gestión Digital (hoja principal: estudios, biometría, inducciones) -->
+  <div class="modal fade" id="modalDetallesDigital" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+
+        <div class="modal-header-inner">
+          <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+            <div class="p-2 rounded-3 me-3" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2);">
+              <i class="bi bi-file-earmark-ruled fs-4 text-white"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.1rem;">Solicitud a gestionar</h5>
+              <p class="small mb-0" style="color: rgba(255,255,255,0.6);">Solicitud: <span id="dig_s_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
+            </div>
+            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+          </div>
+        </div>
+
+        <ul class="nav nav-tabs-modern" role="tablist">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dig-tab-general" type="button"><i class="bi bi-info-square-fill me-2"></i>General</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dig-tab-gestion" type="button"><i class="bi bi-pencil-square me-2"></i>Gestión</button></li>
+        </ul>
+
+        <div class="modal-body p-4">
+          <div class="tab-content">
+
+            <!-- Tab General -->
+            <div class="tab-pane fade show active" id="dig-tab-general" role="tabpanel">
+              <div class="row g-3 mb-4 text-center">
+                <div class="col-md-3">
+                  <div class="p-3 border rounded-4 bg-white h-100" style="border-top: 4px solid var(--color-primario) !important;">
+                    <label class="d-block mb-1"><i class="bi bi-activity me-1"></i>Estado General</label>
+                    <div id="dig_estadoGeneral" class="fw-bold fs-6 text-dark"></div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="p-3 border rounded-4 bg-white h-100">
+                    <label class="d-block mb-1"><i class="bi bi-shield-check me-1"></i>Póliza</label>
+                    <div id="dig_poliza" class="fw-bold text-dark fs-6"></div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="p-3 border rounded-4 bg-white h-100">
+                    <label class="d-block mb-1"><i class="bi bi-calendar-event me-1"></i>Radicación</label>
+                    <div id="dig_fechaRadicacion" class="fw-bold text-dark fs-6"></div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="p-3 border rounded-4 bg-white h-100">
+                    <label class="d-block mb-1"><i class="bi bi-calendar-check me-1"></i>Resultado</label>
+                    <div id="dig_fechaResultado" class="fw-bold text-dark fs-6"></div>
+                  </div>
+                </div>
+              </div>
+
+              <h6 class="fw-bold mb-3" style="color: var(--color-secundario); font-size: 0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Solicitante e Ingresos</h6>
+              <div class="bg-white border rounded-4 p-4 mb-4">
+                <div class="row g-4">
+                  <div class="col-md-4">
+                    <label class="d-block"><i class="bi bi-person me-1"></i>Nombre Inquilino</label>
+                    <p class="fw-bold text-dark mb-0 text-truncate" id="dig_nombreInquilino"></p>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="d-block"><i class="bi bi-card-heading me-1"></i>Identificación</label>
+                    <p class="fw-bold text-dark mb-0"><span id="dig_tipoIdentificacion"></span> <span id="dig_identificacion"></span></p>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="d-block"><i class="bi bi-calendar3 me-1"></i>Fecha Expedición</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_fechaExpedicion"></p>
+                  </div>
+                  <div class="col-md-4 border-top pt-3">
+                    <label class="d-block"><i class="bi bi-envelope me-1"></i>Correo</label>
+                    <p class="fw-bold text-primary mb-0" id="dig_correoInquilino"></p>
+                  </div>
+                  <div class="col-md-4 border-top pt-3">
+                    <label class="d-block"><i class="bi bi-telephone me-1"></i>Teléfono</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_telefonoInquilino"></p>
+                  </div>
+                  <div class="col-md-4 border-top pt-3">
+                    <label class="d-block"><i class="bi bi-graph-up-arrow me-1"></i>Ingresos Reportados</label>
+                    <p class="fw-bold text-success mb-0" id="dig_ingresos"></p>
+                  </div>
+                </div>
+              </div>
+
+              <h6 class="fw-bold mb-3" style="color: var(--color-secundario); font-size: 0.9rem;"><i class="bi bi-house-door me-2 text-primary"></i>Detalles del Inmueble y Contrato</h6>
+              <div class="bg-white border rounded-4 p-4 mb-4">
+                <div class="row g-4">
+                  <div class="col-md-6">
+                    <label class="d-block"><i class="bi bi-geo-alt me-1"></i>Dirección Inmueble</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_direccionInmueble"></p>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="d-block"><i class="bi bi-geo me-1"></i>Ciudad</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_ciudadInmueble"></p>
+                  </div>
+                  <div class="col-md-3">
+                    <label class="d-block"><i class="bi bi-info-circle me-1"></i>Destino</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_destinoInmueble"></p>
+                  </div>
+                  <div class="col-md-6 border-top pt-3">
+                    <label class="d-block"><i class="bi bi-cash-coin me-1"></i>Canon de Arrendamiento</label>
+                    <p class="fw-bold text-success mb-0" id="dig_canon"></p>
+                  </div>
+                  <div class="col-md-6 border-top pt-3">
+                    <label class="d-block"><i class="bi bi-percent me-1"></i>Cuota de Administración</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_cuota"></p>
+                  </div>
+                </div>
+              </div>
+
+              <h6 class="fw-bold mb-3 text-muted" style="font-size: 0.9rem;"><i class="bi bi-person-workspace me-2"></i>Información del Asesor</h6>
+              <div class="bg-white border rounded-4 p-4">
+                <div class="row g-4">
+                  <div class="col-md-6">
+                    <label class="d-block"><i class="bi bi-person-badge me-1"></i>Nombre del Asesor</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_nombreAsesor"></p>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="d-block"><i class="bi bi-envelope-at me-1"></i>Correo del Asesor</label>
+                    <p class="fw-bold text-dark mb-0" id="dig_correoAsesor"></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab Gestión -->
+            <div class="tab-pane fade" id="dig-tab-gestion" role="tabpanel">
+              <input type="hidden" id="dig_solicitudId">
+              <div class="p-4">
+                <h6 class="fw-bold mb-4" style="color: var(--color-primario); font-size: 0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
+                <div class="row g-3">
+
+                  <div class="col-md-4" id="dig_contenedor_biometria">
+                    <label><i class="bi bi-fingerprint me-1"></i>Biometría</label>
+                    <select id="dig_biometria" class="form-select fw-bold">
+                      <option value="" selected disabled>Seleccione...</option>
+                      <option value="Si">Sí</option>
+                      <option value="No">No</option>
+                      <option value="Fallidos Biometria">Fallidos Biometría</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-8">
+                    <label style="color: var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión</label>
+                    <select id="dig_estado_q" class="form-select fw-bold" onchange="digActualizarEstado()">
+                      <option value="" selected disabled>Seleccione una opción</option>
+                      <option value="APROBADA">APROBADA</option>
+                      <option value="APLAZADA">APLAZADA</option>
+                      <option value="NEGADA">NEGADA</option>
+                      <option value="PENDIENTE VALIDACIÓN">PENDIENTE VALIDACIÓN</option>
+                      <option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6 d-none" id="dig_contenedor_aplazamiento">
+                    <label><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
+                    <select id="dig_motivo_aplazamiento" class="form-select">
+                      <option value="">Sin aplazamiento</option>
+                      <option value="Un deudor solidario">Un deudor solidario</option>
+                      <option value="Dos deudores solidarios">Dos deudores solidarios</option>
+                      <option value="Extractos bancarios">Extractos bancarios</option>
+                      <option value="Estados financieros">Estados financieros</option>
+                      <option value="Cámara de comercio">Cámara de comercio</option>
+                      <option value="Acta de junta de socios">Acta de junta de socios</option>
+                      <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
+                      <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
+                      <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
+                      <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+                      <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
+                      <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
+                      <option value="Pendiente biometria">Pendiente biometría</option>
+                      <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+                      <option value="Certificado laboral">Certificado laboral</option>
+                      <option value="Partida presupuestal">Partida presupuestal</option>
+                      <option value="Confirmar solicitud simultánea">Confirmar solicitud simultánea</option>
+                      <option value="Documento de identidad legible">Documento de identidad legible</option>
+                      <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
+                      <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
+                      <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
+                      <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+                      <option value="Error de terceros">Error de terceros</option>
+                      <option value="Pendiente recaudo">Pendiente recaudo</option>
+                      <option value="Pendiente simasol">Pendiente simasol</option>
+                      <option value="Pendiente respuesta eli">Pendiente respuesta ELI</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6 d-none" id="dig_contenedor_negacion">
+                    <label><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
+                    <select id="dig_motivo_negacion" class="form-select">
+                      <option value="">Sin negación</option>
+                      <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
+                      <option value="Mora libertador">Mora libertador</option>
+                      <option value="Inconsistencias en validación">Inconsistencias en validación</option>
+                      <option value="Deudor de profesión">Deudor de profesión</option>
+                      <option value="Ingresos insuficientes">Ingresos insuficientes</option>
+                      <option value="Evidente no aprobado">Evidente no aprobado</option>
+                      <option value="Póliza no asegurable">Póliza no asegurable</option>
+                      <option value="Desistimiento">Desistimiento</option>
+                      <option value="Inducción sin garantias">Inducción sin garantías</option>
+                      <option value="Cuentas embargadas">Cuentas embargadas</option>
+                      <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
+                      <option value="Alerta de suplantación">Alerta de suplantación</option>
+                      <option value="Traslado no solicitado">Traslado no solicitado</option>
+                      <option value="Destino no asegurable">Destino no asegurable</option>
+                      <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
+                      <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
+                      <option value="Solicitud duplicada">Solicitud duplicada</option>
+                      <option value="Contrato firmado en traslados">Contrato firmado en traslados</option>
+                      <option value="Empresa recien constituida">Empresa recién constituida</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6">
+                    <label><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
+                    <input type="datetime-local" id="dig_fecha_radicacion_sai" class="form-control" step="60">
+                  </div>
+
+                  <div class="col-md-6 d-flex align-items-end">
+                    <button type="button" class="btn btn-sm fw-bold px-3 py-2"
+                      onclick="document.getElementById('dig_fecha_radicacion_sai').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);"
+                      style="border-radius: 10px; background: var(--azul-light); color: var(--color-secundario); border: 1.5px solid var(--border);">
+                      <i class="bi bi-clock-fill me-1"></i> Ahora
+                    </button>
+                  </div>
+
+                  <div class="col-12">
+                    <label><i class="bi bi-chat-dots me-1"></i>Observaciones</label>
+                    <textarea id="dig_comentarios_gestion" class="form-control" rows="3" placeholder="Escriba algún comentario relacionado si lo requiere..."></textarea>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer border-0 p-4" style="background: var(--bg-page); border-radius: 0 0 20px 20px;">
+          <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius: 10px;">Cancelar</button>
+          <button id="btnGuardarDigital" type="button" class="btn text-white px-5 fw-bold shadow-sm" onclick="guardarGestionDigitalDesdeVista()" style="border-radius: 10px; background: var(--grad-azul);"><i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Resumen Gestionadas Hoy -->
+  <div class="modal fade" id="modalResumenHoy" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content" style="border-radius: 20px; border: none; background: var(--bg-page); box-shadow: 0 30px 80px rgba(0,0,0,0.15);">
+        <div class="modal-header-inner">
+          <div class="d-flex align-items-center w-100" style="position: relative; z-index: 1;">
+            <div class="p-2 rounded-3 me-3" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2);">
+              <i class="bi bi-lightning-charge-fill fs-4 text-white"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold text-white mb-0" style="font-size: 1.1rem;">Resumen de Gestiones del Día</h5>
+              <p class="small mb-0" style="color: rgba(255,255,255,0.6);" id="rh_fecha_label">—</p>
+            </div>
+            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+          </div>
+        </div>
+
+        <div class="modal-body p-4">
+
+          <!-- Loading state -->
+          <div id="rh_loading" class="text-center py-5">
+            <div class="spinner-border spinner-border-sm mb-2" style="color: var(--color-secundario);"></div>
+            <p class="text-muted small mb-0">Cargando información...</p>
+          </div>
+
+          <!-- Content (hidden until loaded) -->
+          <div id="rh_contenido" class="d-none">
+
+            <!-- Totales -->
+            <div class="row g-3 mb-4">
+              <div class="col-12">
+                <div class="d-flex align-items-center gap-4 p-4 rounded-4 text-white" style="background: var(--grad-azul);">
+                  <div class="icon-circle-modern bg-gradient-hoy flex-shrink-0">
+                    <i class="bi bi-lightning-charge-fill"></i>
+                  </div>
+                  <div>
+                    <div style="font-size: 0.72rem; font-weight: 700; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px;">Total Solicitudes Gestionadas</div>
+                    <div style="font-size: 2.8rem; font-weight: 800; letter-spacing: -2px; line-height: 1;" id="rh_total_num">0</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Por tipo de proceso -->
+            <div id="rh_tipos_row" class="row g-3 mb-4">
+              <!-- JS generated -->
+            </div>
+
+            <!-- Listado detallado -->
+            <div class="bg-white border rounded-4 p-4">
+              <h6 class="fw-bold mb-3" style="color: var(--color-secundario); font-size: 0.9rem;">
+                <i class="bi bi-list-ul me-2"></i>Listado Detallado
+              </h6>
+              <p id="rh_empty" class="text-center text-muted py-3 d-none">Sin gestiones registradas hoy.</p>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0" id="rh_tabla_detalle" style="display: none;">
+                  <thead>
+                    <tr>
+                      <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Solicitud</th>
+                      <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Tipo de Proceso</th>
+                      <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Hora Gestión</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rh_tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <?!= include('ux-enhancements'); ?>
 
   <script>
     let cacheSolicitudes = [];
     let yaSeIntentoAsignar = false;
     let estadoGlobalAsesor = "INACTIVO";
+    let cargaInicialHecha = false;
+
+    function _miniLoader(on) {
+      const btn = document.getElementById('btnRefrescar');
+      if (!btn) return;
+      if (on) btn.classList.add('btn-refresh-spinning');
+      else btn.classList.remove('btn-refresh-spinning');
+    }
 
     $(document).ready(function () {
       // Mostrar nombre en el loader inmediatamente
@@ -583,7 +818,11 @@
 
     function cargarDatos() {
       const loader = document.getElementById('loader-container');
-      if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
+      if (!cargaInicialHecha) {
+        if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
+      } else {
+        _miniLoader(true);
+      }
 
       google.script.run.withSuccessHandler(function(res) {
         if (res.success) {
@@ -620,17 +859,20 @@
           // UX: Update sync time
           if (typeof UX !== 'undefined') UX.updateSyncTime();
 
-          // Auto-asignar si tabla vacía y activo
+          // Auto-asignar si tabla vacía y activo (usa cupos unificados)
           if (cacheSolicitudes.length === 0 && !yaSeIntentoAsignar && estadoGlobalAsesor === "ACTIVO") {
             yaSeIntentoAsignar = true;
             google.script.run.withSuccessHandler(function(asigRes) {
               if (asigRes.success && asigRes.nueva) {
-                Swal.fire({ icon: 'info', title: 'Nueva Solicitud', text: asigRes.message, toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, timerProgressBar: true });
+                Swal.fire({ icon: 'info', title: 'Nueva Solicitud', text: asigRes.message, toast: true, position: 'top-end', showConfirmButton: false, timer: 5000, timerProgressBar: true });
                 setTimeout(() => { yaSeIntentoAsignar = false; cargarDatos(); }, 2000);
               } else {
                 hideLoader();
+                if (asigRes.message && asigRes.message.trim() !== '') {
+                  Swal.fire({ icon: 'warning', title: 'Sin nuevos casos', text: asigRes.message, toast: true, position: 'top-end', showConfirmButton: false, timer: 7000, timerProgressBar: true });
+                }
               }
-            }).withFailureHandler(function() { hideLoader(); }).RequestLeadReestudios();
+            }).withFailureHandler(function() { hideLoader(); }).RequestLeadUnificado();
           } else {
             hideLoader();
           }
@@ -647,6 +889,8 @@
     function hideLoader() {
       const loader = document.getElementById('loader-container');
       if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+      cargaInicialHecha = true;
+      _miniLoader(false);
     }
 
     function renderizarTabla() {
@@ -656,7 +900,12 @@
         data: cacheSolicitudes,
         columns: [
           { title: "Solicitud", data: 'solicitud', render: d => '<span class="fw-bold text-primary">' + d + '</span>' },
-          { title: "Origen", data: 'origen', render: d => d === 'VICTORIA' ? '<span class="badge-origen badge-victoria">VICTORIA</span>' : '<span class="badge-origen badge-correo">CORREO</span>' },
+          { title: "Origen", data: 'origen', render: d => {
+              if (d === 'VICTORIA') return '<span class="badge-origen badge-victoria">VICTORIA</span>';
+              if (d === 'DIGITAL') return '<span class="badge-origen" style="background:rgba(29,78,216,0.1);color:#1d4ed8;border:1px solid rgba(29,78,216,0.2);">DIGITAL</span>';
+              return '<span class="badge-origen badge-correo">CORREO</span>';
+            }
+          },
           { title: "Tipo Proceso", data: 'tipoProceso', render: function(d) {
               const t = (d || '').toUpperCase();
               if (t.includes('REESTUDIO')) return '<span class="badge shadow-sm" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;padding:5px 10px;border-radius:8px;font-size:0.72rem;font-weight:700;"><i class="bi bi-arrow-repeat me-1"></i>' + d + '</span>';
@@ -691,6 +940,14 @@
 
     function abrirModal(index) {
       const item = cacheSolicitudes[index];
+
+      // Casos digitales: abrir modal específico de estudios digitales
+      if (item.fuente === 'DIGITAL') {
+        abrirModalDigital(item);
+        return;
+      }
+
+      // Casos de reestudio: modal original
       new bootstrap.Tab(document.querySelector('#modalDetalles button[data-bs-target="#tab-info"]')).show();
 
       $('#s_sidebar_solicitud').text(item.solicitud);
@@ -701,7 +958,6 @@
       $('#d_clase').text(item.claseSolicitud);
       $('#d_fechaAsignacion').text(item.fechaAsignacion);
 
-      // Drive button in modal header
       const btnDrive = $('#btnDriveModal');
       if (item.linkDrive && item.linkDrive.startsWith('http')) {
         btnDrive.attr('href', item.linkDrive).removeClass('d-none');
@@ -711,7 +967,6 @@
         $('#d_linkDrive').text('Sin carpeta');
       }
 
-      // Reset gestión
       $('#form_filaReal').val(item.filaReal);
       $('#d_estado_q').val('');
       $('#d_motivo_aplazamiento').val('');
@@ -760,27 +1015,23 @@
         motivoAplazamiento: $('#d_motivo_aplazamiento').val() || '',
         motivoNegacion: $('#d_motivo_negacion').val() || '',
         observaciones: $('#d_observaciones').val() || '',
-        poliza: ($('#d_poliza').val() || '').trim()
+        poliza: poliza
       };
 
       Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
-      // UX: loading state
       const btnGuardar = document.getElementById('btnGuardarCambios');
       if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, true);
 
       google.script.run.withSuccessHandler(function(r) {
         if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
-        
+
         if (r.success) {
-          // UX: Log activity
           if (typeof UX !== 'undefined') {
             UX.logActivity($('#s_sidebar_solicitud').text(), datos.estadoGestion, datos.motivoAplazamiento || datos.motivoNegacion || '');
             UX.updateSyncTime();
           }
-          
           Swal.close();
-          
           if (typeof UX !== 'undefined') {
             UX.showSuccessCheck(function() {
               UX.showToast('Gestión guardada: ' + datos.estadoGestion, 'success');
@@ -842,6 +1093,213 @@
       bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
       cambiarMiEstado(novedad);
     }
+
+    // ── Modal Digital ─────────────────────────────────────────────────────────
+    let tipoDigitalActual = 'digital';
+
+    function abrirModalDigital(item) {
+      // Determinar tipo para ajustar campos
+      const claseNorm = (item.clase || '').toUpperCase();
+      if (claseNorm.includes('BIOMETRIA')) tipoDigitalActual = 'biometria';
+      else if (claseNorm.includes('INDUCCI') || claseNorm === 'IND') tipoDigitalActual = 'induccion';
+      else tipoDigitalActual = 'digital';
+
+      // Ir al tab General
+      new bootstrap.Tab(document.querySelector('#modalDetallesDigital button[data-bs-target="#dig-tab-general"]')).show();
+
+      // Header
+      $('#dig_s_solicitud').text(item.solicitud);
+
+      // Tab General
+      $('#dig_estadoGeneral').text(item.estadoGeneral || '—');
+      $('#dig_poliza').text(item.poliza || '—');
+      $('#dig_fechaRadicacion').text(item.fechaRadicacion || '—');
+      $('#dig_fechaResultado').text(item.fechaResultado || '—');
+      $('#dig_nombreInquilino').text(item.nombreInquilino || '—');
+      $('#dig_tipoIdentificacion').text(item.tipoIdentificacion || '');
+      $('#dig_identificacion').text(item.identificacion || '—');
+      $('#dig_fechaExpedicion').text(item.fechaExpedicion || '—');
+      $('#dig_correoInquilino').text(item.correoInquilino || '—');
+      $('#dig_telefonoInquilino').text(item.telefonoInquilino || '—');
+      $('#dig_ingresos').text(item.ingresos || '—');
+      $('#dig_direccionInmueble').text(item.direccionInmueble || '—');
+      $('#dig_ciudadInmueble').text(item.ciudadInmueble || '—');
+      $('#dig_destinoInmueble').text(item.destinoInmueble || '—');
+      $('#dig_canon').text(item.canon || '—');
+      $('#dig_cuota').text(item.cuota || '—');
+      $('#dig_nombreAsesor').text(item.nombreAsesor || '—');
+      $('#dig_correoAsesor').text(item.correoAsesor || '—');
+
+      // Tab Gestión: hidden field + reset
+      $('#dig_solicitudId').val(item.solicitud);
+      $('#dig_estado_q').val('');
+      $('#dig_biometria').val(item.biometriaActual || '');
+      $('#dig_motivo_aplazamiento').val('');
+      $('#dig_motivo_negacion').val('');
+      $('#dig_comentarios_gestion').val('');
+      $('#dig_fecha_radicacion_sai').val('');
+      $('#dig_contenedor_aplazamiento').addClass('d-none');
+      $('#dig_contenedor_negacion').addClass('d-none');
+
+      // Inducciones: ocultar biometría
+      if (tipoDigitalActual === 'induccion') {
+        $('#dig_contenedor_biometria').addClass('d-none');
+      } else {
+        $('#dig_contenedor_biometria').removeClass('d-none');
+      }
+
+      new bootstrap.Modal('#modalDetallesDigital').show();
+    }
+
+    function digActualizarEstado() {
+      const estado = ($('#dig_estado_q').val() || '').toUpperCase();
+      if (estado.includes('APLAZ')) {
+        $('#dig_contenedor_aplazamiento').removeClass('d-none').hide().slideDown(250);
+        $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_motivo_negacion').val('');
+      } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
+        $('#dig_contenedor_negacion').removeClass('d-none').hide().slideDown(250);
+        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_motivo_aplazamiento').val('');
+      } else {
+        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_motivo_aplazamiento').val('');
+        $('#dig_motivo_negacion').val('');
+      }
+    }
+
+    function guardarGestionDigitalDesdeVista() {
+      const estado = $('#dig_estado_q').val();
+      if (!estado) { Swal.fire({ title: 'Atención', text: 'Selecciona un estado de gestión.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+
+      const estadoUpper = estado.toUpperCase();
+      if (estadoUpper.includes('APLAZ') && !$('#dig_motivo_aplazamiento').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+      if (estadoUpper.includes('NEGAD') && !$('#dig_motivo_negacion').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+
+      const datos = {
+        solicitudId: $('#dig_solicitudId').val(),
+        estado_q: estado,
+        biometria: $('#dig_biometria').val() || 'No',
+        comentarios_gestion: $('#dig_comentarios_gestion').val() || '',
+        motivo_aplazamiento: $('#dig_motivo_aplazamiento').val() || '',
+        motivo_negacion: $('#dig_motivo_negacion').val() || '',
+        tipoSolicitudActual: tipoDigitalActual,
+        fecha_radicacion_sai: $('#dig_fecha_radicacion_sai').val() || ''
+      };
+
+      Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+      const btnGuardar = document.getElementById('btnGuardarDigital');
+      if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, true);
+
+      google.script.run.withSuccessHandler(function(r) {
+        if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+        if (r.success) {
+          if (typeof UX !== 'undefined') UX.updateSyncTime();
+          Swal.close();
+          if (typeof UX !== 'undefined') {
+            UX.showSuccessCheck(function() {
+              UX.showToast('Gestión guardada: ' + estado, 'success');
+              bootstrap.Modal.getInstance(document.getElementById('modalDetallesDigital')).hide();
+              yaSeIntentoAsignar = false;
+              cargarDatos();
+            });
+          } else {
+            Swal.fire({ icon: 'success', title: 'Operación Exitosa', html: r.message.replace(/\n/g, '<br>'), confirmButtonColor: '#253150' }).then(() => {
+              bootstrap.Modal.getInstance(document.getElementById('modalDetallesDigital')).hide();
+              yaSeIntentoAsignar = false;
+              cargarDatos();
+            });
+          }
+        } else {
+          Swal.fire({ title: 'Error', text: r.message, icon: 'error', confirmButtonColor: '#253150' });
+        }
+      }).withFailureHandler(function(e) {
+        if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
+        Swal.fire({ title: 'Error Crítico', text: 'Fallo: ' + e.message, icon: 'error', confirmButtonColor: '#BD0F14' });
+      }).guardarCambiosInternos(datos);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Modal Resumen Gestionadas Hoy ─────────────────────────────────────────
+    function abrirResumenHoy() {
+      $('#rh_loading').removeClass('d-none');
+      $('#rh_contenido').addClass('d-none');
+      $('#rh_tipos_row').empty();
+      $('#rh_tbody').empty();
+      $('#rh_empty').addClass('d-none');
+      $('#rh_tabla_detalle').hide();
+
+      const hoy = new Date();
+      const opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      const fechaStr = hoy.toLocaleDateString('es-CO', opciones);
+      $('#rh_fecha_label').text(fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1));
+
+      new bootstrap.Modal('#modalResumenHoy').show();
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          $('#rh_loading').addClass('d-none');
+
+          $('#rh_total_num').text(res.total);
+
+          // Cards por tipo de proceso
+          const coloresTipo = [
+            { bg: '#e0e7ff', color: '#4338ca', border: '#c7d2fe' },
+            { bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
+            { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0' },
+            { bg: '#fce7f3', color: '#be185d', border: '#fbcfe8' },
+            { bg: 'rgba(37,49,80,0.07)', color: '#253150', border: '#e2e8f0' }
+          ];
+          const tiposRow = $('#rh_tipos_row');
+          res.porTipo.forEach(function(item, idx) {
+            const c = coloresTipo[idx % coloresTipo.length];
+            const col = res.porTipo.length === 1 ? 'col-12' : (res.porTipo.length === 2 ? 'col-6' : 'col-md-4');
+            tiposRow.append(
+              '<div class="' + col + '">' +
+                '<div class="p-3 rounded-4 text-center border" style="background:' + c.bg + ';border-color:' + c.border + ' !important;">' +
+                  '<div style="font-size:0.72rem;font-weight:700;color:' + c.color + ';text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">' + item.tipo + '</div>' +
+                  '<div style="font-size:2rem;font-weight:800;color:' + c.color + ';letter-spacing:-1px;line-height:1;">' + item.cantidad + '</div>' +
+                '</div>' +
+              '</div>'
+            );
+          });
+
+          // Tabla detallada
+          if (res.listado.length === 0) {
+            $('#rh_empty').removeClass('d-none');
+          } else {
+            const tbody = $('#rh_tbody');
+            res.listado.forEach(function(item) {
+              const fuenteBadge = item.fuente === 'DIGITAL'
+                ? '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(29,78,216,0.1);color:#1d4ed8;border:1px solid rgba(29,78,216,0.2);margin-left:6px;">DIG</span>'
+                : '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(67,56,202,0.1);color:#4338ca;border:1px solid #c7d2fe;margin-left:6px;">REST</span>';
+              tbody.append(
+                '<tr>' +
+                  '<td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fuenteBadge + '</td>' +
+                  '<td style="padding:10px 14px;font-size:0.875rem;color:var(--text-main);">' + item.tipo + '</td>' +
+                  '<td style="padding:10px 14px;">' +
+                    '<span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);">' +
+                      '<i class="bi bi-clock me-1"></i>' + item.horaGestion +
+                    '</span>' +
+                  '</td>' +
+                '</tr>'
+              );
+            });
+            $('#rh_tabla_detalle').show();
+          }
+
+          $('#rh_contenido').removeClass('d-none');
+        })
+        .withFailureHandler(function() {
+          $('#rh_loading').addClass('d-none');
+          $('#rh_empty').removeClass('d-none');
+          $('#rh_contenido').removeClass('d-none');
+        })
+        .obtenerDetalleGestionesHoy();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
   </script>
 </body>
 </html>

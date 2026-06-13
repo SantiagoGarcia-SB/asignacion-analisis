@@ -588,8 +588,10 @@ const UX = (function() {
         updateSyncTime();
         
         // Make metric cards clickable - differentiate by card type
+        // Skip cards that define their own onclick handler
         setTimeout(function() {
             document.querySelectorAll('.card-metrica').forEach((card, index) => {
+                if (card.hasAttribute('onclick')) return;
                 card.addEventListener('click', function(e) {
                     e.stopPropagation();
                     try {

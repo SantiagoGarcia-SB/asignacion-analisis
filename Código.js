@@ -855,11 +855,15 @@ function verificarMisCupos(equipo) {
     const hoyFmt2 = y + '-' + m + '-' + d;
     const hoyFmt3 = hoy.getDate() + '/' + (hoy.getMonth() + 1) + '/' + y;
 
+    const hoyFmt4 = (hoy.getMonth() + 1) + '/' + hoy.getDate() + '/' + y;
+    const hoyFmt5 = m + '/' + d + '/' + y;
+
     function esHoy(val) {
       if (!val) return false;
       if (val instanceof Date) return val.getDate() === hoy.getDate() && val.getMonth() === hoy.getMonth() && val.getFullYear() === hoy.getFullYear();
       const texto = String(val);
-      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3);
+      return texto.includes(hoyFmt1) || texto.includes(hoyFmt2) || texto.includes(hoyFmt3)
+          || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
     let conteoHoy = { nueva: 0, reestudio: 0, induccion: 0, biometria: 0, nuevaUar: 0, deudorUar: 0 };
@@ -869,7 +873,7 @@ function verificarMisCupos(equipo) {
     if (hojaSol) {
       const lastRowS = hojaSol.getLastRow();
       if (lastRowS > 1) {
-        const dataSol = hojaSol.getRange(2, 1, lastRowS - 1, 37).getDisplayValues();
+        const dataSol = hojaSol.getRange(2, 1, lastRowS - 1, 37).getValues();
         for (let i = 0; i < dataSol.length; i++) {
           const asignado = String(dataSol[i][27]).trim().toLowerCase();
           if (asignado !== userEmail) continue;
@@ -1339,5 +1343,87 @@ function obtenerGestionesHoyCruzadas() {
   } catch (e) {
     Logger.log("Error en obtenerGestionesHoyCruzadas: " + e.message);
     return { hoyTotal: 0, detalle: { digital: 0, reestudios: 0 } };
+  }
+}
+
+/**
+ * Obtiene el detalle completo de las gestiones del día actual para el analista logueado.
+ * Consulta ambas fuentes: hoja principal (digitales) y hoja de reestudios.
+ *
+ * @returns {Object} { success, total, porTipo: [{tipo, cantidad}], listado: [{solicitud, tipo, horaGestion, fuente}] }
+ */
+function obtenerDetalleGestionesHoy() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
+    const listado = [];
+
+    // 1. Hoja principal (digitales, biometría, inducciones) — col A(1): solicitud, U(21): tipoProceso, AB(28): email, AC(29): fechaFin
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+    if (hojaSol) {
+      const lastRow = hojaSol.getLastRow();
+      if (lastRow > 1) {
+        const data = hojaSol.getRange(2, 1, lastRow - 1, 29).getDisplayValues();
+        for (let i = 0; i < data.length; i++) {
+          const asignado = String(data[i][27]).trim().toLowerCase(); // col AB
+          const fechaFin = String(data[i][28]).trim();               // col AC
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+            const partes = fechaFin.split(' ');
+            listado.push({
+              solicitud: String(data[i][0]).trim(),
+              tipo: String(data[i][20]).trim() || 'Digital',
+              horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
+              fuente: 'DIGITAL'
+            });
+          }
+        }
+      }
+    }
+
+    // 2. Hoja de reestudios — col B(2): solicitud, E(5): tipoProceso, G(7): email, J(10): fechaFin
+    try {
+      const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (hojaReest) {
+        const lastRowR = hojaReest.getLastRow();
+        if (lastRowR > 1) {
+          const data = hojaReest.getRange(2, 1, lastRowR - 1, 10).getDisplayValues();
+          for (let i = 0; i < data.length; i++) {
+            const asignado = String(data[i][6]).trim().toLowerCase(); // col G
+            const fechaFin = String(data[i][9]).trim();               // col J
+            if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+              const partes = fechaFin.split(' ');
+              listado.push({
+                solicitud: String(data[i][1]).trim(),
+                tipo: String(data[i][4]).trim() || 'Reestudio',
+                horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
+                fuente: 'REESTUDIO'
+              });
+            }
+          }
+        }
+      }
+    } catch (eReest) {
+      Logger.log("obtenerDetalleGestionesHoy - Error en reestudios: " + eReest.message);
+    }
+
+    // Agrupar por tipo de proceso
+    const mapaT = {};
+    listado.forEach(function(item) {
+      const k = item.tipo || 'Otro';
+      mapaT[k] = (mapaT[k] || 0) + 1;
+    });
+    const porTipo = Object.keys(mapaT).map(function(k) {
+      return { tipo: k, cantidad: mapaT[k] };
+    }).sort(function(a, b) { return b.cantidad - a.cantidad; });
+
+    // Ordenar por hora descendente (más reciente primero)
+    listado.sort(function(a, b) { return b.horaGestion.localeCompare(a.horaGestion); });
+
+    return { success: true, total: listado.length, porTipo: porTipo, listado: listado };
+  } catch (e) {
+    Logger.log("Error en obtenerDetalleGestionesHoy: " + e.message);
+    return { success: false, total: 0, porTipo: [], listado: [] };
   }
 }

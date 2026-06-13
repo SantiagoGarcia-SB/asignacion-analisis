@@ -664,6 +664,7 @@ function admin_setCuposIndividual(correoAnalista, cupos) {
       };
 
       hoja.getRange(row, 25).setValue(JSON.stringify(cuposObj)); // col Y (index 24)
+      hoja.getRange(row, 7).setValue(cuposObj.total);           // col G = capTotal (leída por RequestLead)
 
       const adminEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
       registrarHistoricoCupos_('INDIVIDUAL', especialidad, correoAnalista, nombreAnalista, cuposObj, adminEmail, new Date());
