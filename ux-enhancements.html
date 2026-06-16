@@ -532,57 +532,68 @@ const UX = (function() {
         return html;
     }
 
-    // -- Show activity modal (using SweetAlert to avoid Bootstrap modal backdrop issues) --
+    // -- Show activity modal (data from both Historico_Gestiones sheets) --
     function showActivityModal() {
-        const log = getActivityLog();
-        const realCount = parseInt(document.getElementById('countHoy')?.textContent) || 0;
-
-        let htmlContent = '';
-
-        if (log.length === 0) {
-            if (realCount > 0) {
-                htmlContent = `<div style="text-align:center;padding:20px;"><p style="font-size:2rem;margin:0;">${realCount}</p><p style="color:#64748b;font-size:0.85rem;">gestiones hoy</p><p style="color:#94a3b8;font-size:0.75rem;">El detalle se registra a partir de esta sesión</p></div>`;
-            } else {
-                htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Sin actividad registrada aún</p></div>`;
-            }
-        } else {
-            let items = log.map(item => {
-                const dotColor = getDotColor(item.estado);
-                return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
-                    <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:55px;padding-top:2px;">${item.hora}</span>
-                    <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;"></div>
-                    <div style="flex:1;">
-                        <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.solicitud} → ${item.estado}</div>
-                        ${item.detalle ? `<div style="font-size:0.75rem;color:#64748b;">${item.detalle}</div>` : ''}
-                    </div>
-                </div>`;
-            }).join('');
-
-            let summaryParts = [];
-            const aprobadas = log.filter(l => l.estado.toUpperCase().includes('APROB')).length;
-            const negadas = log.filter(l => l.estado.toUpperCase().includes('NEGAD')).length;
-            const aplazadas = log.filter(l => l.estado.toUpperCase().includes('APLAZ')).length;
-            if (aprobadas) summaryParts.push('✅ ' + aprobadas + ' aprobada' + (aprobadas > 1 ? 's' : ''));
-            if (negadas) summaryParts.push('❌ ' + negadas + ' negada' + (negadas > 1 ? 's' : ''));
-            if (aplazadas) summaryParts.push('⏸️ ' + aplazadas + ' aplazada' + (aplazadas > 1 ? 's' : ''));
-
-            let header = realCount > log.length 
-                ? `<p style="font-size:0.75rem;color:#94a3b8;margin-bottom:12px;">${log.length} de ${realCount} gestiones registradas en esta sesión</p>`
-                : '';
-
-            htmlContent = `${header}<div style="max-height:350px;overflow-y:auto;">${items}</div>
-                <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${summaryParts.join(' · ')}</div>`;
-        }
-
         Swal.fire({
             title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
-            html: htmlContent,
-            showConfirmButton: true,
-            confirmButtonText: 'Cerrar',
-            confirmButtonColor: '#253150',
+            html: '<div style="text-align:center;padding:20px;"><i class="bi bi-arrow-repeat" style="font-size:2rem;color:#94a3b8;animation:btnSpin 0.6s linear infinite;display:inline-block;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Cargando gestiones...</p></div>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
             width: 480,
             customClass: { popup: 'rounded-4' }
         });
+
+        google.script.run
+            .withSuccessHandler(function(gestiones) {
+                let htmlContent = '';
+                if (!gestiones || gestiones.length === 0) {
+                    htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Sin gestiones registradas hoy</p></div>`;
+                } else {
+                    const items = gestiones.map(function(item) {
+                        const dotColor = getDotColor(item.estado);
+                        return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
+                            <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:40px;padding-top:2px;">${item.hora}</span>
+                            <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;"></div>
+                            <div style="flex:1;">
+                                <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.solicitud} → ${item.estado}</div>
+                                ${item.motivo ? `<div style="font-size:0.75rem;color:#64748b;">${item.motivo}</div>` : ''}
+                            </div>
+                        </div>`;
+                    }).join('');
+
+                    const aprobadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APROB'); }).length;
+                    const negadas   = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('NEGAD'); }).length;
+                    const aplazadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APLAZ'); }).length;
+                    const summaryParts = [];
+                    if (aprobadas) summaryParts.push('✅ ' + aprobadas + ' aprobada' + (aprobadas > 1 ? 's' : ''));
+                    if (negadas)   summaryParts.push('❌ ' + negadas   + ' negada'   + (negadas   > 1 ? 's' : ''));
+                    if (aplazadas) summaryParts.push('⏸️ ' + aplazadas + ' aplazada' + (aplazadas > 1 ? 's' : ''));
+
+                    htmlContent = `<div style="max-height:350px;overflow-y:auto;">${items}</div>
+                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${summaryParts.join(' · ')}</div>`;
+                }
+                Swal.fire({
+                    title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
+                    html: htmlContent,
+                    showConfirmButton: true,
+                    confirmButtonText: 'Cerrar',
+                    confirmButtonColor: '#253150',
+                    width: 480,
+                    customClass: { popup: 'rounded-4' }
+                });
+            })
+            .withFailureHandler(function() {
+                Swal.fire({
+                    title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
+                    html: '<div style="text-align:center;padding:20px;color:#ef4444;"><i class="bi bi-exclamation-triangle" style="font-size:2rem;"></i><p style="margin-top:10px;font-size:0.85rem;">Error al cargar las gestiones</p></div>',
+                    showConfirmButton: true,
+                    confirmButtonText: 'Cerrar',
+                    confirmButtonColor: '#253150',
+                    width: 480,
+                    customClass: { popup: 'rounded-4' }
+                });
+            })
+            .getResumenGestionesHoy();
     }
 
     function getDotColor(estado) {

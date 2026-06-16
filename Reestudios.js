@@ -195,7 +195,7 @@ function guardarGestionReestudio(datos) {
     return { success: false, message: "Identificador del caso no proporcionado." };
   }
 
-  const lock = LockService.getScriptLock();
+  const lock = LockService.getUserLock();
   try {
     lock.waitLock(15000);
   } catch (e) {
