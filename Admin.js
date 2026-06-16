@@ -724,16 +724,46 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
   const desde = (fechaDesde && fechaDesde.trim() !== '') ? fechaDesde.trim() : hoyStr;
   const hasta = (fechaHasta && fechaHasta.trim() !== '') ? fechaHasta.trim() : desde;
 
+  // Mapa turno nombre por idTurno
+  const mapaTurnoNombre = {};
+  const hojaTurnos = ss.getSheetByName('Turnos');
+  if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+    const dt = hojaTurnos.getDataRange().getValues();
+    for (let i = 1; i < dt.length; i++) {
+      const id = String(dt[i][0]).trim();
+      if (id) mapaTurnoNombre[id] = String(dt[i][1]).trim();
+    }
+  }
+
+  // Mapa email → idTurno vigente
+  const mapaEmailTurno = {};
+  const hojaAT = ss.getSheetByName('Analistas_Turnos');
+  if (hojaAT && hojaAT.getLastRow() > 1) {
+    const dat = hojaAT.getDataRange().getValues();
+    for (let i = 1; i < dat.length; i++) {
+      const email = String(dat[i][0]).toLowerCase().trim();
+      const idT = String(dat[i][1]).trim();
+      const desdeFecha = dat[i][2] instanceof Date ? dat[i][2] : null;
+      const hastaFecha = dat[i][3] instanceof Date ? dat[i][3] : null;
+      if (!email || !idT || !desdeFecha) continue;
+      if (hoy >= desdeFecha && (!hastaFecha || hoy <= hastaFecha)) {
+        mapaEmailTurno[email] = mapaTurnoNombre[idT] || idT;
+      }
+    }
+  }
+
   // Mapa de analistas
   const hojaUsuarios = ss.getSheetByName("Usuarios");
   const datosUsuarios = hojaUsuarios.getDataRange().getValues();
   const mapaAnalistas = {};
   for (let i = 1; i < datosUsuarios.length; i++) {
     const correo = String(datosUsuarios[i][2]).trim().toLowerCase();
+    if (!correo) continue;
     mapaAnalistas[correo] = {
       nombre: String(datosUsuarios[i][1]).trim(),
       especialidad: String(datosUsuarios[i][4]).trim(),
-      estadoActual: String(datosUsuarios[i][5]).trim()
+      estadoActual: String(datosUsuarios[i][5]).trim(),
+      turno: mapaEmailTurno[correo] || ''
     };
   }
 
@@ -835,7 +865,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
   // Construir resultado
   const resultados = [];
   for (const correo in agrupado) {
-    const info = mapaAnalistas[correo] || { nombre: correo, especialidad: '', estadoActual: '' };
+    const info = mapaAnalistas[correo] || { nombre: correo, especialidad: '', estadoActual: '', turno: '' };
     const d = agrupado[correo];
     const horas = horasSolicitudes[correo] || { primeraAsignacion: '', ultimoCierre: '' };
 
@@ -849,6 +879,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
       nombre: info.nombre,
       correo: correo,
       especialidad: info.especialidad,
+      turno: info.turno || '',
       estadoActual: info.estadoActual,
       tiempoEnEstadoActual: tiempoEnEstadoActual,
       estados: d.estados,
@@ -864,6 +895,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
         nombre: mapaAnalistas[correo].nombre,
         correo: correo,
         especialidad: mapaAnalistas[correo].especialidad,
+        turno: mapaAnalistas[correo].turno || '',
         estadoActual: mapaAnalistas[correo].estadoActual,
         tiempoEnEstadoActual: 0,
         estados: {},
@@ -873,7 +905,31 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
     }
   }
 
-  return { desde: desde, hasta: hasta, datos: resultados };
+  // Permisos aprobados que cruzan el rango de fechas
+  const permisosAprobados = [];
+  try {
+    const hojaPI = ss.getSheetByName('Permisos_Incapacidades');
+    if (hojaPI && hojaPI.getLastRow() > 1) {
+      const dataPI = hojaPI.getDataRange().getValues();
+      for (let i = 1; i < dataPI.length; i++) {
+        if (String(dataPI[i][8]).toUpperCase() !== 'APROBADO') continue;
+        const fi = String(dataPI[i][5]).trim();
+        const ff = String(dataPI[i][6]).trim();
+        if (fi > hasta || ff < desde) continue;
+        permisosAprobados.push({
+          id: String(dataPI[i][0]).trim(),
+          correo: String(dataPI[i][2]).trim(),
+          nombre: String(dataPI[i][3]).trim(),
+          tipo: String(dataPI[i][4]).trim(),
+          fechaInicio: fi,
+          fechaFin: ff,
+          observacion: String(dataPI[i][7]).trim()
+        });
+      }
+    }
+  } catch(ePI) { Logger.log('Error permisos: ' + ePI.message); }
+
+  return { desde: desde, hasta: hasta, datos: resultados, permisos: permisosAprobados };
 }
 
 function admin_desactivarTodosAsesores() {
@@ -889,5 +945,483 @@ function admin_desactivarTodosAsesores() {
     return { success: true, message: "⚠️ Sistema pausado: Todos los analistas han sido pasados a INACTIVO." };
   } catch (e) {
     return { success: false, message: e.message };
+  }
+}
+
+
+// ===================================================================
+// GESTIÓN DE TURNOS Y HORARIOS
+// ===================================================================
+
+/**
+ * Retorna todos los turnos definidos y la lista de analistas con su turno vigente.
+ * Incluye alerta si hay analistas sin turno asignado.
+ */
+function admin_getTurnosData() {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+
+    // --- Turnos ---
+    const hojaTurnos = ss.getSheetByName('Turnos');
+    const turnos = [];
+    if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+      const data     = hojaTurnos.getDataRange().getValues();
+      const dispData = hojaTurnos.getDataRange().getDisplayValues();
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        if (!String(r[0]).trim()) continue;
+        // Use display values for hora cols to avoid GAS historical-LMT timezone shift bug.
+        // getValues() on a time cell returns a Date shifted ~4 min due to LMT vs. current UTC-5.
+        // getDisplayValues() returns the exact string the user sees ("8:00" or "8:00:00").
+        const horaIniRaw = String(dispData[i][10] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+        const horaFinRaw = String(dispData[i][11] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+        turnos.push({
+          fila: i + 1,
+          id: String(r[0]).trim(),
+          nombre: String(r[1] || '').trim(),
+          activo: r[2] === true || String(r[2]).toUpperCase() === 'TRUE',
+          lun: !!(r[3] === true || r[3] === 1),
+          mar: !!(r[4] === true || r[4] === 1),
+          mie: !!(r[5] === true || r[5] === 1),
+          jue: !!(r[6] === true || r[6] === 1),
+          vie: !!(r[7] === true || r[7] === 1),
+          sab: !!(r[8] === true || r[8] === 1),
+          dom: !!(r[9] === true || r[9] === 1),
+          horaInicio: horaIniRaw,
+          horaFin:    horaFinRaw
+        });
+      }
+    }
+
+    // --- Analistas activos ---
+    const hojaUsers = ss.getSheetByName('Usuarios');
+    const analistas = [];
+    if (hojaUsers && hojaUsers.getLastRow() > 1) {
+      const data = hojaUsers.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        const email = String(r[2] || '').toLowerCase().trim();
+        const especialidad = String(r[3] || '').trim();
+        const esAdmin = String(r[23] || '').toUpperCase().trim() === 'ADMIN';
+        if (!email || esAdmin) continue;
+        analistas.push({ nombre: String(r[1] || '').trim(), email, especialidad });
+      }
+    }
+
+    // --- Asignaciones vigentes ---
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    const hoy = new Date();
+    const asignacionesVigentes = {}; // email -> idTurno
+    if (hojaAT && hojaAT.getLastRow() > 1) {
+      const data = hojaAT.getDataRange().getValues();
+      for (let i = 1; i < data.length; i++) {
+        const r = data[i];
+        const email  = String(r[0] || '').toLowerCase().trim();
+        const idT    = String(r[1] || '').trim();
+        const desde  = r[2] instanceof Date ? r[2] : null;
+        const hasta  = r[3] instanceof Date ? r[3] : null;
+        if (!email || !idT || !desde) continue;
+        if (hoy >= desde && (!hasta || hoy <= hasta)) {
+          asignacionesVigentes[email] = idT;
+        }
+      }
+    }
+
+    // --- Construir resultado con alerta ---
+    const sinTurno = analistas
+      .filter(a => !asignacionesVigentes[a.email])
+      .map(a => a.email);
+
+    return {
+      success: true,
+      turnos,
+      analistas: analistas.map(a => ({
+        ...a,
+        idTurnoActual: asignacionesVigentes[a.email] || null
+      })),
+      sinTurno
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Crea o actualiza un turno. Si el ID existe, actualiza esa fila; si no, crea fila nueva.
+ * @param {Object} turno - { id, nombre, activo, lun, mar, mie, jue, vie, sab, dom, horaInicio, horaFin }
+ */
+function admin_guardarTurno(turno) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Turnos');
+    if (!hoja) {
+      hoja = ss.insertSheet('Turnos');
+      hoja.appendRow(['ID_Turno','Nombre','Activo','Lun','Mar','Mie','Jue','Vie','Sab','Dom','HoraInicio','HoraFin']);
+    }
+
+    const fila = [
+      turno.id, turno.nombre, turno.activo === true,
+      !!turno.lun, !!turno.mar, !!turno.mie, !!turno.jue,
+      !!turno.vie, !!turno.sab, !!turno.dom,
+      turno.horaInicio, turno.horaFin
+    ];
+
+    // Buscar si existe
+    const data = hoja.getDataRange().getValues();
+    let filaExistente = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(turno.id).trim()) {
+        filaExistente = i + 1;
+        break;
+      }
+    }
+
+    if (filaExistente > 0) {
+      hoja.getRange(filaExistente, 1, 1, 12).setValues([fila]);
+      hoja.getRange(filaExistente, 11, 1, 2).setNumberFormat("@").setValues([[turno.horaInicio, turno.horaFin]]);
+    } else {
+      hoja.appendRow(fila);
+      const newRow = hoja.getLastRow();
+      hoja.getRange(newRow, 11, 1, 2).setNumberFormat("@").setValues([[turno.horaInicio, turno.horaFin]]);
+    }
+
+    return { success: true, message: 'Turno guardado.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Desactiva un turno. Retorna la lista de analistas afectados (sin turno tras la desactivación).
+ * @param {string} idTurno
+ */
+function admin_desactivarTurno(idTurno) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Turnos');
+    if (!hoja) return { success: false, message: 'Hoja Turnos no encontrada.' };
+
+    const data = hoja.getDataRange().getValues();
+    let filaTurno = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(idTurno).trim()) {
+        filaTurno = i + 1;
+        break;
+      }
+    }
+    if (filaTurno < 0) return { success: false, message: 'Turno no encontrado.' };
+    hoja.getRange(filaTurno, 3).setValue(false);
+
+    // Determinar analistas afectados
+    const resultado = admin_getTurnosData();
+    const afectados = (resultado.analistas || [])
+      .filter(a => a.idTurnoActual === idTurno)
+      .map(a => a.email);
+
+    return { success: true, afectados, message: `Turno desactivado. ${afectados.length} analista(s) requieren reasignación.` };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Asigna un analista a un turno. Cierra la asignación anterior (Fecha_Hasta = ayer).
+ * @param {string} email
+ * @param {string} idTurno
+ * @param {string} fechaDesde  "yyyy-MM-dd"
+ */
+function admin_asignarTurnoAnalista(email, idTurno, fechaDesde) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Analistas_Turnos');
+    if (!hoja) {
+      hoja = ss.insertSheet('Analistas_Turnos');
+      hoja.appendRow(['Email_Analista','ID_Turno','Fecha_Desde','Fecha_Hasta']);
+    }
+
+    const emailLower = email.toLowerCase().trim();
+    const desde = new Date(fechaDesde);
+    const ayer  = new Date(desde.getTime() - 86400000);
+
+    const data = hoja.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const r = data[i];
+      if (String(r[0]).toLowerCase().trim() !== emailLower) continue;
+      const hasta = r[3] instanceof Date ? r[3] : null;
+      if (!hasta) {
+        // Cerrar asignación vigente
+        hoja.getRange(i + 1, 4).setValue(ayer).setNumberFormat('yyyy-MM-dd');
+      }
+    }
+
+    hoja.appendRow([emailLower, idTurno, desde, '']);
+    hoja.getRange(hoja.getLastRow(), 3).setNumberFormat('yyyy-MM-dd');
+
+    return { success: true, message: `Analista ${email} asignado a turno ${idTurno}.` };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Asigna todos los analistas sin turno a un turno dado.
+ * Llama internamente a admin_asignarTurnoAnalista por cada uno.
+ * @param {string} idTurno
+ * @param {string} fechaDesde  "yyyy-MM-dd"
+ */
+function admin_asignarTodosSinTurno(idTurno, fechaDesde) {
+  try {
+    verificarPermisoAdmin();
+    const resultado = admin_getTurnosData();
+    if (!resultado.success) return resultado;
+    const sinTurno = resultado.sinTurno || [];
+    if (sinTurno.length === 0) return { success: true, message: 'No hay analistas sin turno.', asignados: 0 };
+
+    let asignados = 0;
+    const errores = [];
+    for (const email of sinTurno) {
+      const r = admin_asignarTurnoAnalista(email, idTurno, fechaDesde);
+      if (r.success) asignados++;
+      else errores.push(email);
+    }
+
+    const msg = asignados + ' analista(s) asignado(s) al turno.' +
+      (errores.length > 0 ? ' Errores: ' + errores.join(', ') : '');
+    return { success: true, message: msg, asignados, errores };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Retorna las horas extra de un analista en un mes dado.
+ * @param {string} email
+ * @param {number} anio
+ * @param {number} mes  (1-12)
+ */
+function admin_getHorasExtra(email, anio, mes) {
+  try {
+    verificarPermisoAdmin();
+    const ss  = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja || hoja.getLastRow() < 2) return { success: true, extras: [] };
+
+    const emailLower = (email || '').toLowerCase().trim();
+    const data = hoja.getDataRange().getValues();
+    const extras = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const r = data[i];
+      const rEmail = String(r[0] || '').toLowerCase().trim();
+      if (emailLower && rEmail !== emailLower) continue;
+      const fecha = r[1] instanceof Date ? r[1] : null;
+      if (!fecha) continue;
+      if (anio && fecha.getFullYear() !== anio) continue;
+      if (mes  && fecha.getMonth() + 1 !== mes) continue;
+      extras.push({
+        fila: i + 1,
+        email: rEmail,
+        fecha: Utilities.formatDate(fecha, TIMEZONE, 'yyyy-MM-dd'),
+        horaInicio: r[2] instanceof Date ? Utilities.formatDate(r[2], TIMEZONE, 'HH:mm') : String(r[2] || ''),
+        horaFin:    r[3] instanceof Date ? Utilities.formatDate(r[3], TIMEZONE, 'HH:mm') : String(r[3] || ''),
+        descripcion: String(r[4] || '')
+      });
+    }
+
+    return { success: true, extras };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Guarda una entrada de horas extra.
+ * @param {Object} extra - { email, fecha, horaInicio, horaFin, descripcion }
+ */
+function admin_guardarHorasExtra(extra) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja) {
+      hoja = ss.insertSheet('Horas_Extra');
+      hoja.appendRow(['Email','Fecha','HoraInicio','HoraFin','Descripcion']);
+    }
+
+    const fecha = new Date(extra.fecha);
+    hoja.appendRow([
+      extra.email.toLowerCase().trim(),
+      fecha,
+      extra.horaInicio,
+      extra.horaFin,
+      extra.descripcion || ''
+    ]);
+    const lastRow = hoja.getLastRow();
+    hoja.getRange(lastRow, 2).setNumberFormat('yyyy-MM-dd');
+    hoja.getRange(lastRow, 3, 1, 2).setNumberFormat("@").setValues([[extra.horaInicio, extra.horaFin]]);
+
+    return { success: true, message: 'Horas extra guardadas.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Elimina una entrada de horas extra por número de fila.
+ * @param {number} fila
+ */
+function admin_eliminarHorasExtra(fila) {
+  try {
+    verificarPermisoAdmin();
+    const ss   = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja) return { success: false, message: 'Hoja Horas_Extra no encontrada.' };
+    hoja.deleteRow(fila);
+    return { success: true, message: 'Entrada eliminada.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
+ * Retorna el conteo de analistas sin turno asignado (para badge de alerta).
+ */
+function admin_getAlertasTurnos() {
+  try {
+    verificarPermisoAdmin();
+    const res = admin_getTurnosData();
+    return { success: true, sinTurno: res.sinTurno || [] };
+  } catch (e) {
+    return { success: false, sinTurno: [] };
+  }
+}
+
+// ===================================================================
+// GESTIÓN DE PERMISOS E INCAPACIDADES
+// ===================================================================
+
+function admin_contarPermisosPendientes() {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja || hoja.getLastRow() < 2) return { success: true, pendientes: 0 };
+    const data = hoja.getDataRange().getValues();
+    let count = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8]).toUpperCase().trim() === 'PENDIENTE') count++;
+    }
+    return { success: true, pendientes: count };
+  } catch(e) {
+    return { success: false, pendientes: 0 };
+  }
+}
+
+function admin_obtenerPermisosPendientes(filtroEstado) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja || hoja.getLastRow() < 2) return { success: true, registros: [] };
+
+    const data = hoja.getDataRange().getValues();
+    const filtro = (filtroEstado || 'TODOS').toUpperCase();
+    const registros = [];
+
+    for (let i = 1; i < data.length; i++) {
+      const estado = String(data[i][8]).toUpperCase().trim();
+      if (filtro !== 'TODOS' && estado !== filtro) continue;
+      registros.push({
+        fila: i + 1,
+        id: String(data[i][0]).trim(),
+        fechaSolicitud: String(data[i][1]).trim(),
+        correo: String(data[i][2]).trim(),
+        nombre: String(data[i][3]).trim(),
+        tipo: String(data[i][4]).trim(),
+        fechaInicio: String(data[i][5]).trim(),
+        fechaFin: String(data[i][6]).trim(),
+        observacionAnalista: String(data[i][7]).trim(),
+        estado: estado,
+        fechaRevision: String(data[i][9]).trim(),
+        correoAdmin: String(data[i][10]).trim(),
+        observacionAdmin: String(data[i][11]).trim()
+      });
+    }
+
+    registros.sort(function(a, b) {
+      if (a.estado === 'PENDIENTE' && b.estado !== 'PENDIENTE') return -1;
+      if (a.estado !== 'PENDIENTE' && b.estado === 'PENDIENTE') return 1;
+      return b.fechaSolicitud.localeCompare(a.fechaSolicitud);
+    });
+
+    return { success: true, registros: registros };
+  } catch(e) {
+    return { success: false, registros: [], message: e.message };
+  }
+}
+
+function admin_resolverPermiso(id, decision, observacionAdmin) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch(e) { return { success: false, message: 'Servidor ocupado, reintenta.' }; }
+  try {
+    verificarPermisoAdmin();
+    const correoAdmin = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja) return { success: false, message: 'Hoja Permisos_Incapacidades no encontrada.' };
+
+    const data = hoja.getDataRange().getValues();
+    let filaPI = -1, registroPI = null;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(id).trim()) {
+        filaPI = i + 1; registroPI = data[i]; break;
+      }
+    }
+    if (filaPI === -1) return { success: false, message: 'Permiso no encontrado.' };
+    if (String(registroPI[8]).toUpperCase() !== 'PENDIENTE') return { success: false, message: 'Este permiso ya fue resuelto.' };
+
+    const ahora = new Date();
+    const decisionUp = decision.toUpperCase();
+    const fechaRevision = Utilities.formatDate(ahora, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+
+    hoja.getRange(filaPI, 9).setValue(decisionUp);
+    hoja.getRange(filaPI, 10).setValue(fechaRevision);
+    hoja.getRange(filaPI, 11).setValue(correoAdmin);
+    hoja.getRange(filaPI, 12).setValue(observacionAdmin || '');
+
+    if (decisionUp === 'APROBADO') {
+      const hoyStr = Utilities.formatDate(ahora, TIMEZONE, 'yyyy-MM-dd');
+      const fi = String(registroPI[5]).trim();
+      const ff = String(registroPI[6]).trim();
+      if (hoyStr >= fi && hoyStr <= ff) {
+        admin_sincronizarEstado(String(registroPI[2]).toLowerCase().trim(), String(registroPI[4]).trim());
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    try {
+      const correoAnalista = String(registroPI[2]).trim();
+      const tipo = String(registroPI[4]).trim();
+      const fi = String(registroPI[5]).trim();
+      const ff = String(registroPI[6]).trim();
+      const accion = decisionUp === 'APROBADO' ? 'APROBADA' : 'RECHAZADA';
+      const asunto = '[Permiso ' + accion + '] ' + tipo;
+      const cuerpo = 'Hola ' + String(registroPI[3]).trim() + ',\n\nTu solicitud de permiso ha sido ' + accion + ':\n\n'
+        + 'Tipo: ' + tipo + '\nFecha inicio: ' + fi + '\nFecha fin: ' + ff
+        + (observacionAdmin ? '\nObservación del administrador: ' + observacionAdmin : '')
+        + '\n\nSaludos.';
+      MailApp.sendEmail(correoAnalista, asunto, cuerpo);
+    } catch(eM) { Logger.log('Email analista error: ' + eM.message); }
+
+    return { success: true, message: 'Permiso ' + decision.toLowerCase() + ' correctamente.' };
+  } catch(e) {
+    return { success: false, message: 'Error: ' + e.toString() };
+  } finally {
+    lock.releaseLock();
   }
 }

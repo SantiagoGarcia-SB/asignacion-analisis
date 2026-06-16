@@ -188,69 +188,94 @@ function getTableData() {
   let gestionadasHoy = 0;
   let gestionadasTotal = 0;
 
-  const misFilasPendientes = registros.filter(fila => {
-    const asignadoA = String(fila[27]).trim().toLowerCase();
-    const fechaFin = String(fila[28]).trim();
-    const fechaAsignacion = String(fila[26]).trim();
-    
-    if (asignadoA === userEmail && fechaFin !== "") {
-      gestionadasTotal++;
-      if (fechaFin.includes(hoyStr)) {
-        gestionadasHoy++;
-      }
-    }
-    return asignadoA === userEmail && fechaFin === "" && fechaAsignacion !== "" ; 
-  }).map(fila => {
-    let poliza = String(fila[1]).trim();
-    let polNorm = poliza.replace(/\D/g, '').replace(/^0+/, '');
-    
-    let categoria = mapaScore.get(poliza) || mapaScore.get(polNorm) || "";
-    fila.push(categoria); 
-    return fila;
-  });
+  // Casos del analista: leer de Historico_Gestiones (nuevos) + solicitud (legados sin migrar)
+  const misFilasPendientes = [];
 
-  // Incluir también reestudios/UAR asignados desde la hoja ORIGEN
+  // Convierte fila de Historico_Gestiones (37 cols) a formato solicitud (37 cols)
+  // para que el frontend no necesite saber de la estructura del Historico
+  function histToSol(h) {
+    const s = new Array(37).fill('');
+    for (let i = 0; i <= 21; i++) s[i] = h[i]; // cols 1-22 iguales
+    s[23] = h[22]; s[24] = h[23];               // biometría, observaciones
+    s[26] = h[24]; s[27] = h[25]; s[28] = h[26]; // fechaAsig, asignacion, fechaFin
+    s[30] = h[27]; s[31] = h[28]; s[32] = h[29]; s[33] = h[30]; // Nombre, motivos, fechaGest
+    s[35] = h[31]; s[36] = h[32];               // Poliza, Canal
+    return s;
+  }
+
+  function agregarDesdeRegistros(filas, fuente) {
+    for (const filaRaw of filas) {
+      const fila = fuente === 'HISTORICO' ? histToSol(filaRaw) : filaRaw;
+      const asignadoA = String(fila[27]).trim().toLowerCase();
+      const fechaFin  = String(fila[28]).trim();
+      const fechaAsig = String(fila[26]).trim();
+      if (asignadoA !== userEmail) continue;
+      if (fechaFin !== "") {
+        gestionadasTotal++;
+        if (fechaFin.includes(hoyStr)) gestionadasHoy++;
+        continue;
+      }
+      if (fechaAsig === "") continue;
+      const poliza  = String(fila[1]).trim();
+      const polNorm = poliza.replace(/\D/g, '').replace(/^0+/, '');
+      const cat = mapaScore.get(poliza) || mapaScore.get(polNorm) || "";
+      misFilasPendientes.push([...fila, cat]);
+    }
+  }
+
+  // 1. Historico_Gestiones — casos ya movidos al asignar (nueva lógica)
+  try {
+    const hojaHist = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHist && hojaHist.getLastRow() > 1) {
+      const dataH = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, Math.max(numCols, 37)).getDisplayValues();
+      agregarDesdeRegistros(dataH, 'HISTORICO');
+    }
+  } catch(e) { Logger.log("getTableData Historico: " + e.message); }
+
+  // 2. solicitud — casos legados aún no migrados
+  agregarDesdeRegistros(registros, 'SOLICITUD');
+
+  // 3. Reestudios: Historico_Gestiones (nueva lógica) + ORIGEN (legados)
   try {
     const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-    const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
-    if (hojaReest) {
-      const lastRowR = hojaReest.getLastRow();
-      if (lastRowR > 1) {
-        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getDisplayValues();
-        for (let i = 0; i < dataReest.length; i++) {
-          const asignado = String(dataReest[i][6]).trim().toLowerCase();
-          if (asignado !== userEmail) continue;
-          const fechaFinR = String(dataReest[i][9]).trim();
-          const fechaAsigR = String(dataReest[i][8]).trim();
-          
-          if (fechaFinR !== "") {
-            if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
-            gestionadasTotal++;
-            continue;
-          }
-          if (fechaAsigR === "") continue;
 
-          // Crear fila adaptada a la estructura de la hoja solicitud (para que el frontend la renderice)
-          const tipoProc = String(dataReest[i][4]).trim();
-          const claseR = String(dataReest[i][5]).trim();
-          let filaAdaptada = new Array(numCols).fill("");
-          filaAdaptada[0] = String(dataReest[i][1]).trim();    // solicitud
-          filaAdaptada[1] = String(dataReest[i][3]).trim();    // origen como "poliza"
-          filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
-          filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
-          filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
-          filaAdaptada[26] = fechaAsigR;                       // fechaAsignacion
-          filaAdaptada[27] = asignado;                         // email asignado
-          filaAdaptada[28] = "";                               // fechaFin (vacía = pendiente)
-          filaAdaptada[30] = String(dataReest[i][7]).trim();   // nombre analista
-          filaAdaptada.push("");                                // CategoriaScore
-          misFilasPendientes.push(filaAdaptada);
-        }
+    function adaptarReestudio(row) {
+      const asignado  = String(row[6]).trim().toLowerCase();
+      const fechaFinR = String(row[9]).trim();
+      const fechaAsigR = String(row[8]).trim();
+      if (asignado !== userEmail) return;
+      if (fechaFinR !== "") {
+        if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
+        gestionadasTotal++;
+        return;
       }
+      if (fechaAsigR === "") return;
+      const tipoProc = String(row[4]).trim();
+      const claseR   = String(row[5]).trim();
+      let fa = new Array(numCols).fill("");
+      fa[0]  = String(row[1]).trim();
+      fa[1]  = String(row[3]).trim();
+      fa[2]  = String(row[2]).trim();
+      fa[16] = "__REESTUDIO__";
+      fa[17] = String(row[0]).trim();
+      fa[20] = tipoProc || claseR;
+      fa[26] = fechaAsigR;
+      fa[27] = asignado;
+      fa[28] = "";
+      fa[30] = String(row[7]).trim();
+      fa.push("");
+      misFilasPendientes.push(fa);
     }
-  } catch(e) {
-    Logger.log("Error incluyendo reestudios en getTableData: " + e.message);
-  }
+
+    const hojaHistR = ssReest.getSheetByName("Historico_Gestiones");
+    if (hojaHistR && hojaHistR.getLastRow() > 1) {
+      hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, 18).getDisplayValues().forEach(adaptarReestudio);
+    }
+    const hojaOrigen = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+    if (hojaOrigen && hojaOrigen.getLastRow() > 1) {
+      hojaOrigen.getRange(2, 1, hojaOrigen.getLastRow() - 1, 14).getDisplayValues().forEach(adaptarReestudio);
+    }
+  } catch(e) { Logger.log("getTableData Reestudios: " + e.message); }
 
   return {
     tabla: [headers, ...misFilasPendientes],
@@ -665,81 +690,148 @@ function guardarCambiosInternos(data) {
     const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
     disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
 
-    // 1. BUSCAMOS EN EL EXCEL PRINCIPAL (Estudios, Bio, Inducciones)
-    const ids = sheetOrigen.getRange('A:A').getValues(); 
+    // 1. Buscar en Historico_Gestiones (nueva lógica: caso ya movido al asignar)
+    let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
     let targetRow = -1;
-    for (let i = 1; i < ids.length; i++) {
-      if (String(ids[i][0]).trim() === String(data.solicitudId).trim()) {
-        targetRow = i + 1;
-        break;
+    let fuenteRuta = '';  // 'HISTORICO' | 'SOLICITUD'
+
+    // Los reestudios viven en ssReestudios, no en el warehouse — saltar RUTA A
+    if (data.tipoSolicitudActual !== 'reestudio') {
+      if (hojaHistorico && hojaHistorico.getLastRow() > 1) {
+        // Leer A:AA (cols 1-27) para verificar que fechaFin (col 27) esté vacía
+        // y así encontrar el caso abierto aunque el mismo ID aparezca varias veces
+        const lastRowH = hojaHistorico.getLastRow();
+        const dataH = hojaHistorico.getRange(2, 1, lastRowH - 1, 27).getValues();
+        for (let i = 0; i < dataH.length; i++) {
+          const idMatch  = String(dataH[i][0]).trim() === String(data.solicitudId).trim();
+          const fechaFin = String(dataH[i][26]).trim(); // col 27 = fechaFin
+          if (idMatch && fechaFin === '') {
+            targetRow = i + 2;
+            fuenteRuta = 'HISTORICO';
+            break;
+          }
+        }
+      }
+
+      // Fallback: buscar en solicitud activa (casos legados no migrados)
+      // La hoja solicitud solo contiene casos abiertos — al gestionar se mueve a Historico
+      if (targetRow === -1) {
+        const ids = sheetOrigen.getRange('A:A').getValues();
+        for (let i = 1; i < ids.length; i++) {
+          if (String(ids[i][0]).trim() === String(data.solicitudId).trim()) {
+            targetRow = i + 1;
+            fuenteRuta = 'SOLICITUD';
+            break;
+          }
+        }
       }
     }
 
-    if (targetRow !== -1) {
-      // 🟢 RUTA A: ES UNA SOLICITUD DE LA BASE PRINCIPAL
-      const fechaAsignacion = sheetOrigen.getRange(targetRow, 27).getValue(); 
-      const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
-      let minutosDeGestion = 0;
-      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-        minutosDeGestion = Number(((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60)).toFixed(2));
-      }
-      
-      const valorActualW = sheetOrigen.getRange(targetRow, 23).getValue();
-      let historialFechasW = !valorActualW ? fechaTexto : fechaTexto + "\n" + valorActualW;
+    if (targetRow !== -1 && (fuenteRuta === 'HISTORICO' || fuenteRuta === 'SOLICITUD')) {
+      // 🟢 RUTA A: SOLICITUD DE LA BASE PRINCIPAL (en Historico o en solicitud)
+      const hojaA    = fuenteRuta === 'HISTORICO' ? hojaHistorico : sheetOrigen;
+      const filaBase = hojaA.getRange(targetRow, 1, 1, 37).getValues()[0];
+      const fechaRadicacion = filaBase[17]; // col 18: fechaRadicación (igual en ambas)
 
-      // 🚀 TALLADO DE CLASE PERMANENTE PARA NO PERDER EL CONTEO
-      let valorClaseActual = sheetOrigen.getRange(targetRow, 21).getValue();
+      let fechaAsignacion, emailAnalista, valorClaseActual, valorUarActual, historialFechasW;
+
+      if (fuenteRuta === 'HISTORICO') {
+        fechaAsignacion = filaBase[24]; // hist col 25: fecha asignación
+        emailAnalista   = String(filaBase[25] || usuarioActual).toLowerCase().trim(); // hist col 26
+        valorClaseActual = filaBase[20]; // col 21 igual en ambas
+        valorUarActual   = filaBase[21]; // col 22 igual en ambas
+      } else {
+        fechaAsignacion = filaBase[26]; // sol col 27: fecha asignación
+        emailAnalista   = String(filaBase[27] || usuarioActual).toLowerCase().trim(); // sol col 28
+        const valorActualW = filaBase[22]; // sol col 23: tracking
+        historialFechasW = !valorActualW ? fechaTexto : fechaTexto + "\n" + valorActualW;
+        valorClaseActual = filaBase[20];
+        valorUarActual   = filaBase[21];
+      }
+
       if (data.tipoSolicitudActual === 'biometria') valorClaseActual = 'BIOMETRIA';
       else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
 
-      const valorUarActual = sheetOrigen.getRange(targetRow, 22).getValue();
-      
-      let minutosHabilesSLA = 0;
-      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-        minutosHabilesSLA = calcularMinutosHabilesSLA(fechaAsignacion, ahora, ssOrigen);
-      }
-      let horasHabilesSLA = Number((minutosHabilesSLA / 60).toFixed(2));
+      const tRadCola = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
+      const tiempos = calcularTiemposCaso(
+        tRadCola,
+        _parseFechaGAS(fechaAsignacion),
+        ahora,
+        emailAnalista
+      );
 
-      // Guardar en hoja principal
-      sheetOrigen.getRange(targetRow, 17).setValue(estado_q); 
-      sheetOrigen.getRange(targetRow, 21, 1, 5).setValues([[
-        valorClaseActual, valorUarActual, historialFechasW, data.biometria || '', data.comentarios_gestion || ''
-      ]]);
-      
-      sheetOrigen.getRange(targetRow, 32, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
-      sheetOrigen.getRange(targetRow, 29).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss"); 
-      sheetOrigen.getRange(targetRow, 30).setValue(horasHabilesSLA); 
-      sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
-      sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
-
-      // Tiempo general (minutos hábiles desde radicación hasta gestión)
-      let minutosHabilesGeneral = 0;
-      if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
-        minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
-      }
-      sheetOrigen.getRange(targetRow, 37).setValue(Number(minutosHabilesGeneral.toFixed(2)));
-
-      // Fecha y hora radicación SAI (ingresada manualmente por el analista)
-      if (data.fecha_radicacion_sai) {
-        sheetOrigen.getRange(targetRow, 38).setValue(data.fecha_radicacion_sai);
+      if (fuenteRuta === 'HISTORICO') {
+        // Escribir en posiciones del Historico_Gestiones
+        hojaA.getRange(targetRow, 17).setValue(estado_q);          // col 17 estadoGeneral
+        hojaA.getRange(targetRow, 21).setValue(valorClaseActual);  // col 21 clase
+        hojaA.getRange(targetRow, 23).setValue(data.biometria || ''); // col 23 biometría
+        hojaA.getRange(targetRow, 24).setValue(data.comentarios_gestion || ''); // col 24 observaciones
+        hojaA.getRange(targetRow, 27).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss"); // col 27 fechaFin
+        hojaA.getRange(targetRow, 29, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]); // cols 29-30
+        hojaA.getRange(targetRow, 31).setValue(fechaSoloDia);      // col 31 fecha de gestion
+      } else {
+        // Escribir en posiciones originales de la hoja solicitud
+        hojaA.getRange(targetRow, 17).setValue(estado_q);
+        hojaA.getRange(targetRow, 21, 1, 5).setValues([[
+          valorClaseActual, valorUarActual, historialFechasW, data.biometria || '', data.comentarios_gestion || ''
+        ]]);
+        hojaA.getRange(targetRow, 29).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+        hojaA.getRange(targetRow, 32, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
+        hojaA.getRange(targetRow, 34).setValue(fechaSoloDia);
       }
 
       SpreadsheetApp.flush();
-      
-      // Guardar en Historico principal
-      const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
-      let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
-      if (!hojaHistorico) hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
-      hojaHistorico.appendRow(filaActualizada);
+
+      if (fuenteRuta === 'HISTORICO') {
+        // Actualizar fecha SAI y tiempos en cols 34-37 del Historico
+        hojaHistorico.getRange(targetRow, 34).setValue(data.fecha_radicacion_sai || '');
+        hojaHistorico.getRange(targetRow, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
+        hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
+      } else {
+        // Caso legado: construir fila Historico con mapping de columnas y mover
+        const sa = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
+        const histRow = [
+          sa[0],sa[1],sa[2],sa[3],sa[4],sa[5],sa[6],sa[7],sa[8],sa[9],sa[10],sa[11],sa[12],sa[13],sa[14],sa[15],
+          sa[16],sa[17],sa[18],sa[19],sa[20],sa[21],
+          sa[23],sa[24],sa[26],sa[27],sa[28],sa[30],sa[31],sa[32],sa[33],sa[35],sa[36],
+          data.fecha_radicacion_sai || '', tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general
+        ];
+        if (!hojaHistorico) hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
+        hojaHistorico.appendRow(histRow);
+        const lastRowH = hojaHistorico.getLastRow();
+        hojaHistorico.getRange(lastRowH, 35, 1, 3).setNumberFormat("0.00");
+        sheetOrigen.deleteRow(targetRow);
+      }
 
     } else {
-      // 🔵 RUTA B: NO ESTÁ EN PRINCIPAL, BUSCAMOS EN EXCEL DE REESTUDIOS/UAR
-      const idsReest = sheetReestudios.getRange('B:B').getValues(); 
+      // 🔵 RUTA B: REESTUDIO — buscar en Historico primero, luego ORIGEN
+      let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
       let targetRowReest = -1;
-      for (let i = 1; i < idsReest.length; i++) {
-        if (String(idsReest[i][0]).trim() === String(data.solicitudId).trim()) {
-          targetRowReest = i + 1;
-          break;
+      let fuenteRutaR = '';
+
+      if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {
+        // Leer B:J para poder verificar que fechaFinGestion (col J) esté vacía
+        // y así distinguir el reestudio abierto de los ya cerrados del mismo ID
+        const lastRowHR = hojaHistoricoR.getLastRow();
+        const dataHR = hojaHistoricoR.getRange(2, 2, lastRowHR - 1, 9).getValues(); // cols B–J
+        for (let i = 0; i < dataHR.length; i++) {
+          const idMatch  = String(dataHR[i][0]).trim() === String(data.solicitudId).trim();
+          const fechaFin = String(dataHR[i][8]).trim(); // col J = fechaFinGestion
+          if (idMatch && fechaFin === '') {
+            targetRowReest = i + 2; // +2: encabezado + índice base 1
+            fuenteRutaR = 'HISTORICO';
+            break;
+          }
+        }
+      }
+      if (targetRowReest === -1) {
+        const idsReest = sheetReestudios.getRange('B:B').getValues();
+        for (let i = 1; i < idsReest.length; i++) {
+          if (String(idsReest[i][0]).trim() === String(data.solicitudId).trim()) {
+            targetRowReest = i + 1;
+            fuenteRutaR = 'ORIGEN';
+            break;
+          }
         }
       }
 
@@ -747,41 +839,39 @@ function guardarCambiosInternos(data) {
         return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
       }
 
-      // Guardar en hoja secundaria (Reestudios)
-      const fechaRadicacionR = sheetReestudios.getRange(targetRowReest, 1).getValue();
-      const fechaAsignacionR = sheetReestudios.getRange(targetRowReest, 9).getValue();
+      const hojaRB     = fuenteRutaR === 'HISTORICO' ? hojaHistoricoR : sheetReestudios;
+      const filaReest  = hojaRB.getRange(targetRowReest, 1, 1, 18).getValues()[0];
+      const fechaRadR  = filaReest[0];
+      const fechaAsiR  = filaReest[8];
+      const emailAnalistaR = String(filaReest[6] || usuarioActual).toLowerCase().trim();
 
-      let tiempoTotalResolucion = 0;
-      let tiempoGestion = 0;
+      const tRadColaR = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadR);
+      const tiemposR = calcularTiemposCaso(
+        tRadColaR,
+        _parseFechaGAS(fechaAsiR),
+        ahora,
+        emailAnalistaR
+      );
 
-      if (fechaRadicacionR instanceof Date && !isNaN(fechaRadicacionR.getTime())) {
-        tiempoTotalResolucion = Number(calcularMinutosHabilesSLA(fechaRadicacionR, ahora, ssOrigen).toFixed(2));
-      }
-      if (fechaAsignacionR instanceof Date && !isNaN(fechaAsignacionR.getTime())) {
-        tiempoGestion = Number(((ahora.getTime() - fechaAsignacionR.getTime()) / 60000).toFixed(2));
-      }
-
-      // Guardar resultados en columnas J hasta P
-      sheetReestudios.getRange(targetRowReest, 10, 1, 7).setValues([[
-        ahora,                              // J: fechaFinGestion
-        estado_q,                           // K: estadoGestion
-        motivo_aplazamiento,                // L: motivoAplazamiento
-        motivo_negacion,                    // M: motivoNegacion
-        data.comentarios_gestion || "",     // N: observaciones
-        tiempoTotalResolucion,              // O: tiempo total
-        tiempoGestion                       // P: tiempo gestión
+      // Escribir gestión (cols 10-18) en la hoja donde está el caso
+      hojaRB.getRange(targetRowReest, 10, 1, 9).setValues([[
+        ahora, estado_q, motivo_aplazamiento, motivo_negacion,
+        data.comentarios_gestion || '',
+        tiemposR.minutos_cola, tiemposR.minutos_gestion, tiemposR.minutos_general,
+        data.poliza || ''
       ]]);
-      sheetReestudios.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaRB.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaRB.getRange(targetRowReest, 15, 1, 3).setNumberFormat("0.00");
 
       SpreadsheetApp.flush();
 
-      // Guardar en Historico Secundario
-      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
-      let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
-      if (!hojaHistoricoR) {
-        hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
+      if (fuenteRutaR === 'ORIGEN') {
+        // Caso legado en ORIGEN: mover a Historico y eliminar del activo
+        const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 18).getValues()[0];
+        if (!hojaHistoricoR) hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
+        hojaHistoricoR.appendRow(filaActualizadaR);
+        sheetReestudios.deleteRow(targetRowReest);
       }
-      hojaHistoricoR.appendRow(filaActualizadaR);
     }
 
     if (estado_q.includes("APLAZ")) {
@@ -890,6 +980,27 @@ function verificarMisCupos(equipo) {
       }
     }
 
+    // También contar desde Historico_Gestiones (casos asignados movidos al asignar)
+    try {
+      const hojaHistV = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHistV && hojaHistV.getLastRow() > 1) {
+        const dataHistV = hojaHistV.getRange(2, 1, hojaHistV.getLastRow() - 1, 37).getValues();
+        for (let i = 0; i < dataHistV.length; i++) {
+          const asignado = String(dataHistV[i][25]).trim().toLowerCase(); // hist col 26
+          if (asignado !== userEmail) continue;
+          const fechaAsig = dataHistV[i][24]; // hist col 25
+          const fechaFin  = dataHistV[i][26]; // hist col 27
+          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+          const claseNorm  = String(dataHistV[i][20]).toUpperCase().trim();
+          const estadoNorm = String(dataHistV[i][16]).toUpperCase().trim();
+          let tipo = 'nueva';
+          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+          conteoHoy[tipo]++;
+        }
+      }
+    } catch(e) {}
+
     // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR)
     try {
       const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
@@ -904,11 +1015,11 @@ function verificarMisCupos(equipo) {
             const fechaAsig = dataReest[i][8];
             const fechaFin = dataReest[i][9];
             if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+            const origenR = String(dataReest[i][3]).toUpperCase().trim();
             const tipoP = String(dataReest[i][4]).toUpperCase().trim();
-            const claseR = String(dataReest[i][5]).toUpperCase().trim();
             let tipo = 'reestudio';
-            if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
-            else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
+            if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+            else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
             conteoHoy[tipo]++;
           }
         }
@@ -1312,6 +1423,19 @@ function obtenerGestionesHoyCruzadas() {
       }
     }
 
+    // 1b. Contar desde Historico_Gestiones (casos asignados movidos al asignar)
+    try {
+      const hojaHistG = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHistG && hojaHistG.getLastRow() > 1) {
+        const dataHistG = hojaHistG.getRange(2, 26, hojaHistG.getLastRow() - 1, 2).getDisplayValues(); // cols 26-27
+        for (let i = 0; i < dataHistG.length; i++) {
+          const asignado = String(dataHistG[i][0]).trim().toLowerCase(); // hist col 26
+          const fechaFin = String(dataHistG[i][1]).trim();               // hist col 27
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) conteoDigital++;
+        }
+      }
+    } catch(e) { Logger.log("obtenerGestionesHoyCruzadas Hist: " + e.message); }
+
     // 2. Contar gestiones hoy en hoja de reestudios "ORIGEN"
     try {
       const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
@@ -1381,6 +1505,27 @@ function obtenerDetalleGestionesHoy() {
       }
     }
 
+    // 1b. Desde Historico_Gestiones (casos asignados movidos al asignar)
+    try {
+      const hojaHistDet = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHistDet && hojaHistDet.getLastRow() > 1) {
+        const dataHDet = hojaHistDet.getRange(2, 1, hojaHistDet.getLastRow() - 1, 27).getDisplayValues();
+        for (let i = 0; i < dataHDet.length; i++) {
+          const asignado = String(dataHDet[i][25]).trim().toLowerCase(); // hist col 26
+          const fechaFin = String(dataHDet[i][26]).trim();               // hist col 27
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+            const partes = fechaFin.split(' ');
+            listado.push({
+              solicitud: String(dataHDet[i][0]).trim(),
+              tipo: String(dataHDet[i][20]).trim() || 'Digital',
+              horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
+              fuente: 'DIGITAL'
+            });
+          }
+        }
+      }
+    } catch(e) { Logger.log("obtenerDetalleGestionesHoy Hist: " + e.message); }
+
     // 2. Hoja de reestudios — col B(2): solicitud, E(5): tipoProceso, G(7): email, J(10): fechaFin
     try {
       const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
@@ -1425,5 +1570,82 @@ function obtenerDetalleGestionesHoy() {
   } catch (e) {
     Logger.log("Error en obtenerDetalleGestionesHoy: " + e.message);
     return { success: false, total: 0, porTipo: [], listado: [] };
+  }
+}
+
+// ===================================================================
+// PERMISOS E INCAPACIDADES
+// ===================================================================
+
+function _obtenerHojaPermisos_(ss) {
+  let hoja = ss.getSheetByName('Permisos_Incapacidades');
+  if (!hoja) {
+    hoja = ss.insertSheet('Permisos_Incapacidades');
+    hoja.appendRow(['ID','Fecha_Solicitud','Correo_Analista','Nombre_Analista','Tipo_Novedad',
+      'Fecha_Inicio','Fecha_Fin','Observacion_Analista','Estado','Fecha_Revision','Correo_Admin','Observacion_Admin']);
+    hoja.setFrozenRows(1);
+  }
+  return hoja;
+}
+
+function solicitarPermiso(tipoNovedad, fechaInicio, fechaFin, observacion) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch(e) { return { success: false, message: 'Servidor ocupado, reintenta.' }; }
+  try {
+    const correoAnalista = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const datosU = ss.getSheetByName('Usuarios').getDataRange().getValues();
+    let nombreAnalista = correoAnalista;
+    const admins = [];
+    for (let i = 1; i < datosU.length; i++) {
+      const correoFila = String(datosU[i][2]).toLowerCase().trim();
+      if (correoFila === correoAnalista) nombreAnalista = String(datosU[i][1]).trim();
+      if (String(datosU[i][23]).toUpperCase().trim() === 'ADMIN' && correoFila) admins.push(correoFila);
+    }
+    const ahora = new Date();
+    const id = 'PI-' + Utilities.formatDate(ahora, TIMEZONE, 'yyyyMMddHHmmss');
+    const fechaSolicitud = Utilities.formatDate(ahora, TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    _obtenerHojaPermisos_(ss).appendRow([
+      id, fechaSolicitud, correoAnalista, nombreAnalista,
+      tipoNovedad.toUpperCase(), fechaInicio, fechaFin, observacion || '',
+      'PENDIENTE', '', '', ''
+    ]);
+    SpreadsheetApp.flush();
+    if (admins.length > 0) {
+      const asunto = '[Permiso Pendiente] ' + tipoNovedad + ' — ' + nombreAnalista;
+      const cuerpo = 'El analista ' + nombreAnalista + ' (' + correoAnalista + ') solicita:\n\n'
+        + 'Tipo: ' + tipoNovedad + '\nFecha inicio: ' + fechaInicio + '\nFecha fin: ' + fechaFin
+        + '\nObservación: ' + (observacion || '—')
+        + '\n\nIngresa al Panel Admin → Novedades → Solicitudes de Permisos para aprobar o rechazar.';
+      try { MailApp.sendEmail(admins.join(','), asunto, cuerpo); } catch(eM) { Logger.log('Email error: ' + eM.message); }
+    }
+    return { success: true, message: 'Solicitud enviada. El administrador revisará tu permiso.' };
+  } catch(e) {
+    return { success: false, message: 'Error: ' + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function verificarPermisoVigenteHoy() {
+  try {
+    const correoAnalista = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja || hoja.getLastRow() < 2) return { tienePermiso: false };
+    const hoy = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+    const data = hoja.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][2]).toLowerCase().trim() !== correoAnalista) continue;
+      if (String(data[i][8]).toUpperCase() !== 'APROBADO') continue;
+      const fi = String(data[i][5]).trim();
+      const ff = String(data[i][6]).trim();
+      if (hoy >= fi && hoy <= ff) {
+        return { tienePermiso: true, tipo: String(data[i][4]).trim(), fechaInicio: fi, fechaFin: ff };
+      }
+    }
+    return { tienePermiso: false };
+  } catch(e) {
+    return { tienePermiso: false };
   }
 }

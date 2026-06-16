@@ -204,6 +204,51 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     position:fixed; top:0; left:0;
     display:flex; flex-direction:column;
     border-right:1px solid var(--border); z-index:100;
+    transition: width 0.22s ease;
+    overflow: hidden;
+}
+#sidebar.sidebar-mini {
+    width: 64px;
+}
+#sidebar.sidebar-mini .brand-name,
+#sidebar.sidebar-mini .sidebar-label,
+#sidebar.sidebar-mini .sidebar-profile-info,
+#sidebar.sidebar-mini .nav-link-admin span:not(.nav-badge) {
+    display: none !important;
+}
+#sidebar.sidebar-mini .nav-link-admin {
+    justify-content: center;
+    padding: 10px 0;
+}
+#sidebar.sidebar-mini .sidebar-profile {
+    justify-content: center;
+    padding: 12px 0;
+}
+#sidebar.sidebar-mini .sidebar-profile .avatar-circle {
+    margin: 0;
+}
+.sidebar-toggle-btn {
+    position: absolute;
+    top: 18px;
+    right: -14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 101;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    transition: transform 0.22s ease;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.sidebar-toggle-btn:hover { color: var(--text-main); }
+.main-content {
+    transition: margin-left 0.22s ease;
 }
 .sidebar-brand {
     display:flex; align-items:center; gap:12px;
@@ -295,7 +340,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 /* ================================================================
    MAIN CONTENT
    ================================================================ */
-.main-content { margin-left:var(--sidebar-w); padding:32px 28px 48px; min-height:100vh; }
+.main-content { margin-left:var(--sidebar-w); padding:32px 32px 48px; min-height:100vh; box-sizing:border-box; }
 .page-title { font-size:2rem; font-weight:800; letter-spacing:-0.5px; color:var(--text-main); }
 .page-sub   { font-size:0.83rem; color:var(--text-muted); margin-top:3px; }
 .btn-primary-brand {
@@ -601,6 +646,9 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 </div>
 
 <div id="sidebar">
+    <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Colapsar menú">
+        <i class="bi bi-chevron-left" id="sidebar-toggle-icon"></i>
+    </button>
     <div class="sidebar-brand">
         <div class="brand-icon"><i class="bi bi-grid-1x2-fill"></i></div>
         <span class="brand-name">Gestión de Analistas</span>
@@ -619,6 +667,11 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         </a>
         <a href="#" id="link-novedades" class="nav-link-admin" onclick="mostrarSeccion('novedades', event)">
             <i class="bi bi-clock-history"></i> Novedades
+            <span class="nav-badge" id="badge-permisos-pendientes" style="display:none;background:#f59e0b;">0</span>
+        </a>
+        <a href="#" id="link-turnos" class="nav-link-admin" onclick="mostrarSeccion('turnos', event)">
+            <i class="bi bi-calendar2-week-fill"></i> Turnos
+            <span class="nav-badge" id="badge-turnos-alerta" style="display:none;background:#ef4444;">0</span>
         </a>
         <!-- REDIRECCIÓN EXTERNA SEGURA AL NUEVO SCRIPT -->
         <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
@@ -931,70 +984,193 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     </div>
 
     <!-- SECCION NOVEDADES -->
-    <!-- SECCION NOVEDADES -->
     <div id="seccion-novedades" class="seccion-admin" style="display:none;">
         <div class="d-flex justify-content-between align-items-start mb-4">
             <div>
                 <h1 class="page-title">Control de Novedades</h1>
-                <p class="page-sub">Seguimiento detallado de estados, tiempos y disponibilidad del equipo.</p>
+                <p class="page-sub">Seguimiento de disponibilidad, estados y permisos del equipo.</p>
             </div>
-            <div class="d-flex gap-2 align-items-center">
-                <label class="small fw-bold me-1" style="white-space:nowrap;">Desde</label>
-                <input type="date" id="fechaNovedadesDesde" class="form-control" style="width:auto;font-size:0.82rem;">
-                <label class="small fw-bold me-1" style="white-space:nowrap;">Hasta</label>
-                <input type="date" id="fechaNovedadesHasta" class="form-control" style="width:auto;font-size:0.82rem;">
-                <button class="btn-outline-brand" onclick="cargarNovedades()">
+        </div>
+
+        <!-- Sub-tabs -->
+        <ul class="nav nav-tabs mb-4" id="novedades-tabs" style="border-bottom:2px solid #e2e8f0;">
+            <li class="nav-item">
+                <a class="nav-link active fw-bold" id="tab-disponibilidad" href="#" onclick="cambiarTabNovedades('disponibilidad',event)" style="border-radius:10px 10px 0 0;">
+                    <i class="bi bi-people-fill me-1"></i> Disponibilidad del Equipo
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link fw-bold" id="tab-solicitudes" href="#" onclick="cambiarTabNovedades('solicitudes',event)" style="border-radius:10px 10px 0 0;">
+                    <i class="bi bi-calendar2-check me-1"></i> Solicitudes de Permisos
+                    <span id="badge-tab-permisos" class="badge ms-1" style="background:#f59e0b;display:none;">0</span>
+                </a>
+            </li>
+        </ul>
+
+        <!-- Sub-tab: Disponibilidad -->
+        <div id="panel-disponibilidad">
+            <!-- Filtros -->
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-4 p-3 rounded-3" style="background:#f8fafc;border:1px solid #e2e8f0;">
+                <label class="small fw-bold" style="white-space:nowrap;">Desde</label>
+                <input type="date" id="fechaNovedadesDesde" class="form-control form-control-sm" style="width:auto;">
+                <label class="small fw-bold" style="white-space:nowrap;">Hasta</label>
+                <input type="date" id="fechaNovedadesHasta" class="form-control form-control-sm" style="width:auto;">
+                <select id="filtroNovEspecialidad" class="form-select form-select-sm" style="width:auto;">
+                    <option value="">Todas las especialidades</option>
+                    <option value="ESTUDIO DIGITAL">Estudio Digital</option>
+                    <option value="PENDIENTE_BIOMETRIA">Biometría</option>
+                    <option value="REESTUDIOS">Reestudios</option>
+                </select>
+                <select id="filtroNovTurno" class="form-select form-select-sm" style="width:auto;" id="filtroNovTurno">
+                    <option value="">Todos los turnos</option>
+                </select>
+                <button class="btn-outline-brand btn-sm" onclick="cargarNovedades()">
                     <i class="bi bi-arrow-clockwise"></i> Consultar
                 </button>
             </div>
+
+            <!-- KPIs -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                    <div class="p-3 rounded-3 text-center" style="background:#dcfce7;border:1px solid #bbf7d0;cursor:pointer;" onclick="filtrarNovedades('ACTIVO')">
+                        <div style="font-size:1.8rem;font-weight:800;color:#15803d;" id="nov_activos">0</div>
+                        <div class="small fw-bold" style="color:#15803d;">Activos Ahora</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 rounded-3 text-center" style="background:#fef3c7;border:1px solid #fde68a;cursor:pointer;" onclick="filtrarNovedades('NOVEDAD')">
+                        <div style="font-size:1.8rem;font-weight:800;color:#a16207;" id="nov_en_novedad">0</div>
+                        <div class="small fw-bold" style="color:#a16207;">En Novedad</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 rounded-3 text-center" style="background:#f1f5f9;border:1px solid #e2e8f0;cursor:pointer;" onclick="filtrarNovedades('INACTIVO')">
+                        <div style="font-size:1.8rem;font-weight:800;color:#475569;" id="nov_sin_conexion">0</div>
+                        <div class="small fw-bold" style="color:#475569;">Sin Conexión</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-3 rounded-3 text-center" style="background:#dbeafe;border:1px solid #bfdbfe;cursor:pointer;" onclick="filtrarNovedades('')">
+                        <div style="font-size:1.8rem;font-weight:800;color:#1d4ed8;" id="nov_total_analistas">0</div>
+                        <div class="small fw-bold" style="color:#1d4ed8;">Total Analistas</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla estados -->
+            <div class="table-container mb-4">
+                <div class="table-responsive">
+                    <table id="tablaNovedades" class="table w-100">
+                        <thead>
+                            <tr>
+                                <th>Analista</th>
+                                <th>Equipo</th>
+                                <th>Turno</th>
+                                <th>Estado Actual</th>
+                                <th>Tiempo en Estado</th>
+                                <th>1ª Asignación</th>
+                                <th>Último Cierre</th>
+                                <th>Desglose de Tiempos</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoNovedades"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Permisos aprobados en rango -->
+            <div id="bloque-permisos-aprobados" style="display:none;">
+                <h5 class="fw-bold mb-3" style="color:#92400e;"><i class="bi bi-calendar-check me-2"></i>Ausencias con Permiso Aprobado en este Período</h5>
+                <div class="table-container">
+                    <div class="table-responsive">
+                        <table id="tablaPermisosAprobados" class="table w-100">
+                            <thead>
+                                <tr>
+                                    <th>Analista</th>
+                                    <th>Tipo de Permiso</th>
+                                    <th>Fecha Inicio</th>
+                                    <th>Fecha Fin</th>
+                                    <th>Observación</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cuerpoPermisosAprobados"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- KPIs -->
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 text-center" style="background:#dcfce7;border:1px solid #bbf7d0;cursor:pointer;" onclick="filtrarNovedades('ACTIVO')">
-                    <div style="font-size:1.8rem;font-weight:800;color:#15803d;" id="nov_activos">0</div>
-                    <div class="small fw-bold" style="color:#15803d;">Activos Ahora</div>
+        <!-- Sub-tab: Solicitudes de Permisos -->
+        <div id="panel-solicitudes" style="display:none;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm fw-bold" id="filtro-sol-pendiente" onclick="filtrarSolicitudes('PENDIENTE')" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:10px;">Pendientes</button>
+                    <button class="btn btn-sm fw-bold" id="filtro-sol-todos" onclick="filtrarSolicitudes('TODOS')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:10px;">Todos</button>
                 </div>
+                <button class="btn-outline-brand btn-sm" onclick="cargarSolicitudesPermisos('TODOS')">
+                    <i class="bi bi-arrow-clockwise"></i> Actualizar
+                </button>
             </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 text-center" style="background:#fef3c7;border:1px solid #fde68a;cursor:pointer;" onclick="filtrarNovedades('NOVEDAD')">
-                    <div style="font-size:1.8rem;font-weight:800;color:#a16207;" id="nov_en_novedad">0</div>
-                    <div class="small fw-bold" style="color:#a16207;">En Novedad</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 text-center" style="background:#f1f5f9;border:1px solid #e2e8f0;cursor:pointer;" onclick="filtrarNovedades('INACTIVO')">
-                    <div style="font-size:1.8rem;font-weight:800;color:#475569;" id="nov_sin_conexion">0</div>
-                    <div class="small fw-bold" style="color:#475569;">Sin Conexión</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="p-3 rounded-3 text-center" style="background:#dbeafe;border:1px solid #bfdbfe;cursor:pointer;" onclick="filtrarNovedades('')">
-                    <div style="font-size:1.8rem;font-weight:800;color:#1d4ed8;" id="nov_total_analistas">0</div>
-                    <div class="small fw-bold" style="color:#1d4ed8;">Total Analistas</div>
+            <div class="table-container">
+                <div class="table-responsive">
+                    <table id="tablaSolicitudesPermisos" class="table w-100">
+                        <thead>
+                            <tr>
+                                <th>Analista</th>
+                                <th>Tipo</th>
+                                <th>Fecha Inicio</th>
+                                <th>Fecha Fin</th>
+                                <th>Observación</th>
+                                <th>Solicitado</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cuerpoSolicitudesPermisos">
+                            <tr><td colspan="8" class="text-center py-4 text-muted">Cargando...</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Tabla -->
-        <div class="table-container">
-            <div class="table-responsive">
-                <table id="tablaNovedades" class="table w-100">
-                    <thead>
-                        <tr>
-                            <th>Analista</th>
-                            <th>Equipo</th>
-                            <th>Estado Actual</th>
-                            <th>Tiempo en Estado</th>
-                            <th>1ª Asignación</th>
-                            <th>Último Cierre</th>
-                            <th>Desglose de Tiempos</th>
-                        </tr>
-                    </thead>
-                    <tbody id="cuerpoNovedades"></tbody>
-                </table>
+    <div id="seccion-turnos" class="seccion-admin" style="display:none;">
+        <div class="d-flex justify-content-between align-items-start mb-4">
+            <div>
+                <h1 class="page-title">Turnos y Horarios</h1>
+                <p class="page-sub">Gestiona los turnos del equipo, asigna analistas y registra horas extra.</p>
             </div>
+            <button class="btn btn-primary" onclick="abrirModalTurno(null)">
+                <i class="bi bi-plus-lg"></i> Nuevo turno
+            </button>
+        </div>
+
+        <div id="turnos-board" class="mb-4">
+            <div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+        </div>
+
+        <div class="cal-grid-wrap mt-4">
+            <div class="cal-header">
+                <div class="d-flex align-items-center gap-3">
+                    <h5 class="mb-0 fw-bold">Horas Extra</h5>
+                    <select id="cal-filtro-email" class="form-select form-select-sm" style="width:auto;" onchange="renderCalendario(_calAnio,_calMes)">
+                        <option value="">Todos los analistas</option>
+                    </select>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="cambiarMes(-1)"><i class="bi bi-chevron-left"></i></button>
+                    <span id="cal-titulo" class="fw-bold" style="min-width:140px;text-align:center;"></span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="cambiarMes(1)"><i class="bi bi-chevron-right"></i></button>
+                </div>
+            </div>
+            <div class="cal-inner">
+                <div class="cal-dias-semana">
+                    <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
+                </div>
+                <div id="cal-grid"></div>
+            </div>
+            <div class="mt-2 small text-muted"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>Día con horas extra registradas</div>
         </div>
     </div>
 </div>
@@ -1254,6 +1430,7 @@ window.onload = function() {
     }).admin_getPrioridadGlobal();
 
     refrescarDashboard();
+    actualizarBadgePermisos();
 };
 
 // ==============================================================
@@ -1327,10 +1504,461 @@ function mostrarSeccion(id, e) {
     $('#seccion-' + id).fadeIn(240);
     $('.nav-link-admin').removeClass('active');
     $('#link-' + id).addClass('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     if (id === 'usuarios') cargarUsuarios();
     if (id === 'dashboard') refrescarDashboard();
     if (id === 'cupos') cargarCuposGenerales();
-    if (id === 'novedades') cargarNovedades();
+    if (id === 'novedades') { cargarNovedades(); actualizarBadgePermisos(); }
+    if (id === 'turnos') cargarTurnos();
+}
+
+// ─── SIDEBAR TOGGLE ────────────────────────────────────────────────────────────
+function toggleSidebar() {
+    var sidebar = document.getElementById('sidebar');
+    var main    = document.querySelector('.main-content');
+    var icon    = document.getElementById('sidebar-toggle-icon');
+    var mini    = sidebar.classList.toggle('sidebar-mini');
+    main.style.marginLeft = mini ? '64px' : 'var(--sidebar-w, 240px)';
+    icon.className = mini ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+}
+
+// ─── SECCIÓN TURNOS ────────────────────────────────────────────────────────────
+var _turnosData = { turnos: [], analistas: [], sinTurno: [] };
+var _turnoEditando = null;
+var _calMes = new Date().getMonth();
+var _calAnio = new Date().getFullYear();
+
+function cargarTurnos() {
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (!res.success) { Swal.fire('Error', res.message, 'error'); return; }
+            _turnosData = res;
+            renderTurnosVista();
+            actualizarBadgeTurnos(res.sinTurno.length);
+        })
+        .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+        .admin_getTurnosData();
+}
+
+function actualizarBadgeTurnos(n) {
+    var b = document.getElementById('badge-turnos-alerta');
+    if (n > 0) { b.textContent = n; b.style.display = 'inline-block'; }
+    else { b.style.display = 'none'; }
+}
+
+function abrirModalSinTurno() {
+    var lista = (window._sinTurnoLista || []);
+    var analistas = (window._sinTurnoAnalistas || []);
+    var items = lista.map(function(email) {
+        var a = analistas.find(function(x){ return x.email === email; });
+        var nombre = a ? (a.nombre || email) : email;
+        return '<div class="d-flex align-items-center justify-content-between py-2 border-bottom">' +
+            '<div><div class="fw-semibold" style="font-size:.9rem;">' + nombre + '</div>' +
+            '<div class="text-muted" style="font-size:.78rem;">' + email + '</div></div>' +
+            '<button class="btn btn-sm btn-primary" onclick="bootstrap.Modal.getInstance(document.getElementById(\'modalSinTurno\')).hide();abrirModalAsignar(\'' + email + '\',\'' + nombre.replace(/'/g,"\\'") + '\')">Asignar</button>' +
+            '</div>';
+    }).join('');
+    document.getElementById('sinturno-lista-body').innerHTML = items || '<p class="text-muted">Sin pendientes.</p>';
+    new bootstrap.Modal(document.getElementById('modalSinTurno')).show();
+}
+
+function renderTurnosVista() {
+    var d = _turnosData;
+    // Guardar lista para el modal
+    window._sinTurnoLista = d.sinTurno || [];
+    window._sinTurnoAnalistas = d.analistas || [];
+
+    var alertaHtml = '';
+    if (d.sinTurno && d.sinTurno.length > 0) {
+        var n = d.sinTurno.length;
+        alertaHtml = '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-2 mb-3 py-2" style="border-radius:10px;">' +
+            '<div class="d-flex align-items-center gap-2">' +
+            '<i class="bi bi-exclamation-triangle-fill text-warning"></i>' +
+            '<span><strong>' + n + ' analista' + (n>1?'s':'') + ' sin turno asignado.</strong></span>' +
+            '</div>' +
+            '<button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="abrirModalSinTurno()"><i class="bi bi-list"></i> Ver lista</button>' +
+            '</div>';
+    }
+
+    // Construir columnas por turno + columna "sin turno"
+    var turnos = (d.turnos || []).filter(function(t){ return t.activo; });
+    var analistas = d.analistas || [];
+
+    if (turnos.length === 0) {
+        document.getElementById('turnos-board').innerHTML = alertaHtml +
+            '<div class="turnos-board-scroll"><div class="text-center py-5 text-muted" style="background:var(--bg-card);border-radius:14px;border:2px dashed #e2e8f0;">' +
+            '<i class="bi bi-calendar2-week fs-1 d-block mb-3" style="color:#94a3b8;"></i>' +
+            '<div class="fw-bold mb-1">No hay turnos configurados</div>' +
+            '<div class="small mb-3">Crea el primer turno para comenzar a asignar analistas y medir tiempos.</div>' +
+            '<button class="btn btn-primary" onclick="abrirModalTurno(null)"><i class="bi bi-plus-lg"></i> Crear primer turno</button>' +
+            '</div></div>';
+        renderCalendario(_calAnio, _calMes);
+        return;
+    }
+
+    var cols = turnos.map(function(t) {
+        var miembros = analistas.filter(function(a){ return a.idTurnoActual === t.id; });
+        var chips = miembros.map(function(a) {
+            var email = a.email; var nombre = (a.nombre || a.email).replace(/'/g, '&#39;');
+            return '<div class="turno-chip" draggable="true" title="' + a.email + '" ' +
+                'ondragstart="onChipDragStart(event,\'' + email + '\',\'' + nombre + '\',\'' + t.id + '\')" ' +
+                'ondragend="this.classList.remove(\'dragging\')">' +
+                '<span>' + (a.nombre || a.email) + '</span>' +
+                '<button class="btn-chip-mover" onclick="abrirModalAsignar(\'' + email + '\',\'' + nombre + '\')" title="Cambiar turno"><i class="bi bi-arrow-left-right"></i></button>' +
+                '</div>';
+        }).join('');
+        var diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']
+            .filter(function(_,i){ return [t.lun,t.mar,t.mie,t.jue,t.vie,t.sab,t.dom][i]; }).join(' · ');
+        var sinTurnoCount = (d.sinTurno || []).length;
+        return '<div class="turno-col" ' +
+            'ondragover="onColDragOver(event,this)" ondragleave="this.classList.remove(\'drag-over\')" ' +
+            'ondrop="onChipDrop(event,this,\'' + t.id + '\',\'' + t.nombre.replace(/'/g,"'") + '\')">' +
+            '<div class="turno-col-header">' +
+            '<div>' +
+            '<div class="turno-nombre">' + t.nombre + '<span class="turno-count">' + miembros.length + '</span></div>' +
+            '<div class="turno-horario"><i class="bi bi-clock"></i> ' + t.horaInicio + ' – ' + t.horaFin + '</div>' +
+            '<div class="turno-dias">' + diasLabel + '</div>' +
+            '</div>' +
+            '<div class="d-flex flex-column gap-1">' +
+            '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalTurno(\'' + t.id + '\')"><i class="bi bi-pencil"></i></button>' +
+            '<button class="btn btn-sm btn-outline-danger" onclick="desactivarTurno(\'' + t.id + '\',\'' + t.nombre + '\')"><i class="bi bi-x-circle"></i></button>' +
+            '</div></div>' +
+            '<div class="turno-miembros">' + (chips || '<div class="text-muted small py-2 text-center">Arrastra analistas aquí</div>') + '</div>' +
+            '<button class="btn btn-sm btn-outline-secondary w-100 mt-2" onclick="abrirModalAsignarATurno(\'' + t.id + '\')"><i class="bi bi-person-plus"></i> Agregar analista</button>' +
+            (sinTurnoCount > 0 ? '<button class="btn btn-sm btn-primary w-100 mt-1" onclick="agregarTodosSinTurno(\'' + t.id + '\',\'' + t.nombre.replace(/'/g,"'") + '\')"><i class="bi bi-people-fill"></i> Agregar todos sin turno (' + sinTurnoCount + ')</button>' : '') +
+            '</div>';
+    }).join('');
+
+    // Columna sin turno
+    var sinTurnoList = d.sinTurno || [];
+    var sinTurnoChips = sinTurnoList.map(function(email) {
+        var a = analistas.find(function(x){ return x.email === email; });
+        var nombre = a ? (a.nombre || email) : email;
+        return '<div class="turno-chip turno-chip-warn" draggable="true" data-nombre="' + nombre + '" title="' + email + '" ' +
+            'ondragstart="onChipDragStart(event,\'' + email + '\',\'' + nombre.replace(/'/g,'&#39;') + '\',\'\')" ' +
+            'ondragend="this.classList.remove(\'dragging\')">' +
+            '<span>' + nombre + '</span>' +
+            '<button class="btn-chip-mover" onclick="abrirModalAsignar(\'' + email + '\',\'' + nombre.replace(/'/g,'&#39;') + '\')" title="Asignar turno"><i class="bi bi-plus-circle"></i></button>' +
+            '</div>';
+    }).join('');
+
+    if (sinTurnoList.length > 0) {
+        cols += '<div class="turno-col turno-col-warn" id="col-sin-turno">' +
+            '<div class="turno-col-header"><div><div class="turno-nombre text-danger">Sin turno<span class="turno-count" style="background:#fee2e2;color:#b91c1c;">' + sinTurnoList.length + '</span></div></div></div>' +
+            '<input type="text" class="form-control form-control-sm mb-2" placeholder="Buscar..." oninput="filtrarSinTurno(this.value)">' +
+            '<div class="turno-miembros" id="sinturno-chips">' + sinTurnoChips + '</div>' +
+            '</div>';
+    }
+
+    document.getElementById('turnos-board').innerHTML = alertaHtml +
+        '<div class="turnos-board-scroll"><div class="turnos-grid">' + cols + '</div></div>';
+
+    // Poblar filtro de calendario con analistas
+    var filtroSelect = document.getElementById('cal-filtro-email');
+    if (filtroSelect) {
+        filtroSelect.innerHTML = '<option value="">Todos los analistas</option>' +
+            (d.analistas || []).map(function(a) {
+                return '<option value="' + a.email + '">' + (a.nombre || a.email) + '</option>';
+            }).join('');
+    }
+
+    renderCalendario(_calAnio, _calMes);
+}
+
+// ─── Modal Turno (crear/editar) ────────────────────────────────────────────────
+function abrirModalTurno(idTurno) {
+    _turnoEditando = null;
+    var t = idTurno ? _turnosData.turnos.find(function(x){ return x.id === idTurno; }) : null;
+    _turnoEditando = t || null;
+
+    document.getElementById('turno-modal-titulo').textContent = t ? 'Editar turno' : 'Nuevo turno';
+    document.getElementById('turno-id').value       = t ? t.id : ('T' + Date.now());
+    document.getElementById('turno-nombre').value   = t ? t.nombre : '';
+    document.getElementById('turno-inicio').value   = t ? t.horaInicio : '06:00';
+    document.getElementById('turno-fin').value      = t ? t.horaFin : '15:00';
+    ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(d) {
+        document.getElementById('turno-dia-' + d).checked = t ? !!t[d] : (d !== 'sab' && d !== 'dom');
+    });
+    var m = new bootstrap.Modal(document.getElementById('modalTurno'));
+    m.show();
+}
+
+function guardarTurno() {
+    var turno = {
+        id:        document.getElementById('turno-id').value.trim(),
+        nombre:    document.getElementById('turno-nombre').value.trim(),
+        activo:    true,
+        horaInicio: document.getElementById('turno-inicio').value,
+        horaFin:   document.getElementById('turno-fin').value
+    };
+    ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(d) {
+        turno[d] = document.getElementById('turno-dia-' + d).checked;
+    });
+    if (!turno.nombre) { Swal.fire('Atención', 'El nombre del turno es obligatorio.', 'warning'); return; }
+    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function(){ Swal.showLoading(); } });
+    google.script.run
+        .withSuccessHandler(function(res) {
+            bootstrap.Modal.getInstance(document.getElementById('modalTurno')).hide();
+            if (res.success) { Swal.fire({ icon:'success', title:'Turno guardado', timer:1500, showConfirmButton:false }); cargarTurnos(); }
+            else Swal.fire('Error', res.message, 'error');
+        })
+        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+        .admin_guardarTurno(turno);
+}
+
+function desactivarTurno(idTurno, nombre) {
+    Swal.fire({
+        title: '¿Desactivar ' + nombre + '?',
+        text: 'Los analistas asignados a este turno quedarán sin turno y deberás reasignarlos.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonColor: '#ef4444', cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sí, desactivar', cancelButtonText: 'Cancelar'
+    }).then(function(r) {
+        if (!r.isConfirmed) return;
+        google.script.run
+            .withSuccessHandler(function(res) {
+                if (res.success) {
+                    var msg = res.message;
+                    if (res.afectados && res.afectados.length > 0) msg += '\nAfectados: ' + res.afectados.join(', ');
+                    Swal.fire({ icon:'warning', title:'Turno desactivado', text: msg, confirmButtonColor:'#253150' });
+                    cargarTurnos();
+                } else Swal.fire('Error', res.message, 'error');
+            })
+            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .admin_desactivarTurno(idTurno);
+    });
+}
+
+// ─── Modal Asignar analista a turno ────────────────────────────────────────────
+var _emailAsignando = '';
+function abrirModalAsignar(email, nombre) {
+    _emailAsignando = email;
+    document.getElementById('asignar-nombre').textContent = nombre;
+    var select = document.getElementById('asignar-turno-select');
+    select.innerHTML = _turnosData.turnos
+        .filter(function(t){ return t.activo; })
+        .map(function(t){ return '<option value="' + t.id + '">' + t.nombre + ' (' + t.horaInicio + '–' + t.horaFin + ')</option>'; })
+        .join('');
+    document.getElementById('asignar-desde').value = new Date().toISOString().split('T')[0];
+    new bootstrap.Modal(document.getElementById('modalAsignar')).show();
+}
+
+function abrirModalAsignarATurno(idTurno) {
+    var sinTurno = _turnosData.sinTurno || [];
+    if (sinTurno.length === 0) { Swal.fire('Sin analistas', 'Todos los analistas tienen turno asignado.', 'info'); return; }
+    var email = sinTurno[0];
+    var a = (_turnosData.analistas || []).find(function(x){ return x.email === email; });
+    abrirModalAsignar(email, a ? (a.nombre || email) : email);
+    document.getElementById('asignar-turno-select').value = idTurno;
+}
+
+function confirmarAsignacion() {
+    var idTurno  = document.getElementById('asignar-turno-select').value;
+    var desde    = document.getElementById('asignar-desde').value;
+    if (!idTurno || !desde) { Swal.fire('Atención', 'Selecciona turno y fecha de inicio.', 'warning'); return; }
+    Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function(){ Swal.showLoading(); } });
+    google.script.run
+        .withSuccessHandler(function(res) {
+            bootstrap.Modal.getInstance(document.getElementById('modalAsignar')).hide();
+            if (res.success) { Swal.fire({ icon:'success', title:'Asignado', timer:1200, showConfirmButton:false }); cargarTurnos(); }
+            else Swal.fire('Error', res.message, 'error');
+        })
+        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+        .admin_asignarTurnoAnalista(_emailAsignando, idTurno, desde);
+}
+
+// ─── Drag & Drop de chips ──────────────────────────────────────────────────────
+var _dragEmail = '', _dragNombre = '', _dragOrigen = '';
+
+function onChipDragStart(event, email, nombre, idTurnoOrigen) {
+    _dragEmail   = email;
+    _dragNombre  = nombre;
+    _dragOrigen  = idTurnoOrigen;
+    event.currentTarget.classList.add('dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', email);
+}
+
+function onColDragOver(event, el) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    el.classList.add('drag-over');
+}
+
+function onChipDrop(event, el, idTurnoDestino, nombreTurno) {
+    event.preventDefault();
+    el.classList.remove('drag-over');
+    if (!_dragEmail || _dragOrigen === idTurnoDestino) return;
+    var hoy = new Date(); var mm = hoy.getMonth()+1; var dd = hoy.getDate();
+    var fechaDesde = hoy.getFullYear() + '-' + (mm<10?'0':'')+mm + '-' + (dd<10?'0':'')+dd;
+    Swal.fire({ title: 'Mover a ' + nombreTurno, html: '<strong>' + _dragNombre + '</strong> será asignado(a) a este turno desde hoy.', icon: 'question',
+        showCancelButton: true, confirmButtonColor:'#253150', cancelButtonColor:'#64748b',
+        confirmButtonText: 'Sí, mover', cancelButtonText: 'Cancelar' }).then(function(result) {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function(){ Swal.showLoading(); } });
+        google.script.run
+            .withSuccessHandler(function(res) {
+                if (res.success) { Swal.fire({ icon:'success', title:'Movido', timer:1000, showConfirmButton:false }); cargarTurnos(); }
+                else Swal.fire('Error', res.message, 'error');
+            })
+            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .admin_asignarTurnoAnalista(_dragEmail, idTurnoDestino, fechaDesde);
+    });
+}
+
+// ─── Agregar todos los sin turno a un turno ────────────────────────────────────
+function agregarTodosSinTurno(idTurno, nombreTurno) {
+    var n = (_turnosData.sinTurno || []).length;
+    if (n === 0) return;
+    Swal.fire({ title: 'Agregar todos a "' + nombreTurno + '"',
+        html: 'Se asignarán <strong>' + n + ' analistas</strong> sin turno a este turno.<br><br>' +
+              '<label class="form-label small fw-bold">Vigente desde</label>' +
+              '<input type="date" id="bulk-desde" class="form-control form-control-sm mt-1" value="' +
+              (function(){ var d=new Date(); var m=d.getMonth()+1; var dd=d.getDate(); return d.getFullYear()+'-'+(m<10?'0':'')+m+'-'+(dd<10?'0':'')+dd; })() + '">',
+        icon: 'question', showCancelButton: true,
+        confirmButtonColor:'#253150', cancelButtonColor:'#64748b',
+        confirmButtonText: 'Asignar todos', cancelButtonText: 'Cancelar',
+        preConfirm: function() {
+            var v = document.getElementById('bulk-desde').value;
+            if (!v) { Swal.showValidationMessage('Selecciona la fecha de inicio'); return false; }
+            return v;
+        }
+    }).then(function(result) {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: 'Asignando ' + n + ' analistas...', allowOutsideClick: false, didOpen: function(){ Swal.showLoading(); } });
+        google.script.run
+            .withSuccessHandler(function(res) {
+                if (res.success) { Swal.fire({ icon:'success', title:'Listo', text: res.message, confirmButtonColor:'#253150' }); cargarTurnos(); }
+                else Swal.fire('Error', res.message, 'error');
+            })
+            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .admin_asignarTodosSinTurno(idTurno, result.value);
+    });
+}
+
+// ─── Buscar en "Sin turno" ─────────────────────────────────────────────────────
+function filtrarSinTurno(texto) {
+    var chips = document.querySelectorAll('#sinturno-chips .turno-chip');
+    var q = texto.toLowerCase().trim();
+    chips.forEach(function(chip) {
+        var nombre = (chip.querySelector('span') || {}).textContent || '';
+        chip.style.display = !q || nombre.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+// ─── Calendario de horas extra ─────────────────────────────────────────────────
+function renderCalendario(anio, mes) {
+    _calAnio = anio; _calMes = mes;
+    var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    document.getElementById('cal-titulo').textContent = meses[mes] + ' ' + anio;
+
+    var primerDia = new Date(anio, mes, 1).getDay();
+    var diasEnMes = new Date(anio, mes + 1, 0).getDate();
+    var offset = primerDia === 0 ? 6 : primerDia - 1;
+
+    var celdas = '';
+    for (var i = 0; i < offset; i++) celdas += '<div class="cal-dia cal-vacio"></div>';
+    for (var d = 1; d <= diasEnMes; d++) {
+        var fechaStr = anio + '-' + String(mes+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+        var dow = new Date(anio, mes, d).getDay();
+        var esFinSemana = dow === 0 || dow === 6;
+        celdas += '<div class="cal-dia' + (esFinSemana ? ' cal-finsemana' : '') + '" onclick="abrirDiaExtra(\'' + fechaStr + '\')">' +
+            '<span class="cal-num">' + d + '</span>' +
+            '<span class="cal-extra-dot" id="cal-dot-' + fechaStr + '" style="display:none"></span>' +
+            '</div>';
+    }
+    document.getElementById('cal-grid').innerHTML = celdas;
+
+    // Marcar días con extras
+    var emailFiltro = (document.getElementById('cal-filtro-email') || {}).value || '';
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (!res.success) return;
+            res.extras.forEach(function(e) {
+                var dot = document.getElementById('cal-dot-' + e.fecha);
+                if (dot) dot.style.display = 'inline-block';
+            });
+        })
+        .admin_getHorasExtra(emailFiltro, anio, mes + 1);
+}
+
+function cambiarMes(delta) {
+    _calMes += delta;
+    if (_calMes > 11) { _calMes = 0; _calAnio++; }
+    if (_calMes < 0)  { _calMes = 11; _calAnio--; }
+    renderCalendario(_calAnio, _calMes);
+}
+
+var _fechaDiaExtra = '';
+function abrirDiaExtra(fechaStr) {
+    _fechaDiaExtra = fechaStr;
+    document.getElementById('extra-fecha-label').textContent = fechaStr;
+    document.getElementById('extra-inicio').value = '15:00';
+    document.getElementById('extra-fin').value    = '18:00';
+    document.getElementById('extra-desc').value   = '';
+
+    var select = document.getElementById('extra-email-select');
+    select.innerHTML = (_turnosData.analistas || []).map(function(a) {
+        return '<option value="' + a.email + '">' + (a.nombre || a.email) + '</option>';
+    }).join('');
+
+    // Cargar extras del día
+    google.script.run
+        .withSuccessHandler(function(res) {
+            var html = '<div class="small text-muted mb-2">Extras registrados este día:</div>';
+            if (!res.success || res.extras.length === 0) {
+                html += '<span class="text-muted small">Ninguno.</span>';
+            } else {
+                html += res.extras.map(function(e) {
+                    return '<div class="d-flex align-items-center gap-2 mb-1">' +
+                        '<span class="badge bg-secondary">' + e.email + '</span>' +
+                        '<span>' + e.horaInicio + ' – ' + e.horaFin + '</span>' +
+                        '<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarExtra(' + e.fila + ')"><i class="bi bi-trash"></i></button>' +
+                        '</div>';
+                }).join('');
+            }
+            document.getElementById('extra-lista').innerHTML = html;
+        })
+        .admin_getHorasExtra('', parseInt(_calAnio), parseInt(_calMes) + 1);
+
+    new bootstrap.Modal(document.getElementById('modalExtra')).show();
+}
+
+function guardarHorasExtra() {
+    var extra = {
+        email:      document.getElementById('extra-email-select').value,
+        fecha:      _fechaDiaExtra,
+        horaInicio: document.getElementById('extra-inicio').value,
+        horaFin:    document.getElementById('extra-fin').value,
+        descripcion: document.getElementById('extra-desc').value
+    };
+    if (!extra.email || !extra.horaInicio || !extra.horaFin) {
+        Swal.fire('Atención', 'Completa todos los campos.', 'warning'); return;
+    }
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (res.success) {
+                abrirDiaExtra(_fechaDiaExtra);
+                renderCalendario(_calAnio, _calMes);
+            } else Swal.fire('Error', res.message, 'error');
+        })
+        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+        .admin_guardarHorasExtra(extra);
+}
+
+function eliminarExtra(fila) {
+    Swal.fire({ title:'¿Eliminar esta entrada?', icon:'warning', showCancelButton:true,
+        confirmButtonColor:'#ef4444', cancelButtonColor:'#64748b',
+        confirmButtonText:'Sí, eliminar', cancelButtonText:'Cancelar'
+    }).then(function(r) {
+        if (!r.isConfirmed) return;
+        google.script.run
+            .withSuccessHandler(function(res) {
+                if (res.success) abrirDiaExtra(_fechaDiaExtra);
+                else Swal.fire('Error', res.message, 'error');
+            })
+            .admin_eliminarHorasExtra(fila);
+    });
 }
 
 function refrescarDashboard() {
@@ -1878,6 +2506,18 @@ function ejecutarPanicGlobal() {
 }
 
 // ========== NOVEDADES ==========
+var _turnosDisponibles = [];
+
+function cambiarTabNovedades(tab, e) {
+    if (e) e.preventDefault();
+    document.getElementById('panel-disponibilidad').style.display = tab === 'disponibilidad' ? '' : 'none';
+    document.getElementById('panel-solicitudes').style.display = tab === 'solicitudes' ? '' : 'none';
+    document.getElementById('tab-disponibilidad').classList.toggle('active', tab === 'disponibilidad');
+    document.getElementById('tab-solicitudes').classList.toggle('active', tab === 'solicitudes');
+    if (tab === 'solicitudes') cargarSolicitudesPermisos('TODOS');
+    if (tab === 'disponibilidad') cargarNovedades();
+}
+
 function cargarNovedades() {
     var desdeInput = document.getElementById('fechaNovedadesDesde');
     var hastaInput = document.getElementById('fechaNovedadesHasta');
@@ -1890,29 +2530,45 @@ function cargarNovedades() {
     if (!hastaInput.value) hastaInput.value = desdeInput.value;
 
     if ($.fn.DataTable.isDataTable('#tablaNovedades')) { $('#tablaNovedades').DataTable().destroy(); }
-    $('#cuerpoNovedades').html('<tr><td colspan="7" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>');
-    
+    $('#cuerpoNovedades').html('<tr><td colspan="8" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>');
+
     var desde = desdeInput.value;
     var hasta = hastaInput.value;
+    var filtroEsp = (document.getElementById('filtroNovEspecialidad') || {}).value || '';
+    var filtroTurno = (document.getElementById('filtroNovTurno') || {}).value || '';
 
     google.script.run.withSuccessHandler(function(res) {
         var datos = res.datos || [];
+        var permisos = res.permisos || [];
         var html = '';
         var totalActivos = 0, totalEnNovedad = 0, totalSinConexion = 0;
 
+        // Poblar select de turnos si no está ya
+        if (_turnosDisponibles.length === 0 && datos.length > 0) {
+            var turnosSet = {};
+            datos.forEach(function(d) { if (d.turno) turnosSet[d.turno] = true; });
+            var sel = document.getElementById('filtroNovTurno');
+            Object.keys(turnosSet).sort().forEach(function(t) {
+                if (!sel.querySelector('option[value="' + t + '"]')) {
+                    var opt = document.createElement('option'); opt.value = t; opt.textContent = t;
+                    sel.appendChild(opt);
+                }
+            });
+            _turnosDisponibles = Object.keys(turnosSet);
+        }
+
         for (var i = 0; i < datos.length; i++) {
             var d = datos[i];
-            var estadoUp = (d.estadoActual || '').toUpperCase();
+            if (filtroEsp && d.especialidad !== filtroEsp) continue;
+            if (filtroTurno && d.turno !== filtroTurno) continue;
 
-            // KPIs
+            var estadoUp = (d.estadoActual || '').toUpperCase();
             if (estadoUp === 'ACTIVO') totalActivos++;
             else if (estadoUp === 'INACTIVO' || estadoUp === '' || Object.keys(d.estados).length === 0) totalSinConexion++;
             else totalEnNovedad++;
 
-            // Tiempo en estado actual
             var tiempoEstadoFmt = d.tiempoEnEstadoActual > 0 ? formatMinToHM(d.tiempoEnEstadoActual) : '—';
 
-            // Desglose de tiempos por estado (badges)
             var desglose = '';
             var estadosKeys = Object.keys(d.estados);
             if (estadosKeys.length > 0) {
@@ -1922,42 +2578,64 @@ function cargarNovedades() {
                     var min = d.estados[est];
                     var esProductivo = (est === 'ACTIVO');
                     desglose += '<span class="badge me-1 mb-1" style="font-size:0.65rem;padding:3px 7px;background:' + (esProductivo ? '#dcfce7' : '#fef2f2') + ';color:' + (esProductivo ? '#15803d' : '#991b1b') + ';border:1px solid ' + (esProductivo ? '#bbf7d0' : '#fecaca') + ';">';
-                    desglose += est + ': ' + formatMinToHM(min);
-                    desglose += '</span>';
+                    desglose += est + ': ' + formatMinToHM(min) + '</span>';
                 }
             } else {
                 desglose = '<span class="text-muted small">Sin actividad</span>';
             }
 
             html += '<tr>';
-            html += '<td><span class="fw-bold">' + d.nombre + '</span></td>';
+            html += '<td><span class="fw-bold">' + d.nombre + '</span><div class="small text-muted">' + d.correo + '</div></td>';
             html += '<td>' + badgeEspecialidad(d.especialidad) + '</td>';
+            html += '<td>' + (d.turno ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:0.72rem;padding:3px 8px;">' + d.turno + '</span>' : '<span class="text-muted small">—</span>') + '</td>';
             html += '<td data-search="' + (d.estadoActual || 'INACTIVO') + '">' + badgeEstado(d.estadoActual) + '</td>';
             html += '<td><span class="fw-bold" style="color:#253150;">' + tiempoEstadoFmt + '</span></td>';
             html += '<td>' + (d.primeraAsignacion || '<span class="text-muted">—</span>') + '</td>';
             html += '<td>' + (d.ultimoCierre || '<span class="text-muted">—</span>') + '</td>';
-            html += '<td style="max-width:400px;">' + desglose + '</td>';
+            html += '<td style="max-width:380px;">' + desglose + '</td>';
             html += '</tr>';
         }
-        if (datos.length === 0) html = '<tr><td colspan="7" class="text-center text-muted py-4">Sin datos para este periodo</td></tr>';
+        if (!html) html = '<tr><td colspan="8" class="text-center text-muted py-4">Sin datos para este periodo</td></tr>';
 
-        // KPIs
         document.getElementById('nov_activos').textContent = totalActivos;
         document.getElementById('nov_en_novedad').textContent = totalEnNovedad;
         document.getElementById('nov_sin_conexion').textContent = totalSinConexion;
-        document.getElementById('nov_total_analistas').textContent = datos.length;
+        document.getElementById('nov_total_analistas').textContent = totalActivos + totalEnNovedad + totalSinConexion;
 
         $('#cuerpoNovedades').html(html);
         $('#tablaNovedades').DataTable({
             language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
             pageLength: 25,
             lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
-            order: [[2, 'asc'], [0, 'asc']],
+            order: [[3, 'asc'], [0, 'asc']],
             responsive: true,
             dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
         });
+
+        // Permisos aprobados en el rango
+        var htmlPI = '';
+        var permFiltrados = permisos.filter(function(p) {
+            if (filtroEsp) return false; // sin filtro de especialidad para permisos (no lo tenemos en PI)
+            return true;
+        });
+        if (permFiltrados.length > 0) {
+            permFiltrados.forEach(function(p) {
+                htmlPI += '<tr>'
+                    + '<td><span class="fw-bold">' + p.nombre + '</span><div class="small text-muted">' + p.correo + '</div></td>'
+                    + '<td><span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:4px 10px;border-radius:8px;font-size:0.75rem;">' + p.tipo + '</span></td>'
+                    + '<td>' + p.fechaInicio + '</td>'
+                    + '<td>' + p.fechaFin + '</td>'
+                    + '<td class="small text-muted">' + (p.observacion || '—') + '</td>'
+                    + '</tr>';
+            });
+            $('#cuerpoPermisosAprobados').html(htmlPI);
+            document.getElementById('bloque-permisos-aprobados').style.display = '';
+        } else {
+            document.getElementById('bloque-permisos-aprobados').style.display = 'none';
+        }
+
     }).withFailureHandler(function(err) {
-        $('#cuerpoNovedades').html('<tr><td colspan="7" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>');
+        $('#cuerpoNovedades').html('<tr><td colspan="8" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>');
     }).admin_obtenerNovedades(desde, hasta);
 }
 
@@ -1965,13 +2643,111 @@ function filtrarNovedades(filtro) {
     if (!$.fn.DataTable.isDataTable('#tablaNovedades')) return;
     var table = $('#tablaNovedades').DataTable();
     if (filtro === '') {
-        table.column(2).search('').draw();
+        table.column(3).search('').draw();
     } else if (filtro === 'NOVEDAD') {
-        // Mostrar todo excepto ACTIVO e INACTIVO
-        table.column(2).search('^(?!ACTIVO$|INACTIVO$).*$', true, false).draw();
+        table.column(3).search('^(?!ACTIVO$|INACTIVO$).*$', true, false).draw();
     } else {
-        table.column(2).search('^' + filtro + '$', true, false).draw();
+        table.column(3).search('^' + filtro + '$', true, false).draw();
     }
+}
+
+// ========== SOLICITUDES DE PERMISOS ==========
+var _filtroSolicitudes = 'TODOS';
+
+function filtrarSolicitudes(filtro) {
+    _filtroSolicitudes = filtro;
+    document.getElementById('filtro-sol-pendiente').style.fontWeight = filtro === 'PENDIENTE' ? '800' : '';
+    document.getElementById('filtro-sol-todos').style.fontWeight = filtro === 'TODOS' ? '800' : '';
+    cargarSolicitudesPermisos(filtro);
+}
+
+function cargarSolicitudesPermisos(filtro) {
+    if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) { $('#tablaSolicitudesPermisos').DataTable().destroy(); }
+    $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>');
+
+    google.script.run.withSuccessHandler(function(res) {
+        var registros = res.registros || [];
+        var html = '';
+        registros.forEach(function(r) {
+            var estadoBadge = '';
+            if (r.estado === 'PENDIENTE') estadoBadge = '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:4px 10px;border-radius:8px;">Pendiente</span>';
+            else if (r.estado === 'APROBADO') estadoBadge = '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:4px 10px;border-radius:8px;">Aprobado</span>';
+            else estadoBadge = '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:4px 10px;border-radius:8px;">Rechazado</span>';
+
+            var acciones = '';
+            if (r.estado === 'PENDIENTE') {
+                acciones = '<div class="d-flex gap-1">'
+                    + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'APROBADO\')" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:3px 10px;"><i class="bi bi-check-lg me-1"></i>Aprobar</button>'
+                    + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'RECHAZADO\')" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 10px;"><i class="bi bi-x-lg me-1"></i>Rechazar</button>'
+                    + '</div>';
+            } else {
+                acciones = '<span class="small text-muted">' + (r.correoAdmin ? r.correoAdmin.split('@')[0] : '—') + '<br>' + (r.fechaRevision ? r.fechaRevision.split(' ')[0] : '') + '</span>';
+            }
+
+            html += '<tr>'
+                + '<td><span class="fw-bold">' + r.nombre + '</span><div class="small text-muted">' + r.correo + '</div></td>'
+                + '<td><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:4px 10px;border-radius:8px;font-size:0.75rem;">' + r.tipo + '</span></td>'
+                + '<td class="fw-bold">' + r.fechaInicio + '</td>'
+                + '<td class="fw-bold">' + r.fechaFin + '</td>'
+                + '<td class="small text-muted">' + (r.observacionAnalista || '—') + '</td>'
+                + '<td class="small text-muted">' + (r.fechaSolicitud ? r.fechaSolicitud.split(' ')[0] : '—') + '</td>'
+                + '<td>' + estadoBadge + (r.observacionAdmin ? '<div class="small text-muted mt-1">' + r.observacionAdmin + '</div>' : '') + '</td>'
+                + '<td>' + acciones + '</td>'
+                + '</tr>';
+        });
+        if (!html) html = '<tr><td colspan="8" class="text-center text-muted py-5">No hay solicitudes' + (filtro === 'PENDIENTE' ? ' pendientes' : '') + '.</td></tr>';
+        $('#cuerpoSolicitudesPermisos').html(html);
+        $('#tablaSolicitudesPermisos').DataTable({
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
+            pageLength: 20,
+            order: [[5, 'desc']],
+            responsive: true,
+            columnDefs: [{ orderable: false, targets: 7 }],
+            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
+        });
+    }).withFailureHandler(function(err) {
+        $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>');
+    }).admin_obtenerPermisosPendientes(filtro);
+}
+
+function resolverPermiso(id, decision) {
+    var titulo = decision === 'APROBADO' ? 'Aprobar permiso' : 'Rechazar permiso';
+    var color = decision === 'APROBADO' ? '#15803d' : '#b91c1c';
+    Swal.fire({
+        title: titulo,
+        input: 'textarea',
+        inputLabel: 'Observación para el analista (opcional)',
+        inputPlaceholder: 'Escribe una nota si lo consideras necesario...',
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar',
+        confirmButtonText: decision === 'APROBADO' ? '<i class="bi bi-check-lg me-1"></i> Aprobar' : '<i class="bi bi-x-lg me-1"></i> Rechazar',
+        confirmButtonColor: color,
+        reverseButtons: true
+    }).then(function(result) {
+        if (!result.isConfirmed) return;
+        var obs = (result.value || '').trim();
+        Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+        google.script.run
+            .withSuccessHandler(function(res) {
+                Swal.fire({ icon: res.success ? 'success' : 'error', title: res.success ? 'Listo' : 'Error', text: res.message, timer: 2500, showConfirmButton: false });
+                if (res.success) cargarSolicitudesPermisos(_filtroSolicitudes);
+                actualizarBadgePermisos();
+            })
+            .withFailureHandler(function(err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+            })
+            .admin_resolverPermiso(id, decision, obs);
+    });
+}
+
+function actualizarBadgePermisos() {
+    google.script.run.withSuccessHandler(function(res) {
+        var n = res.pendientes || 0;
+        var b1 = document.getElementById('badge-permisos-pendientes');
+        var b2 = document.getElementById('badge-tab-permisos');
+        if (b1) { b1.textContent = n; b1.style.display = n > 0 ? '' : 'none'; }
+        if (b2) { b2.textContent = n; b2.style.display = n > 0 ? '' : 'none'; }
+    }).admin_contarPermisosPendientes();
 }
 
 function formatMinToHM(min) {
@@ -2215,5 +2991,166 @@ function resetearCuposIndividual() {
     });
 }
 </script>
+
+<!-- SECCIÓN TURNOS HTML -->
+<style>
+.turnos-board-scroll { overflow-x: auto; padding-bottom: 8px; }
+.turnos-grid { display:flex; gap:16px; align-items:flex-start; min-width: min-content; }
+.turno-col { background:var(--bg-card); border-radius:14px; padding:18px; width:260px; flex-shrink:0; border:1.5px solid #e2e8f0; }
+.turno-col-warn { border-color:#fca5a5; background:#fff5f5; }
+.turno-col-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+.turno-nombre { font-weight:700; font-size:1rem; color:var(--text-primary); }
+.turno-horario { font-size:0.8rem; color:#64748b; margin-top:2px; }
+.turno-dias { font-size:0.75rem; color:#94a3b8; margin-top:2px; }
+.turno-miembros { display:flex; flex-direction:column; gap:6px; min-height:40px; max-height:360px; overflow-y:auto; }
+.turno-chip { display:flex; align-items:center; justify-content:space-between; background:#f1f5f9; border-radius:8px; padding:6px 10px; font-size:0.82rem; cursor:grab; transition:opacity .15s,box-shadow .15s; }
+.turno-chip:active { cursor:grabbing; }
+.turno-chip.dragging { opacity:.4; }
+.turno-chip-warn { background:#fee2e2; }
+.btn-chip-mover { background:none; border:none; color:#64748b; cursor:pointer; padding:0 2px; font-size:0.85rem; flex-shrink:0; }
+.btn-chip-mover:hover { color:#253150; }
+.turno-col.drag-over { border-color:#6366f1; background:#eef2ff; box-shadow:0 0 0 3px #c7d2fe; }
+.turno-col-warn.drag-over { border-color:#f59e0b; background:#fffbeb; box-shadow:0 0 0 3px #fde68a; }
+.turno-count { font-size:0.72rem; background:#e2e8f0; border-radius:20px; padding:1px 7px; color:#475569; font-weight:600; margin-left:6px; vertical-align:middle; }
+.cal-grid-wrap { background:var(--bg-card); border-radius:14px; padding:20px; border:1.5px solid #e2e8f0; overflow-x:auto; }
+.cal-inner { min-width: 560px; }
+.cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
+.cal-dias-semana { display:grid; grid-template-columns:repeat(7,1fr); text-align:center; font-size:0.75rem; font-weight:600; color:#94a3b8; margin-bottom:4px; }
+#cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+.cal-dia { border-radius:8px; padding:6px 4px; min-height:44px; cursor:pointer; transition:background .15s; text-align:center; border:1px solid transparent; position:relative; }
+.cal-dia:hover { background:#e2e8f0; }
+.cal-finsemana { background:#f8fafc; }
+.cal-vacio { border:none; cursor:default; }
+.cal-num { font-size:0.82rem; display:block; }
+.cal-extra-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b; margin-top:3px; }
+</style>
+
+<!-- Modal lista sin turno -->
+<div class="modal fade" id="modalSinTurno" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Analistas sin turno asignado</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="sinturno-lista-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Crear/Editar Turno -->
+<div class="modal fade" id="modalTurno" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="turno-modal-titulo">Nuevo turno</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="turno-id">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nombre del turno</label>
+                    <input type="text" id="turno-nombre" class="form-control" placeholder="Ej: Turno Mañana">
+                </div>
+                <div class="row mb-3">
+                    <div class="col">
+                        <label class="form-label fw-bold">Hora inicio</label>
+                        <input type="time" id="turno-inicio" class="form-control" value="06:00">
+                    </div>
+                    <div class="col">
+                        <label class="form-label fw-bold">Hora fin</label>
+                        <input type="time" id="turno-fin" class="form-control" value="15:00">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Días laborales</label>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-lun" class="form-check-input" checked> Lun</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-mar" class="form-check-input" checked> Mar</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-mie" class="form-check-input" checked> Mié</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-jue" class="form-check-input" checked> Jue</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-vie" class="form-check-input" checked> Vie</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-sab" class="form-check-input"> Sáb</label>
+                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-dom" class="form-check-input"> Dom</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarTurno()">Guardar turno</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Asignar analista -->
+<div class="modal fade" id="modalAsignar" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Asignar turno</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3 fw-bold" id="asignar-nombre"></p>
+                <div class="mb-3">
+                    <label class="form-label">Turno</label>
+                    <select id="asignar-turno-select" class="form-select"></select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Vigente desde</label>
+                    <input type="date" id="asignar-desde" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmarAsignacion()">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Horas extra del día -->
+<div class="modal fade" id="modalExtra" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Horas extra — <span id="extra-fecha-label"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="extra-lista" class="mb-3 p-2 bg-light rounded"></div>
+                <hr>
+                <div class="mb-2 fw-bold small">Agregar horas extra</div>
+                <div class="mb-2">
+                    <label class="form-label small">Analista</label>
+                    <select id="extra-email-select" class="form-select form-select-sm"></select>
+                </div>
+                <div class="row mb-2">
+                    <div class="col">
+                        <label class="form-label small">Hora inicio</label>
+                        <input type="time" id="extra-inicio" class="form-control form-control-sm">
+                    </div>
+                    <div class="col">
+                        <label class="form-label small">Hora fin</label>
+                        <input type="time" id="extra-fin" class="form-control form-control-sm">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small">Descripción (opcional)</label>
+                    <input type="text" id="extra-desc" class="form-control form-control-sm" placeholder="Ej: Sábado habilitado por cierre de mes">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-warning" onclick="guardarHorasExtra()"><i class="bi bi-plus-lg"></i> Agregar extra</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

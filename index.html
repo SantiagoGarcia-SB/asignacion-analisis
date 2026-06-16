@@ -350,118 +350,44 @@
           Motivo Aplazamiento
         </label>
 
-        <select id="d_motivo_aplazamiento"
-                class="form-select gestion-select">
-
-          <option value="" selected>
-            Sin aplazamiento
-          </option>
-
-          <option value="Un deudor solidario">
-            Un deudor solidario
-          </option>
-
-          <option value="Dos deudores solidarios">
-            Dos deudores solidarios
-          </option>
-
-          <option value="Extractos bancarios">
-            Extractos bancarios
-          </option>
-
-          <option value="Estados financieros">
-            Estados financieros
-          </option>
-
-          <option value="Cámara de comercio">
-            Cámara de comercio
-          </option>
-
-          <option value="Acta de junta de socios">
-            Acta de junta de socios
-          </option>
-
-          <option value="Acta de constitución consorcio">
-            Acta de constitución consorcio
-          </option>
-
-          <option value="Presentar constituyentes del consorcio">
-            Presentar constituyentes del consorcio
-          </option>
-
-          <option value="Pendiente entrevista telefónica">
-            Pendiente entrevista telefónica
-          </option>
-
-          <option value="Pendiente validación de datos">
-            Pendiente validación de datos
-          </option>
-
-          <option value="Pendiente aceptación LMI">
-            Pendiente aceptación LMI
-          </option>
-
-          <option value="Pendiente constitución CDT">
-            Pendiente constitución CDT
-          </option>
-
-          <option value="Pendiente biometria">
-            Pendiente biometría
-          </option>
-
-          <option value="Pendiente confirmar destino">
-            Pendiente confirmar destino
-          </option>
-
-          <option value="Certificado laboral">
-            Certificado laboral
-          </option>
-
-          <option value="Partida presupuestal">
-            Partida presupuestal
-          </option>
-
-          <option value="Confirmar solicitud simultánea">
-            Confirmar solicitud simultánea
-          </option>
-
-          <option value="Documento de identidad legible">
-            Documento de identidad legible
-          </option>
-
-          <option value="Formulario con firma y huella legible">
-            Formulario con firma y huella legible
-          </option>
-
-          <option value="Cerrada por intentos fallidos">
-            Cerrada por intentos fallidos
-          </option>
-
-          <option value="Pendiente deudor y documentos">
-            Pendiente deudor y documentos
-          </option>
-
-          <option value="Pendiente resultado lote">
-            Pendiente resultado lote
-          </option>
-
-          <option value="Error de terceros">
-            Error de terceros
-          </option>
-
-          <option value="Pendiente recaudo">
-            Pendiente recaudo
-          </option>
-
-          <option value="Pendiente simasol">
-            Pendiente simasol
-          </option>
-
-          <option value="Pendiente respuesta eli">
-            Pendiente respuesta ELI
-          </option>
-
+        <select id="d_motivo_aplazamiento" class="motivo-picker-hidden">
+          <option value="">Sin aplazamiento</option>
+          <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
+          <option value="Acta de junta de socios">Acta de junta de socios</option>
+          <option value="Actualización de resultado">Actualización de resultado</option>
+          <option value="Cámara de comercio">Cámara de comercio</option>
+          <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
+          <option value="Certificado laboral">Certificado laboral</option>
+          <option value="Confirmar solicitud simultánea">Confirmar solicitud simultánea</option>
+          <option value="Documento de identidad legible">Documento de identidad legible</option>
+          <option value="Dos deudores solidarios">Dos deudores solidarios</option>
+          <option value="Error de terceros">Error de terceros</option>
+          <option value="Estados financieros">Estados financieros</option>
+          <option value="Extractos bancarios">Extractos bancarios</option>
+          <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
+          <option value="Partida presupuestal">Partida presupuestal</option>
+          <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
+          <option value="Pendiente biometria">Pendiente biometría</option>
+          <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+          <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
+          <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
+          <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
+          <option value="Pendiente recaudo">Pendiente recaudo</option>
+          <option value="Pendiente respuesta eli">Pendiente respuesta ELI</option>
+          <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+          <option value="Pendiente simasol">Pendiente simasol</option>
+          <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+          <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
+          <option value="Un deudor solidario">Un deudor solidario</option>
         </select>
+        <div id="picker_d_motivo_aplazamiento" class="motivo-picker">
+          <div class="motivo-picker-wrap">
+            <i class="bi bi-search motivo-picker-icon"></i>
+            <input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo de aplazamiento...">
+            <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="motivo-picker-dropdown"></div>
+        </div>
       </div>
 
       <!-- Motivo Negación -->
@@ -471,90 +397,36 @@
           Motivo Negación
         </label>
 
-        <select id="d_motivo_negacion"
-                class="form-select gestion-select">
-
-          <option value="" selected>
-            Sin negación
-          </option>
-
-          <option value="Reportes en centrales de riesgo">
-            Reportes en centrales de riesgo
-          </option>
-
-          <option value="Mora libertador">
-            Mora libertador
-          </option>
-
-          <option value="Inconsistencias en validación">
-            Inconsistencias en validación
-          </option>
-
-          <option value="Deudor de profesión">
-            Deudor de profesión
-          </option>
-
-          <option value="Ingresos insuficientes">
-            Ingresos insuficientes
-          </option>
-
-          <option value="Evidente no aprobado">
-            Evidente no aprobado
-          </option>
-
-          <option value="Póliza no asegurable">
-            Póliza no asegurable
-          </option>
-
-          <option value="Desistimiento">
-            Desistimiento
-          </option>
-
-          <option value="Inducción sin garantias">
-            Inducción sin garantías
-          </option>
-
-          <option value="Cuentas embargadas">
-            Cuentas embargadas
-          </option>
-
-          <option value="Anteriores negadas inconsistencias">
-            Anteriores negadas inconsistencias
-          </option>
-
-          <option value="Alerta de suplantación">
-            Alerta de suplantación
-          </option>
-
-          <option value="Traslado no solicitado">
-            Traslado no solicitado
-          </option>
-
-          <option value="Destino no asegurable">
-            Destino no asegurable
-          </option>
-
-          <option value="Patrimonio en negativo/pérdidas">
-            Patrimonio en negativo/pérdidas
-          </option>
-
-          <option value="Modelo rechaza, causal diferente">
-            Modelo rechaza, causal diferente
-          </option>
-
-          <option value="Solicitud duplicada">
-            Solicitud duplicada
-          </option>
-
-          <option value="Contrato firmado en traslados">
-            Contrato firmado en traslados
-          </option>
-
-          <option value="Empresa recien constituida">
-            Empresa recién constituida
-          </option>
-
+        <select id="d_motivo_negacion" class="motivo-picker-hidden">
+          <option value="">Sin negación</option>
+          <option value="Alerta de suplantación">Alerta de suplantación</option>
+          <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
+          <option value="Contrato firmado en traslados">Contrato firmado en traslados</option>
+          <option value="Cuentas embargadas">Cuentas embargadas</option>
+          <option value="Desistimiento">Desistimiento</option>
+          <option value="Destino no asegurable">Destino no asegurable</option>
+          <option value="Deudor de profesión">Deudor de profesión</option>
+          <option value="Empresa recien constituida">Empresa recién constituida</option>
+          <option value="Evidente no aprobado">Evidente no aprobado</option>
+          <option value="Inconsistencias en validación">Inconsistencias en validación</option>
+          <option value="Inducción sin garantias">Inducción sin garantías</option>
+          <option value="Ingresos insuficientes">Ingresos insuficientes</option>
+          <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
+          <option value="Mora libertador">Mora libertador</option>
+          <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
+          <option value="Póliza no asegurable">Póliza no asegurable</option>
+          <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
+          <option value="Solicitud duplicada">Solicitud duplicada</option>
+          <option value="Traslado no solicitado">Traslado no solicitado</option>
         </select>
+        <div id="picker_d_motivo_negacion" class="motivo-picker">
+          <div class="motivo-picker-wrap">
+            <i class="bi bi-search motivo-picker-icon"></i>
+            <input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo de negación...">
+            <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+          </div>
+          <div class="motivo-picker-dropdown"></div>
+        </div>
       </div>
 
       <!-- Fecha y Hora Radicación SAI -->
@@ -685,17 +557,54 @@
                             <h6 class="fw-bold mb-0" style="color: #3b82f6;">Permisos e Incapacidades</h6>
                         </div>
 
-                        <div class="row g-3">
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                        <!-- Paso 1: Selección de tipo -->
+                        <div id="ausencias-paso1">
+                            <p class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Estas novedades requieren aprobación del administrador. Selecciona el tipo para continuar.</p>
+                            <div class="row g-3">
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                            </div>
+                        </div>
+
+                        <!-- Paso 2: Formulario de solicitud -->
+                        <div id="ausencias-paso2" style="display:none;">
+                            <div class="d-flex align-items-center gap-2 mb-4">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="volverAusenciasPaso1()"><i class="bi bi-arrow-left"></i> Volver</button>
+                                <span id="ausencias-tipo-badge" class="badge px-3 py-2" style="font-size:0.85rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:10px;"></span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="small fw-bold mb-1">Fecha de inicio <span class="text-danger">*</span></label>
+                                    <input type="date" id="ausencia-fecha-inicio" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="small fw-bold mb-1">Fecha de fin <span class="text-danger">*</span></label>
+                                    <input type="date" id="ausencia-fecha-fin" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-12">
+                                    <label class="small fw-bold mb-1">Observación <span class="text-muted fw-normal">(opcional)</span></label>
+                                    <textarea id="ausencia-observacion" class="form-control" rows="3" placeholder="Detalla el motivo o información relevante..." style="border-radius:10px;resize:none;"></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                                        <p class="small mb-0" style="color:#1e40af;"><i class="bi bi-send-check me-1"></i><strong>Tu solicitud será enviada al administrador.</strong> Recibirás un correo cuando sea aprobada o rechazada. El estado no cambiará hasta que sea aprobada.</p>
+                                    </div>
+                                </div>
+                                <div class="col-12 d-flex justify-content-end gap-2 pt-2">
+                                    <button class="btn btn-outline-secondary px-4" onclick="volverAusenciasPaso1()">Cancelar</button>
+                                    <button class="btn text-white px-5 fw-bold" id="btn-enviar-permiso" onclick="enviarSolicitudPermiso()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:10px;border:none;">
+                                        <i class="bi bi-send-fill me-2"></i>Enviar Solicitud
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -820,6 +729,13 @@
     });
 
 
+    document.addEventListener('DOMContentLoaded', function() {
+        MotivoPicker.init('picker_d_motivo_aplazamiento', 'd_motivo_aplazamiento');
+        MotivoPicker.init('picker_d_motivo_negacion', 'd_motivo_negacion');
+        MotivoPicker.init('picker_rmd_motivo_aplazamiento', 'rmd_motivo_aplazamiento');
+        MotivoPicker.init('picker_rmd_motivo_negacion', 'rmd_motivo_negacion');
+    });
+
     window.addEventListener('load', function() {
         google.script.run
             .withSuccessHandler(function(email) {
@@ -914,73 +830,168 @@
 
   <!-- Modal Gestión Reestudio/UAR (para analistas Digital con casos mixtos) -->
   <div class="modal fade" id="modalReestudioDigital" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
-      <div class="modal-content" style="border-radius:20px;border:none;box-shadow:0 20px 60px rgba(0,0,0,0.15);">
-        <div class="modal-header-inner" style="border-radius:20px 20px 0 0;padding:20px 24px;">
-          <div>
-            <h5 class="fw-bold text-white mb-0" style="font-size:1rem;">Gestión — <span id="rmd_header_sol"></span></h5>
-            <p class="small mb-0" style="color:rgba(255,255,255,0.65);">
-              Origen: <span id="rmd_origen"></span> &nbsp;|&nbsp; Tipo: <span id="rmd_tipo"></span><br>
-              Radicación: <span id="rmd_radicacion"></span> &nbsp;|&nbsp; Asignado: <span id="rmd_asignacion"></span>
-            </p>
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header-inner">
+          <div class="d-flex align-items-center w-100" style="position:relative;z-index:1;">
+            <div class="p-2 rounded-3 me-3" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);">
+              <i class="bi bi-layers fs-4 text-white"></i>
+            </div>
+            <div>
+              <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Reestudio</h5>
+              <p class="small mb-0" style="color:rgba(255,255,255,0.6);">
+                Solicitud: <span id="rmd_header_sol" class="badge bg-white text-dark fw-bold ms-1"></span>
+                <span id="rmd_tipo_badge" class="ms-2"></span>
+              </p>
+            </div>
+            <a id="btnDriveRmd" href="#" target="_blank" class="btn ms-auto me-3 d-none" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);color:white;border-radius:12px;padding:8px 16px;font-size:0.8rem;font-weight:700;backdrop-filter:blur(4px);transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">
+              <i class="bi bi-folder2-open me-2"></i>Ver Anexo
+            </a>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
+
         <div class="modal-body p-4">
           <input type="hidden" id="rmd_solicitudId">
-          <div class="row g-3">
-            <div class="col-12">
-              <label class="small fw-bold text-muted text-uppercase">Póliza <span class="text-danger">*</span></label>
-              <input type="number" id="rmd_poliza" class="form-control" placeholder="Número de póliza">
+
+          <!-- Info cards -->
+          <div class="row g-3 mb-4 text-center">
+            <div class="col-md-3">
+              <div class="p-3 border rounded-4 bg-white h-100" style="border-top:4px solid var(--color-primario) !important;">
+                <label class="d-block mb-1" style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;"><i class="bi bi-hash me-1"></i>Solicitud</label>
+                <div id="rmd_card_solicitud" class="fw-bold fs-6 text-dark"></div>
+              </div>
             </div>
-            <div class="col-12">
-              <label class="small fw-bold text-muted text-uppercase">Estado de Gestión <span class="text-danger">*</span></label>
-              <select id="rmd_estado_q" class="form-select" onchange="rmdActualizarEstado()">
-                <option value="" disabled selected>Selecciona un estado</option>
-                <option value="APROBADA">APROBADA</option>
-                <option value="APLAZADA">APLAZADA</option>
-                <option value="NEGADA">NEGADA</option>
-              </select>
+            <div class="col-md-3">
+              <div class="p-3 border rounded-4 bg-white h-100">
+                <label class="d-block mb-1" style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;"><i class="bi bi-box-arrow-in-right me-1"></i>Origen</label>
+                <div id="rmd_card_origen" class="fw-bold fs-6 text-dark"></div>
+              </div>
             </div>
-            <div class="col-12 d-none" id="rmd_cont_aplaz">
-              <label class="small fw-bold text-muted text-uppercase">Motivo Aplazamiento <span class="text-danger">*</span></label>
-              <select id="rmd_motivo_aplazamiento" class="form-select">
-                <option value="">Sin aplazamiento</option>
-                <option value="Un deudor solidario">Un deudor solidario</option>
-                <option value="Dos deudores solidarios">Dos deudores solidarios</option>
-                <option value="Extractos bancarios">Extractos bancarios</option>
-                <option value="Estados financieros">Estados financieros</option>
-                <option value="Cámara de comercio">Cámara de comercio</option>
-                <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
-                <option value="Pendiente validación de datos">Pendiente validación de datos</option>
-                <option value="Pendiente biometria">Pendiente biometría</option>
-                <option value="Certificado laboral">Certificado laboral</option>
-                <option value="Documento de identidad legible">Documento de identidad legible</option>
-                <option value="Pendiente resultado lote">Pendiente resultado lote</option>
-                <option value="Error de terceros">Error de terceros</option>
-              </select>
+            <div class="col-md-3">
+              <div class="p-3 border rounded-4 bg-white h-100">
+                <label class="d-block mb-1" style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;"><i class="bi bi-calendar-event me-1"></i>Radicación</label>
+                <div id="rmd_card_radicacion" class="fw-bold fs-6 text-dark" style="font-size:0.85rem !important;"></div>
+              </div>
             </div>
-            <div class="col-12 d-none" id="rmd_cont_neg">
-              <label class="small fw-bold text-muted text-uppercase">Motivo Negación <span class="text-danger">*</span></label>
-              <select id="rmd_motivo_negacion" class="form-select">
-                <option value="">Selecciona motivo</option>
-                <option value="Capacidad de endeudamiento">Capacidad de endeudamiento</option>
-                <option value="Referencias negativas">Referencias negativas</option>
-                <option value="Documentación insuficiente">Documentación insuficiente</option>
-                <option value="Perfil no aplica">Perfil no aplica</option>
-                <option value="Solicitud duplicada">Solicitud duplicada</option>
-              </select>
+            <div class="col-md-3">
+              <div class="p-3 border rounded-4 bg-white h-100">
+                <label class="d-block mb-1" style="font-size:0.72rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;"><i class="bi bi-calendar-check me-1"></i>Asignación</label>
+                <div id="rmd_card_asignacion" class="fw-bold fs-6 text-dark" style="font-size:0.85rem !important;"></div>
+              </div>
             </div>
-            <div class="col-12">
-              <label class="small fw-bold text-muted text-uppercase">Observaciones</label>
-              <textarea id="rmd_observaciones" class="form-control" rows="2" placeholder="Notas adicionales..."></textarea>
+          </div>
+
+          <!-- Form -->
+          <div class="bg-white border rounded-4 p-4">
+            <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;">
+              <i class="bi bi-pencil-square me-2"></i>Actualizar Gestión
+            </h6>
+            <div class="row g-3">
+              <!-- Póliza -->
+              <div class="col-md-6">
+                <label class="gestion-label"><i class="bi bi-shield-check me-1"></i>Póliza <span class="text-danger">*</span></label>
+                <input type="number" id="rmd_poliza" class="form-control fw-bold" placeholder="Ej: 483" min="1" step="1">
+              </div>
+              <!-- Estado -->
+              <div class="col-md-6">
+                <label class="gestion-label"><i class="bi bi-check2-circle me-1"></i>Estado de Gestión <span class="text-danger">*</span></label>
+                <select id="rmd_estado_q" class="form-select fw-bold" onchange="rmdActualizarEstado()">
+                  <option value="" disabled selected>Seleccione una opción</option>
+                  <option value="APROBADA">APROBADA</option>
+                  <option value="APLAZADA">APLAZADA</option>
+                  <option value="NEGADA">NEGADA</option>
+                </select>
+              </div>
+              <!-- Motivo Aplazamiento -->
+              <div class="col-md-6 d-none" id="rmd_cont_aplaz">
+                <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento <span class="text-danger">*</span></label>
+                <select id="rmd_motivo_aplazamiento" class="motivo-picker-hidden">
+                  <option value="">Sin aplazamiento</option>
+                  <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
+                  <option value="Acta de junta de socios">Acta de junta de socios</option>
+                  <option value="Actualización de resultado">Actualización de resultado</option>
+                  <option value="Cámara de comercio">Cámara de comercio</option>
+                  <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
+                  <option value="Certificado laboral">Certificado laboral</option>
+                  <option value="Confirmar solicitud simultánea">Confirmar solicitud simultánea</option>
+                  <option value="Documento de identidad legible">Documento de identidad legible</option>
+                  <option value="Dos deudores solidarios">Dos deudores solidarios</option>
+                  <option value="Error de terceros">Error de terceros</option>
+                  <option value="Estados financieros">Estados financieros</option>
+                  <option value="Extractos bancarios">Extractos bancarios</option>
+                  <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
+                  <option value="Partida presupuestal">Partida presupuestal</option>
+                  <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
+                  <option value="Pendiente biometria">Pendiente biometría</option>
+                  <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+                  <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
+                  <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
+                  <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
+                  <option value="Pendiente recaudo">Pendiente recaudo</option>
+                  <option value="Pendiente respuesta eli">Pendiente respuesta ELI</option>
+                  <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+                  <option value="Pendiente simasol">Pendiente simasol</option>
+                  <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+                  <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
+                  <option value="Un deudor solidario">Un deudor solidario</option>
+                </select>
+                <div id="picker_rmd_motivo_aplazamiento" class="motivo-picker">
+                  <div class="motivo-picker-wrap">
+                    <i class="bi bi-search motivo-picker-icon"></i>
+                    <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de aplazamiento...">
+                    <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                  <div class="motivo-picker-dropdown"></div>
+                </div>
+              </div>
+              <!-- Motivo Negación -->
+              <div class="col-md-6 d-none" id="rmd_cont_neg">
+                <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación <span class="text-danger">*</span></label>
+                <select id="rmd_motivo_negacion" class="motivo-picker-hidden">
+                  <option value="">Sin negación</option>
+                  <option value="Alerta de suplantación">Alerta de suplantación</option>
+                  <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
+                  <option value="Contrato firmado en traslados">Contrato firmado en traslados</option>
+                  <option value="Cuentas embargadas">Cuentas embargadas</option>
+                  <option value="Desistimiento">Desistimiento</option>
+                  <option value="Destino no asegurable">Destino no asegurable</option>
+                  <option value="Deudor de profesión">Deudor de profesión</option>
+                  <option value="Empresa recien constituida">Empresa recién constituida</option>
+                  <option value="Evidente no aprobado">Evidente no aprobado</option>
+                  <option value="Inconsistencias en validación">Inconsistencias en validación</option>
+                  <option value="Inducción sin garantias">Inducción sin garantías</option>
+                  <option value="Ingresos insuficientes">Ingresos insuficientes</option>
+                  <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
+                  <option value="Mora libertador">Mora libertador</option>
+                  <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
+                  <option value="Póliza no asegurable">Póliza no asegurable</option>
+                  <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
+                  <option value="Solicitud duplicada">Solicitud duplicada</option>
+                  <option value="Traslado no solicitado">Traslado no solicitado</option>
+                </select>
+                <div id="picker_rmd_motivo_negacion" class="motivo-picker">
+                  <div class="motivo-picker-wrap">
+                    <i class="bi bi-search motivo-picker-icon"></i>
+                    <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de negación...">
+                    <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                  <div class="motivo-picker-dropdown"></div>
+                </div>
+              </div>
+              <!-- Observaciones -->
+              <div class="col-12">
+                <label class="gestion-label"><i class="bi bi-chat-dots me-1"></i>Observaciones</label>
+                <textarea id="rmd_observaciones" class="form-control" rows="3" placeholder="Escriba algún comentario si lo requiere..."></textarea>
+              </div>
             </div>
           </div>
         </div>
-        <div class="modal-footer border-0 px-4 pb-4">
-          <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button class="btn text-white fw-bold px-4" style="background:#253150;border-radius:10px;" onclick="guardarGestionReestudioDesdeDigital()">
-            <i class="bi bi-cloud-arrow-up me-1"></i>Guardar Gestión
+
+        <div class="modal-footer border-0 p-4" style="background:var(--bg-page);border-radius:0 0 20px 20px;">
+          <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius:10px;">Cancelar</button>
+          <button id="btnGuardarRmd" type="button" class="btn text-white px-5 fw-bold shadow-sm" style="border-radius:10px;background:var(--grad-azul);" onclick="guardarGestionReestudioDesdeDigital()">
+            <i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión
           </button>
         </div>
       </div>

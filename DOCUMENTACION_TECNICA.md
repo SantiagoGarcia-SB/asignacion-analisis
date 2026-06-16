@@ -94,12 +94,12 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 | `Admin.js` | **Panel de administración.** CRUD de usuarios, dashboard de KPIs, control de prioridad global, cupos por equipo e individuales con histórico, visualización de novedades/estados del equipo, botón de pánico para desactivar todos los asesores, desasignación de solicitudes (principal y reestudios). |
 | `Biometria.js` | **Módulo de biometría.** Descarga desde API de solicitudes con códigos 500/503, asignación automática a analistas de biometría, verificación de estado en tiempo real, gestión y tipificación de casos. |
 | `ModeloReestudios.js` | **Motor de asignación equitativa (Reestudios).** Algoritmo `RequestLeadReestudios()` que distribuye solicitudes de Victoria y Correo según orden FIFO, capacidad del analista, cupos diarios por subcategoría y exclusión de tipos UAR. Asigna 1 caso por invocación con control de concurrencia. |
-| `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`), guardado de gestión (`guardarGestionReestudio()`) con auto-reasignación vía `ModeloReestudios.js`, y utilidades de sesión. |
-| `index.html` | **Vista del Asesor (Estudio Digital).** Tabla de solicitudes asignadas, modal de gestión con detalle en tiempo real desde la API, selector de estados, métricas personales, control de estado del analista. |
+| `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`) — lee de ORIGEN y de `Historico_Gestiones` del ssReestudios; guardado de gestión (`guardarGestionReestudio()`) con búsqueda por solicitudId (no por número de fila) y auto-reasignación vía `ModeloReestudios.js`. |
+| `index.html` | **Vista del Asesor (Estudio Digital).** Tabla de solicitudes asignadas, modal de gestión con detalle en tiempo real desde la API, selector de estados, métricas personales, control de estado del analista. Modal de gestión de reestudio (`#modalReestudioDigital`) con diseño Bootstrap (header gradiente, info cards, MotivoPicker, botón Ver Anexo). |
 | `VistaAdmin.html` | **Vista del Administrador.** Dashboard con métricas, tabla de usuarios, control segmentado de prioridades, sección de cupos (general + individual) con distribución inteligente, sección de novedades/estados del equipo en tiempo real, modales CRUD, botón de emergencia. |
 | `VistaBiometria.html` | **Vista de Biometría.** Tabla de solicitudes pendientes de biometría, modal de tipificación con tabs (formulario + historial de deudores). |
 | `VistaReestudios.html` | **Vista de Reestudios.** Tabla unificada de casos asignados (Victoria + Correo), modal de gestión con estados, motivos y observaciones, métricas, control de estado del analista, auto-asignación al entrar. |
-| `main.js.html` | **JavaScript compartido del Asesor.** Lógica de renderizado de tabla con DataTables, auto-asignación al entrar, manejo de estados, guardado de gestiones, comunicación con backend. |
+| `main.js.html` | **JavaScript compartido del Asesor.** Lógica de renderizado de tabla con DataTables, auto-asignación al entrar, manejo de estados, guardado de gestiones, comunicación con backend. Incluye: `_quitarFilaTabla()` para remoción optimista inmediata de filas tras guardar; `abrirGestionReestudioDigital()` para poblar y mostrar el modal Bootstrap de reestudio; `rmdActualizarEstado()` y `guardarGestionReestudioDesdeDigital()`. |
 | `appsscript.json` | **Manifiesto del proyecto.** Configuración de zona horaria, runtime V8, despliegue como Web App con ejecución como usuario desplegador y acceso por dominio. |
 | `.clasp.json` | **Configuración de clasp.** Vinculación con el proyecto de Google Apps Script para push/pull del código fuente. |
 
@@ -120,7 +120,7 @@ El sistema utiliza **Google Sheets como base de datos relacional distribuida**, 
 | `WAREHOUSE_ID` | `Hoja 1` | Warehouse de pólizas |
 | `ID_SHEET_ORIGEN` (Biometría) | `Hoja 2` | Cola de biometrías pendientes descargadas de la API |
 | `ID_SHEET_GESTION` (Biometría) | `Hoja 1` | Registro de biometrías asignadas y gestionadas |
-| `ID_HOJA_REESTUDIOS` | `ORIGEN` | Hoja consolidada de solicitudes de reestudios y UAR (Victoria + Correo) para asignación equitativa |
+| `ID_HOJA_REESTUDIOS` | `ORIGEN`, `Historico_Gestiones` | Cola de solicitudes de reestudios/UAR pendientes de asignación (ORIGEN) y registro de casos asignados abiertos/cerrados (Historico_Gestiones) |
 | `TARGET_SOLICITUDES_SS_ID` | `historico_cupos` | Registro histórico de todos los cambios de cupos (globales e individuales) |
 
 **Mecanismos de lectura/escritura:**
@@ -235,10 +235,10 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
    - ¿Estado = "ACTIVO"? ✓
    - ¿Capacidad > 0? ✓
 3. **Lectura de cupos del equipo Reestudios:** Se leen las propiedades `CUPOS_REESTUDIOS_*` que definen el límite diario por subcategoría (reestudio, UAR, nuevas, inducciones, biometría).
-4. **Conteo de asignaciones del día:** Se cuenta cuántos casos de cada tipo le fueron asignados hoy al analista.
-5. **Cálculo de carga actual:** Cuenta filas donde columna G = email del analista Y columna J vacía (sin gestionar).
+4. **Conteo de asignaciones del día:** Se cuenta cuántos casos de cada tipo le fueron asignados hoy al analista (buscando en ORIGEN por fechaAsignacion del día).
+5. **Cálculo de carga actual:** Cuenta filas en ORIGEN donde columna G = email del analista Y columna J vacía (sin gestionar).
 6. **Cupo disponible:** `capacidad - cargaActual`. Si <= 0 → "Capacidad llena".
-7. **Búsqueda de caso disponible:** Recorre la hoja buscando la primera fila que cumpla:
+7. **Búsqueda de caso disponible:** Recorre la hoja ORIGEN buscando la primera fila que cumpla:
    - Columna G vacía (sin asignar)
    - Columna B no vacía (tiene nro solicitud)
    - NO es "NUEVA UAR" ni "DEUDOR UAR" (excluidos por tipo/clase)
@@ -247,13 +247,16 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
    - Col G: email del analista
    - Col H: nombre del analista
    - Col I: fecha/hora actual
-9. **Retorna resultado.** Si no hay casos disponibles o todos los cupos están llenos → "No hay solicitudes pendientes o tu cupo diario está lleno."
+9. **⚠️ Movimiento automático:** Inmediatamente después de escribir la asignación, la fila completa (18 columnas) se **copia a la hoja `Historico_Gestiones`** del mismo spreadsheet y se **elimina de ORIGEN**. El caso asignado ya NO existe en ORIGEN.
+10. **Retorna resultado.** Si no hay casos disponibles o todos los cupos están llenos → "No hay solicitudes pendientes o tu cupo diario está lleno."
 
 **Cuándo se ejecuta:**
 - Al entrar el analista a la vista (si no tiene pendientes y está ACTIVO)
 - Al guardar una gestión (se intenta asignar un nuevo caso automáticamente)
 
-**Estructura de la hoja "ORIGEN":**
+**Estructura de la hoja "ORIGEN" y `Historico_Gestiones` de ssReestudios:**
+
+Ambas hojas comparten el mismo esquema de columnas (la fila se mueve completa al asignar):
 
 | Col | Campo | Quién lo escribe |
 |-----|-------|-----------------|
@@ -266,27 +269,45 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
 | G(7) | analistaAsignado (email) | Motor de asignación |
 | H(8) | nombreAnalista | Motor de asignación |
 | I(9) | fechaAsignacion | Motor de asignación |
-| J(10) | fechaFinGestion | Vista (al guardar) |
-| K(11) | estadoGestion | Vista (al guardar) |
-| L(12) | motivoAplazamiento | Vista (al guardar) |
-| M(13) | motivoNegacion | Vista (al guardar) |
-| N(14) | observaciones | Vista (al guardar) |
+| J(10) | fechaFinGestion | Vista (al guardar gestión) |
+| K(11) | estadoGestion | Vista (al guardar gestión) |
+| L(12) | motivoAplazamiento | Vista (al guardar gestión) |
+| M(13) | motivoNegacion | Vista (al guardar gestión) |
+| N(14) | observaciones | Vista (al guardar gestión) |
+| O(15) | tiempoTotalResolucion (min) | Cálculo al guardar |
+| P(16) | tiempoGestion (min) | Cálculo al guardar |
+| Q-R (17-18) | Campos adicionales | Script de ingesta |
+
+**ORIGEN** = cola de casos pendientes de asignación (col G vacía). **Historico_Gestiones** = todos los casos ya asignados (col G llena), abiertos (col J vacía) o cerrados (col J con fecha).
 
 ### 4.3 Flujo de Gestión de una Solicitud — Estudio Digital (`guardarCambiosInternos`)
 
-1. **Frontend (index.html):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos.
-2. **Validación:** Se verifica que los motivos correspondan al estado seleccionado.
-3. **Escritura en hoja central:** Se actualizan las columnas de estado (17), tracking (23), biometría (24), observaciones (25), fecha fin (29), SLA (30), motivos (32-33).
-4. **Cálculo de SLA en horas hábiles:** Función `calcularMinutosHabilesSLA()` que excluye fines de semana y festivos, solo cuenta entre 8:00 y 18:00.
-5. **Registro histórico:** Se copia la fila completa a la hoja `Historico_Gestiones`.
-6. **Auto-asignación:** Si el estado es de cierre o aplazamiento, se dispara automáticamente `RequestLead()`.
+1. **Frontend (index.html):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos. Puede gestionar tanto solicitudes digitales (de la hoja `solicitud`) como reestudios (de ssReestudios).
+2. **Discriminador de ruta (`tipoSolicitudActual`):** El frontend envía `tipoSolicitudActual: 'reestudio'` cuando el caso proviene del modal de gestión de reestudio (`#modalReestudioDigital`). Esto permite al backend saber a qué hoja escribir.
+3. **Búsqueda de fila destino (RUTA A — solicitudes digitales y del warehouse):**
+   - Solo se ejecuta si `tipoSolicitudActual !== 'reestudio'`.
+   - Busca en `Historico_Gestiones` del spreadsheet principal por col A (solicitudId) Y col AA (fechaFinGestion) vacía.
+   - Fallback: busca en la hoja `solicitud` activa.
+4. **Búsqueda de fila destino (RUTA B — reestudios):**
+   - Se ejecuta si RUTA A no encontró nada O si `tipoSolicitudActual === 'reestudio'`.
+   - Busca en `Historico_Gestiones` de ssReestudios por col B (solicitudId) Y col J (fechaFinGestion) vacía.
+   - Igual que en `guardarGestionReestudio`, requiere que el caso esté abierto (fechaFin vacía) para evitar sobreescribir casos con el mismo solicitudId ya cerrados.
+5. **Escritura en hoja central:** Se actualizan las columnas de estado (17), tracking (23), biometría (24), observaciones (25), fecha fin (29), SLA (30), motivos (32-33).
+6. **Cálculo de SLA en horas hábiles:** Función `calcularMinutosHabilesSLA()` que excluye fines de semana y festivos, solo cuenta entre 8:00 y 18:00.
+7. **Registro histórico:** Se copia la fila completa a la hoja `Historico_Gestiones`.
+8. **Auto-asignación:** Si el estado es de cierre o aplazamiento, se dispara automáticamente `RequestLead()`.
 
 ### 4.4 Flujo de Gestión de una Solicitud — Reestudios (`guardarGestionReestudio` en `Reestudios.js`)
 
-1. **Frontend (VistaReestudios.html):** El analista selecciona estado, motivo y observaciones.
-2. **Validación:** Se verifica que la fila no haya sido gestionada previamente.
-3. **Escritura en hoja "ORIGEN":** Se escriben columnas J-N (fecha fin, estado, motivos, observaciones).
-4. **Auto-asignación:** Se llama a `RequestLeadReestudios()` (de `ModeloReestudios.js`) para asignar un nuevo caso.
+1. **Frontend (VistaReestudios.html):** El analista selecciona estado, motivo y observaciones. El `datos` enviado incluye `solicitud` (número de caso) además de `filaReal`.
+2. **Búsqueda de la fila destino (búsqueda por ID, no por número de fila):**
+   - **Primero busca en `Historico_Gestiones`** de ssReestudios: recorre cols B–J buscando la fila donde col B = `solicitudId` Y col J (fechaFinGestion) está vacía (caso abierto). Esto cubre todos los casos asignados normalmente (fueron movidos al asignar).
+   - **Fallback:** Si no encuentra en Historico, usa `filaReal` como número de fila en ORIGEN (casos legacy asignados antes del movimiento automático).
+3. **Validación:** Se verifica que la fila encontrada no tenga `fechaFinGestion` ya escrita (previene doble gestión).
+4. **Escritura en la hoja correspondiente:** Cols J-N (fecha fin, estado, motivos, observaciones) + cols O-P (tiempos calculados).
+5. **Auto-asignación:** Se llama a `RequestLeadReestudios()` (de `ModeloReestudios.js`) para asignar un nuevo caso.
+
+**¿Por qué búsqueda por ID y no por número de fila?** El mismo número de solicitud puede entrar varias veces al sistema de reestudios (el cliente puede solicitar múltiples revisiones). `Historico_Gestiones` puede tener múltiples filas con el mismo solicitudId: la que tiene `fechaFinGestion` vacía es el caso activo actual; las demás son revisiones anteriores ya cerradas. La búsqueda solo hace match con `fechaFin === ''` para evitar sobreescribir gestiones antiguas.
 
 ### 4.5 Flujo de Sincronización de Nuevas Solicitudes (`actualizarSolicitudesNuevasAPI`)
 
@@ -656,7 +677,9 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | AJ | 35 | Canal |
 | AK | 36 | Tiempo general — radicación (horas hábiles, radicación → cierre) |
 
-### Estructura de la Hoja "ORIGEN" (Reestudios) — 16 Columnas
+### Estructura de la Hoja "ORIGEN" y `Historico_Gestiones` (Reestudios, ssReestudios) — 18 Columnas
+
+> **Nota:** Estas dos hojas comparten el mismo esquema. Al asignar un caso, `ModeloReestudios.js` mueve la fila completa de ORIGEN a `Historico_Gestiones`. ORIGEN solo contiene casos sin asignar; `Historico_Gestiones` contiene todos los casos asignados (abiertos y cerrados).
 
 | Col | Índice | Campo | Origen |
 |-----|--------|-------|--------|
@@ -724,7 +747,68 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 
 ---
 
-## 8. 📝 Pendientes y Consideraciones Futuras
+## 8. 🎨 Mejoras UX/UI Implementadas
+
+### 8.1 Remoción Optimista de Filas (`_quitarFilaTabla`)
+
+Cada vista elimina inmediatamente la fila de "Mis Solicitudes Asignadas" al guardar una gestión, sin esperar que `cargarDatos()` recargue la tabla. Esto evita que el analista vuelva a abrir el mismo caso accidentalmente mientras espera la respuesta del servidor.
+
+**Implementación por vista (difieren en el tipo de dato de la tabla):**
+
+| Vista | Archivo | Cómo identifica la fila |
+|-------|---------|------------------------|
+| Estudio Digital | `main.js.html` | DataTable con arrays — compara `d[0]` (índice 0 = solicitudId) |
+| Reestudios | `VistaReestudios.html` | DataTable con objetos — compara `d.solicitud` |
+| Biometría | `VistaBiometria.html` | DataTable inicializado desde HTML — busca por `$(node).find('td:first').text()` |
+
+**Patrón de uso:**
+```javascript
+function _quitarFilaTabla(solicitudId) {
+  if (!$.fn.DataTable.isDataTable('#miTabla')) return;
+  $('#miTabla').DataTable()
+    .rows(function(i, d) { return String(d[0]) === String(solicitudId); })
+    .remove().draw(false);
+}
+// Se llama en el successHandler del google.script.run, antes de cargarDatos()
+```
+
+### 8.2 Modal de Gestión de Reestudio (Vista Digital)
+
+El modal `#modalReestudioDigital` en `index.html` reemplaza el antiguo popup de SweetAlert2. Sigue el mismo diseño que los demás modales del sistema.
+
+**Elementos del modal:**
+- Header con gradiente (`modal-header-inner`), ícono `bi-layers`, badge de solicitud (`#rmd_header_sol`) y badge de tipo coloreado (`#rmd_tipo_badge`)
+- Botón "Ver Anexo" (`#btnDriveRmd`) — aparece solo si hay `linkDrive` disponible
+- 4 tarjetas de información: Solicitud, Origen, Fecha Radicación, Fecha Asignación
+- Formulario: campo Póliza, selector de Estado (APROBADA/APLAZADA/NEGADA), contenedores condicionales de Motivo (MotivoPicker), campo Observaciones
+- Footer: botón Cancelar + botón Guardar
+
+**Datos mostrados (disponibles desde la hoja de reestudios):**
+- `fila[1]` = solicitud, `fila[2]` = linkDrive, `fila[3]` = origen, `fila[17]` = fechaRadicacion, `fila[26]` = fechaAsignacion, `fila[20]` = tipoDeProceso (para colorear badge)
+
+**Colores del badge por tipo:**
+- `NUEVA UAR` → rosa (`#be185d` / `#fce7f3`)
+- `DEUDOR UAR` → rojo (`#b91c1c` / `#fee2e2`)
+- Otros → púrpura (`#7c3aed` / `#ede9fe`)
+
+**Envío al backend:** `guardarCambiosInternos(datos)` con `tipoSolicitudActual: 'reestudio'` para que RUTA A se salte y RUTA B maneje el guardado en ssReestudios.
+
+### 8.3 Ordenamiento Alfabético de Motivos
+
+Todos los `<select>` de Motivo Aplazamiento y Motivo Negación están ordenados alfabéticamente A→Z en las 3 vistas:
+
+| Vista | Selects afectados |
+|-------|-----------------|
+| `index.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#rmd_motivo_aplazamiento`, `#rmd_motivo_negacion` |
+| `VistaReestudios.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#dig_motivo_aplazamiento`, `#dig_motivo_negacion` |
+
+### 8.4 Validación de Fecha Futura
+
+En `VistaReestudios.html`, la función `guardarGestionDigitalDesdeVista()` valida que el campo "Fecha y Hora de Radicación SAI" (`#dig_fecha_radicacion_sai`) no sea una fecha futura al momento de guardar. Si lo es, muestra un Swal warning y detiene el guardado.
+
+---
+
+## 9. 📝 Pendientes y Consideraciones Futuras
 
 | Item | Estado | Descripción |
 |------|--------|-------------|
@@ -734,9 +818,15 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | Reasignación desde Admin | ✅ Completado | El admin puede desasignar casos de reestudios desde el panel de monitoreo (botón "Quitar" con `desasignarSolicitudReestudio()`) |
 | Carpetas Drive unificadas | En progreso | Sistema de carpetas por solicitud (`SOL-{nro}`) en unidad compartida para centralizar documentos |
 | Sistema de cupos por equipo | ✅ Completado | Cupos diarios configurables por equipo (Digital, Biometría, Reestudios) con distribución por subcategoría, cupos individuales por analista, histórico de cambios, y validación estricta (suma = total). |
+| Modal reestudio vista digital | ✅ Completado | Modal Bootstrap reemplaza SweetAlert2 en index.html. Mismo estilo que los demás modales: header gradiente, info cards, MotivoPicker, botón Ver Anexo. |
+| Visibilidad de casos asignados en Reestudios | ✅ Completado | `getReestudiosData()` ahora lee de ORIGEN y de `Historico_Gestiones` de ssReestudios. Casos asignados (movidos al asignar) ya aparecen en "Mis Solicitudes Asignadas". |
+| Guardado correcto de gestión de reestudio | ✅ Completado | `guardarCambiosInternos()` usa discriminador `tipoSolicitudActual` para no buscar en el warehouse cuando el caso es de reestudio. `guardarGestionReestudio()` busca por solicitudId + caso abierto (fechaFin vacía). |
+| Remoción inmediata de filas tras gestión | ✅ Completado | `_quitarFilaTabla()` en las 3 vistas elimina la fila del DataTable al instante sin esperar `cargarDatos()`. |
+| Ordenamiento alfabético de motivos | ✅ Completado | Todos los selects de Motivo Aplazamiento/Negación están ordenados A→Z en index.html y VistaReestudios.html. |
+| Validación fecha futura en VistaReestudios | ✅ Completado | `guardarGestionDigitalDesdeVista()` bloquea el guardado si la fecha SAI ingresada es futura. |
 
 ---
 
 > 📅 **Última actualización:** Junio 2026  
-> 🔄 **Versión:** 2.3  
+> 🔄 **Versión:** 2.4  
 > 📝 **Mantenedor:** Equipo de Desarrollo - El Libertador
