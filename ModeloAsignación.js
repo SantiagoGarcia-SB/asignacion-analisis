@@ -45,6 +45,9 @@ function RequestLead() {
 
     if (estadoUsuario !== "ACTIVO") return "❌ Tu usuario no está Activo.";
 
+    const turnoCheck = verificarTurnoActivo(userEmail, ss);
+    if (!turnoCheck.ok) return turnoCheck.message;
+
     // Determinar equipo según especialidad para leer cupos correctos
     let equipoCupos = 'DIGITAL';
     if (especialidad.toUpperCase().includes("REESTUDIO")) equipoCupos = 'REESTUDIOS';

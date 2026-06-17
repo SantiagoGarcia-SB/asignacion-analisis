@@ -66,9 +66,10 @@ function _cargarConfigHoraria() {
   }
 
   // --- Turnos: Map<ID_Turno, [{diaSemana(JS 0-6), ini(min), fin(min)}]> ---
-  // Columnas hoja: A=ID_Turno, B=Nombre, C=Activo,
-  //                D=Lun, E=Mar, F=Mie, G=Jue, H=Vie, I=Sab, J=Dom,
-  //                K=HoraInicio, L=HoraFin
+  // Columnas hoja (A-X, 24 cols):
+  //   A=ID, B=Nombre, C=Activo, D-J=bool por día (Lun→Dom)
+  //   K=Lun_Ini, L=Lun_Fin, M=Mar_Ini, N=Mar_Fin, O=Mie_Ini, P=Mie_Fin,
+  //   Q=Jue_Ini, R=Jue_Fin, S=Vie_Ini, T=Vie_Fin, U=Sab_Ini, V=Sab_Fin, W=Dom_Ini, X=Dom_Fin
   // JS día semana: 0=Dom, 1=Lun, 2=Mar, 3=Mie, 4=Jue, 5=Vie, 6=Sab
   const DIAS_JS = [1, 2, 3, 4, 5, 6, 0]; // orden: Lun→Dom mapeados a JS
   const turnos = new Map();
@@ -81,15 +82,15 @@ function _cargarConfigHoraria() {
         const id = String(r[0] || '').trim();
         const activo = r[2] === true || String(r[2]).toUpperCase() === 'TRUE';
         if (!id || !activo) continue;
-        const ini = _parsearHora(r[10]);
-        const fin = _parsearHora(r[11]);
-        if (ini === null || fin === null || ini >= fin) continue;
         if (!turnos.has(id)) turnos.set(id, []);
         for (let d = 0; d < 7; d++) {
           const marcado = r[3 + d];
-          if (marcado === true || String(marcado).toUpperCase() === 'TRUE' || marcado === 1) {
-            turnos.get(id).push({ diaSemana: DIAS_JS[d], ini, fin });
-          }
+          if (!(marcado === true || String(marcado).toUpperCase() === 'TRUE' || marcado === 1)) continue;
+          // Per-day hours: index 10 + d*2 = Ini, 11 + d*2 = Fin
+          const ini = _parsearHora(r[10 + d * 2]);
+          const fin = _parsearHora(r[11 + d * 2]);
+          if (ini === null || fin === null || ini >= fin) continue;
+          turnos.get(id).push({ diaSemana: DIAS_JS[d], ini, fin });
         }
       }
     }

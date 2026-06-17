@@ -322,7 +322,7 @@
                         <i class="bi bi-laptop fs-5"></i> Fallas Técnicas
                     </button>
                     <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-ausencias" type="button">
-                        <i class="bi bi-hospital fs-5"></i> Ausencias / Salud
+                        <i class="bi bi-calendar-x-fill fs-5"></i> Permisos e Incapacidades
                     </button>
                     <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-reuniones" type="button">
                         <i class="bi bi-people fs-5"></i> Reuniones / Eventos
@@ -393,12 +393,20 @@
                             </div>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="small fw-bold mb-1">Fecha de inicio <span class="text-danger">*</span></label>
+                                    <label class="small fw-bold mb-1" id="lbl-ausencia-fecha-inicio">Fecha de inicio <span class="text-danger">*</span></label>
                                     <input type="date" id="ausencia-fecha-inicio" class="form-control" style="border-radius:10px;">
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-6" id="col-ausencia-fecha-fin">
                                     <label class="small fw-bold mb-1">Fecha de fin <span class="text-danger">*</span></label>
                                     <input type="date" id="ausencia-fecha-fin" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6" id="col-ausencia-hora-inicio" style="display:none;">
+                                    <label class="small fw-bold mb-1">Hora de inicio <span class="text-danger">*</span></label>
+                                    <input type="time" id="ausencia-hora-inicio" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6" id="col-ausencia-hora-fin" style="display:none;">
+                                    <label class="small fw-bold mb-1">Hora de fin <span class="text-danger">*</span></label>
+                                    <input type="time" id="ausencia-hora-fin" class="form-control" style="border-radius:10px;">
                                 </div>
                                 <div class="col-12">
                                     <label class="small fw-bold mb-1">Observación <span class="text-muted fw-normal">(opcional)</span></label>

@@ -756,6 +756,8 @@ function seleccionarNovedad(novedad) {
 }
 
 var _tipoPermisoSeleccionado = '';
+// Tipos que requieren hora (permisos parciales del día)
+var _TIPOS_CON_HORA = ['CITA MEDICA', 'PERMISO PERSONAL', 'EXAMEN OCUPACIONAL'];
 
 function iniciarSolicitudPermiso(tipo) {
     _tipoPermisoSeleccionado = tipo;
@@ -765,6 +767,22 @@ function iniciarSolicitudPermiso(tipo) {
     document.getElementById('ausencia-fecha-fin').value = hoyStr;
     document.getElementById('ausencia-observacion').value = '';
     document.getElementById('ausencias-tipo-badge').textContent = tipo;
+
+    var esParcial = _TIPOS_CON_HORA.indexOf(tipo) !== -1;
+    var colHoraI = document.getElementById('col-ausencia-hora-inicio');
+    var colHoraF = document.getElementById('col-ausencia-hora-fin');
+    if (colHoraI) colHoraI.style.display = esParcial ? '' : 'none';
+    if (colHoraF) colHoraF.style.display = esParcial ? '' : 'none';
+    if (esParcial) {
+        document.getElementById('ausencia-hora-inicio').value = '08:00';
+        document.getElementById('ausencia-hora-fin').value = '09:00';
+    } else {
+        var hi = document.getElementById('ausencia-hora-inicio');
+        var hf = document.getElementById('ausencia-hora-fin');
+        if (hi) hi.value = '';
+        if (hf) hf.value = '';
+    }
+
     document.getElementById('ausencias-paso1').style.display = 'none';
     document.getElementById('ausencias-paso2').style.display = 'block';
 }
@@ -786,6 +804,26 @@ function enviarSolicitudPermiso() {
         Swal.fire({ icon: 'warning', title: 'Fechas inválidas', text: 'La fecha de fin no puede ser anterior a la de inicio.', confirmButtonColor: '#3b82f6' });
         return;
     }
+
+    var esParcial = _TIPOS_CON_HORA.indexOf(_tipoPermisoSeleccionado) !== -1;
+    var fechaInicioFinal = fi;
+    var fechaFinFinal = ff;
+
+    if (esParcial) {
+        var hi = document.getElementById('ausencia-hora-inicio').value;
+        var hf = document.getElementById('ausencia-hora-fin').value;
+        if (!hi || !hf) {
+            Swal.fire({ icon: 'warning', title: 'Horas requeridas', text: 'Por favor selecciona la hora de inicio y fin.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        if (fi === ff && hf <= hi) {
+            Swal.fire({ icon: 'warning', title: 'Horas inválidas', text: 'La hora de fin debe ser posterior a la de inicio.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        fechaInicioFinal = fi + ' ' + hi;
+        fechaFinFinal = ff + ' ' + hf;
+    }
+
     var obs = document.getElementById('ausencia-observacion').value.trim();
     var btn = document.getElementById('btn-enviar-permiso');
     btn.disabled = true;
@@ -811,7 +849,7 @@ function enviarSolicitudPermiso() {
             btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
             Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#3b82f6' });
         })
-        .solicitarPermiso(_tipoPermisoSeleccionado, fi, ff, obs);
+        .solicitarPermiso(_tipoPermisoSeleccionado, fechaInicioFinal, fechaFinFinal, obs);
 }
 
 function verificarYAplicarPermisoVigente() {

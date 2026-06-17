@@ -913,8 +913,8 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
       const dataPI = hojaPI.getDataRange().getValues();
       for (let i = 1; i < dataPI.length; i++) {
         if (String(dataPI[i][8]).toUpperCase() !== 'APROBADO') continue;
-        const fi = String(dataPI[i][5]).trim();
-        const ff = String(dataPI[i][6]).trim();
+        const fi = _fmtFechaPI_(dataPI[i][5]);
+        const ff = _fmtFechaPI_(dataPI[i][6]);
         if (fi > hasta || ff < desde) continue;
         permisosAprobados.push({
           id: String(dataPI[i][0]).trim(),
@@ -974,22 +974,21 @@ function admin_getTurnosData() {
         // Use display values for hora cols to avoid GAS historical-LMT timezone shift bug.
         // getValues() on a time cell returns a Date shifted ~4 min due to LMT vs. current UTC-5.
         // getDisplayValues() returns the exact string the user sees ("8:00" or "8:00:00").
-        const horaIniRaw = String(dispData[i][10] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
-        const horaFinRaw = String(dispData[i][11] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+        // Per-day hours: cols K-X (indices 10-23), pairs Ini/Fin per day (Lun→Dom)
+        const DIAS_KEYS_GT = ['lun','mar','mie','jue','vie','sab','dom'];
+        const dias = {};
+        DIAS_KEYS_GT.forEach(function(d, idx) {
+          const activo = !!(r[3 + idx] === true || r[3 + idx] === 1 || String(r[3 + idx]).toUpperCase() === 'TRUE');
+          const ini = String(dispData[i][10 + idx * 2] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+          const fin = String(dispData[i][11 + idx * 2] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+          dias[d] = { activo, horaInicio: ini, horaFin: fin };
+        });
         turnos.push({
           fila: i + 1,
           id: String(r[0]).trim(),
           nombre: String(r[1] || '').trim(),
           activo: r[2] === true || String(r[2]).toUpperCase() === 'TRUE',
-          lun: !!(r[3] === true || r[3] === 1),
-          mar: !!(r[4] === true || r[4] === 1),
-          mie: !!(r[5] === true || r[5] === 1),
-          jue: !!(r[6] === true || r[6] === 1),
-          vie: !!(r[7] === true || r[7] === 1),
-          sab: !!(r[8] === true || r[8] === 1),
-          dom: !!(r[9] === true || r[9] === 1),
-          horaInicio: horaIniRaw,
-          horaFin:    horaFinRaw
+          dias
         });
       }
     }
@@ -1049,7 +1048,11 @@ function admin_getTurnosData() {
 
 /**
  * Crea o actualiza un turno. Si el ID existe, actualiza esa fila; si no, crea fila nueva.
- * @param {Object} turno - { id, nombre, activo, lun, mar, mie, jue, vie, sab, dom, horaInicio, horaFin }
+ * @param {Object} turno - { id, nombre, activo, dias: { lun, mar, mie, jue, vie, sab, dom: { activo, horaInicio, horaFin } } }
+ * Columnas hoja (A-X, 24 cols):
+ *   A=ID, B=Nombre, C=Activo, D-J=bools por día,
+ *   K=Lun_Ini, L=Lun_Fin, M=Mar_Ini, N=Mar_Fin, O=Mie_Ini, P=Mie_Fin,
+ *   Q=Jue_Ini, R=Jue_Fin, S=Vie_Ini, T=Vie_Fin, U=Sab_Ini, V=Sab_Fin, W=Dom_Ini, X=Dom_Fin
  */
 function admin_guardarTurno(turno) {
   try {
@@ -1058,14 +1061,24 @@ function admin_guardarTurno(turno) {
     let hoja = ss.getSheetByName('Turnos');
     if (!hoja) {
       hoja = ss.insertSheet('Turnos');
-      hoja.appendRow(['ID_Turno','Nombre','Activo','Lun','Mar','Mie','Jue','Vie','Sab','Dom','HoraInicio','HoraFin']);
+      hoja.appendRow([
+        'ID_Turno','Nombre','Activo',
+        'Lun_Activo','Mar_Activo','Mie_Activo','Jue_Activo','Vie_Activo','Sab_Activo','Dom_Activo',
+        'Lun_Ini','Lun_Fin','Mar_Ini','Mar_Fin','Mie_Ini','Mie_Fin',
+        'Jue_Ini','Jue_Fin','Vie_Ini','Vie_Fin','Sab_Ini','Sab_Fin','Dom_Ini','Dom_Fin'
+      ]);
     }
 
+    const DIAS_KEYS_GS = ['lun','mar','mie','jue','vie','sab','dom'];
+    const d = turno.dias || {};
+    const horaVals = DIAS_KEYS_GS.flatMap(k => [
+      (d[k] && d[k].horaInicio) || '',
+      (d[k] && d[k].horaFin)    || ''
+    ]);
     const fila = [
       turno.id, turno.nombre, turno.activo === true,
-      !!turno.lun, !!turno.mar, !!turno.mie, !!turno.jue,
-      !!turno.vie, !!turno.sab, !!turno.dom,
-      turno.horaInicio, turno.horaFin
+      ...DIAS_KEYS_GS.map(k => !!(d[k] && d[k].activo)),
+      ...horaVals
     ];
 
     // Buscar si existe
@@ -1079,12 +1092,12 @@ function admin_guardarTurno(turno) {
     }
 
     if (filaExistente > 0) {
-      hoja.getRange(filaExistente, 1, 1, 12).setValues([fila]);
-      hoja.getRange(filaExistente, 11, 1, 2).setNumberFormat("@").setValues([[turno.horaInicio, turno.horaFin]]);
+      hoja.getRange(filaExistente, 1, 1, 24).setValues([fila]);
+      hoja.getRange(filaExistente, 11, 1, 14).setNumberFormat("@").setValues([horaVals]);
     } else {
       hoja.appendRow(fila);
       const newRow = hoja.getLastRow();
-      hoja.getRange(newRow, 11, 1, 2).setNumberFormat("@").setValues([[turno.horaInicio, turno.horaFin]]);
+      hoja.getRange(newRow, 11, 1, 14).setNumberFormat("@").setValues([horaVals]);
     }
 
     return { success: true, message: 'Turno guardado.' };
@@ -1321,6 +1334,13 @@ function admin_contarPermisosPendientes() {
   }
 }
 
+function _fmtFechaPI_(val) {
+  if (val === '' || val === null || val === undefined) return '';
+  if (val instanceof Date) return Utilities.formatDate(val, TIMEZONE, 'yyyy-MM-dd');
+  const s = String(val).trim();
+  return s;
+}
+
 function admin_obtenerPermisosPendientes(filtroEstado) {
   try {
     verificarPermisoAdmin();
@@ -1338,15 +1358,15 @@ function admin_obtenerPermisosPendientes(filtroEstado) {
       registros.push({
         fila: i + 1,
         id: String(data[i][0]).trim(),
-        fechaSolicitud: String(data[i][1]).trim(),
+        fechaSolicitud: _fmtFechaPI_(data[i][1]),
         correo: String(data[i][2]).trim(),
         nombre: String(data[i][3]).trim(),
         tipo: String(data[i][4]).trim(),
-        fechaInicio: String(data[i][5]).trim(),
-        fechaFin: String(data[i][6]).trim(),
+        fechaInicio: _fmtFechaPI_(data[i][5]),
+        fechaFin: _fmtFechaPI_(data[i][6]),
         observacionAnalista: String(data[i][7]).trim(),
         estado: estado,
-        fechaRevision: String(data[i][9]).trim(),
+        fechaRevision: _fmtFechaPI_(data[i][9]),
         correoAdmin: String(data[i][10]).trim(),
         observacionAdmin: String(data[i][11]).trim()
       });
@@ -1395,8 +1415,8 @@ function admin_resolverPermiso(id, decision, observacionAdmin) {
 
     if (decisionUp === 'APROBADO') {
       const hoyStr = Utilities.formatDate(ahora, TIMEZONE, 'yyyy-MM-dd');
-      const fi = String(registroPI[5]).trim();
-      const ff = String(registroPI[6]).trim();
+      const fi = String(registroPI[5]).trim().substring(0, 10);
+      const ff = String(registroPI[6]).trim().substring(0, 10);
       if (hoyStr >= fi && hoyStr <= ff) {
         admin_sincronizarEstado(String(registroPI[2]).toLowerCase().trim(), String(registroPI[4]).trim());
       }
@@ -1404,19 +1424,118 @@ function admin_resolverPermiso(id, decision, observacionAdmin) {
 
     SpreadsheetApp.flush();
 
+    // Leer admins para notificar
+    const otrosAdmins = [];
     try {
-      const correoAnalista = String(registroPI[2]).trim();
-      const tipo = String(registroPI[4]).trim();
-      const fi = String(registroPI[5]).trim();
-      const ff = String(registroPI[6]).trim();
-      const accion = decisionUp === 'APROBADO' ? 'APROBADA' : 'RECHAZADA';
-      const asunto = '[Permiso ' + accion + '] ' + tipo;
-      const cuerpo = 'Hola ' + String(registroPI[3]).trim() + ',\n\nTu solicitud de permiso ha sido ' + accion + ':\n\n'
-        + 'Tipo: ' + tipo + '\nFecha inicio: ' + fi + '\nFecha fin: ' + ff
-        + (observacionAdmin ? '\nObservación del administrador: ' + observacionAdmin : '')
-        + '\n\nSaludos.';
-      MailApp.sendEmail(correoAnalista, asunto, cuerpo);
+      const datosU = ss.getSheetByName('Usuarios').getDataRange().getValues();
+      for (let i = 1; i < datosU.length; i++) {
+        const cf = String(datosU[i][2]).toLowerCase().trim();
+        if (String(datosU[i][23]).toUpperCase().trim() === 'ADMIN' && cf && cf !== correoAdmin) {
+          otrosAdmins.push(cf);
+        }
+      }
+    } catch(eU) { Logger.log('Error leyendo admins: ' + eU.message); }
+
+    const nombreAnalista = String(registroPI[3]).trim();
+    const correoAnalista = String(registroPI[2]).trim();
+    const tipo           = String(registroPI[4]).trim();
+    const fi             = _fmtFechaPI_(registroPI[5]);
+    const ff             = _fmtFechaPI_(registroPI[6]);
+    const aprobado       = decisionUp === 'APROBADO';
+    const accionLabel    = aprobado ? 'APROBADA' : 'RECHAZADA';
+    const colorEstado    = aprobado ? '#15803d' : '#b91c1c';
+    const bgEstado       = aprobado ? '#dcfce7'  : '#fee2e2';
+    const borderEstado   = aprobado ? '#bbf7d0'  : '#fecaca';
+
+    // ── Correo al ANALISTA ──────────────────────────────────────────────────
+    try {
+      const asuntoAnalista = '[Permiso ' + accionLabel + '] ' + tipo;
+      const htmlAnalista =
+        '<div style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">'
+        + '<div style="max-width:580px;margin:0 auto;padding:32px 16px;">'
+        // header
+        + '<div style="background:#253150;border-radius:14px 14px 0 0;border-bottom:4px solid #BD0F14;padding:28px 32px;">'
+        + '<p style="margin:0 0 6px 0;color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:2px;text-transform:uppercase;">Sistema de Asignaci&oacute;n &middot; El Libertador</p>'
+        + '<h1 style="margin:0;color:#fff;font-size:21px;font-weight:700;">Solicitud de Permiso ' + accionLabel + '</h1>'
+        + '</div>'
+        // estado banner
+        + '<div style="background:' + bgEstado + ';border-left:4px solid ' + colorEstado + ';padding:14px 24px;border-bottom:1px solid ' + borderEstado + ';">'
+        + '<p style="margin:0;color:' + colorEstado + ';font-size:14px;font-weight:700;">Hola ' + nombreAnalista + ', tu solicitud fue <strong>' + accionLabel + '</strong>.</p>'
+        + '</div>'
+        // body
+        + '<div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none;">'
+        + '<p style="margin:0 0 20px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;">Detalles</p>'
+        + '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;">'
+        + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;width:38%;border-bottom:1px solid #e2e8f0;">Tipo</td>'
+        + '<td style="padding:12px 16px;background:#fff;font-size:13px;font-weight:700;color:#253150;border-bottom:1px solid #e2e8f0;">' + tipo + '</td></tr>'
+        + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha inicio</td>'
+        + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + fi + '</td></tr>'
+        + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha fin</td>'
+        + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + ff + '</td></tr>'
+        + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;">Nota del administrador</td>'
+        + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#475569;font-style:' + (observacionAdmin ? 'normal' : 'italic') + ';">' + (observacionAdmin || 'Sin observaciones') + '</td></tr>'
+        + '</table>'
+        + '<div style="margin-top:24px;padding:16px;background:' + bgEstado + ';border-radius:10px;border:1px solid ' + borderEstado + ';text-align:center;">'
+        + '<p style="margin:0;color:' + colorEstado + ';font-size:14px;font-weight:700;">'
+        + (aprobado ? 'Tu permiso fue aprobado. El estado en el sistema se actualizar&aacute; autom&aacute;ticamente.' : 'Tu solicitud no fue aprobada. Puedes contactar a tu administrador para m&aacute;s informaci&oacute;n.')
+        + '</p>'
+        + '</div>'
+        + '</div>'
+        // footer
+        + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 14px 14px;padding:16px 32px;text-align:center;">'
+        + '<p style="margin:0;color:#94a3b8;font-size:11px;">Sistema de Asignaci&oacute;n &mdash; El Libertador &middot; Seguros Bol&iacute;var</p>'
+        + '</div>'
+        + '</div></div>';
+      MailApp.sendEmail({ to: correoAnalista, subject: asuntoAnalista, htmlBody: htmlAnalista });
     } catch(eM) { Logger.log('Email analista error: ' + eM.message); }
+
+    // ── Correo a los OTROS ADMINS ───────────────────────────────────────────
+    if (otrosAdmins.length > 0) {
+      try {
+        const nombreAdmin = correoAdmin.split('@')[0].replace('.', ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+        const asuntoAdmins = '[Permiso ' + accionLabel + '] ' + tipo + ' - ' + nombreAnalista;
+        const htmlAdmins =
+          '<div style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">'
+          + '<div style="max-width:580px;margin:0 auto;padding:32px 16px;">'
+          // header
+          + '<div style="background:#253150;border-radius:14px 14px 0 0;border-bottom:4px solid #BD0F14;padding:28px 32px;">'
+          + '<p style="margin:0 0 6px 0;color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:2px;text-transform:uppercase;">Sistema de Asignaci&oacute;n &middot; El Libertador</p>'
+          + '<h1 style="margin:0;color:#fff;font-size:21px;font-weight:700;">Permiso ' + accionLabel + ' por un Administrador</h1>'
+          + '</div>'
+          // banner estado
+          + '<div style="background:' + bgEstado + ';border-left:4px solid ' + colorEstado + ';padding:14px 24px;border-bottom:1px solid ' + borderEstado + ';">'
+          + '<p style="margin:0;color:' + colorEstado + ';font-size:13px;line-height:1.5;"><strong>' + nombreAdmin + '</strong> ' + (aprobado ? 'aprob&oacute;' : 'rechaz&oacute;') + ' la siguiente solicitud de permiso.</p>'
+          + '</div>'
+          // body
+          + '<div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none;">'
+          // analista card
+          + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:24px;">'
+          + '<p style="margin:0 0 2px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Analista</p>'
+          + '<p style="margin:0;font-size:15px;font-weight:700;color:#1e293b;">' + nombreAnalista + '</p>'
+          + '<p style="margin:2px 0 0 0;font-size:12px;color:#64748b;">' + correoAnalista + '</p>'
+          + '</div>'
+          + '<p style="margin:0 0 12px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;">Detalles del permiso</p>'
+          + '<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;">'
+          + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;width:38%;border-bottom:1px solid #e2e8f0;">Tipo</td>'
+          + '<td style="padding:12px 16px;background:#fff;border-bottom:1px solid #e2e8f0;"><span style="background:#253150;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;">' + tipo + '</span></td></tr>'
+          + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha inicio</td>'
+          + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + fi + '</td></tr>'
+          + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha fin</td>'
+          + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + ff + '</td></tr>'
+          + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Decisión</td>'
+          + '<td style="padding:12px 16px;background:#fff;border-bottom:1px solid #e2e8f0;"><span style="background:' + bgEstado + ';color:' + colorEstado + ';border:1px solid ' + borderEstado + ';font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;">' + accionLabel + '</span></td></tr>'
+          + '<tr><td style="padding:12px 16px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;color:#64748b;">Nota del admin</td>'
+          + '<td style="padding:12px 16px;background:#fff;font-size:13px;color:#475569;font-style:' + (observacionAdmin ? 'normal' : 'italic') + ';">' + (observacionAdmin || 'Sin observaciones') + '</td></tr>'
+          + '</table>'
+          + '</div>'
+          // footer
+          + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 14px 14px;padding:16px 32px;text-align:center;">'
+          + '<p style="margin:0;color:#94a3b8;font-size:11px;">Sistema de Asignaci&oacute;n &mdash; El Libertador &middot; Seguros Bol&iacute;var</p>'
+          + '</div>'
+          + '</div></div>';
+        MailApp.sendEmail({ to: otrosAdmins.join(','), subject: asuntoAdmins, htmlBody: htmlAdmins });
+      } catch(eA) { Logger.log('Email admins error: ' + eA.message); }
+    }
 
     return { success: true, message: 'Permiso ' + decision.toLowerCase() + ' correctamente.' };
   } catch(e) {

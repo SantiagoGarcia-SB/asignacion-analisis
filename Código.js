@@ -872,6 +872,112 @@ function getResumenGestionesHoy() {
 }
 
 /**
+ * Verifica si el analista está dentro de su turno activo.
+ * Si no tiene turno configurado, no bloquea (graceful).
+ * Respeta Horas_Extra para extender el fin de turno.
+ * @param {string} userEmail - email del analista (minúsculas)
+ * @param {Spreadsheet} ss - instancia ya abierta de TARGET_SOLICITUDES_SS_ID
+ * @returns {{ ok: boolean, message?: string }}
+ */
+function verificarTurnoActivo(userEmail, ss) {
+  try {
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, TIMEZONE, 'HH:mm');
+    const hoyStr = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd');
+    const [hNow, mNow] = nowStr.split(':').map(Number);
+    const minActual = hNow * 60 + mNow;
+
+    // Helper: convierte un valor de celda de hora a minutos desde medianoche
+    function parseMin(v) {
+      if (!v && v !== 0) return null;
+      if (v instanceof Date) return v.getUTCHours() * 60 + v.getUTCMinutes();
+      if (typeof v === 'number') return Math.round(v * 1440);
+      const s = String(v).trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      if (!s.includes(':')) return null;
+      const [h, m] = s.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    // 1. Buscar turno vigente del analista
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (!hojaAT || hojaAT.getLastRow() <= 1) return { ok: true };
+
+    const dataAT = hojaAT.getDataRange().getValues();
+    let idTurnoActivo = null;
+    for (let i = 1; i < dataAT.length; i++) {
+      const r = dataAT[i];
+      const email = String(r[0]).toLowerCase().trim();
+      if (email !== userEmail) continue;
+      const idT = String(r[1]).trim();
+      const desde = r[2] instanceof Date ? r[2] : null;
+      const hasta = r[3] instanceof Date ? r[3] : null;
+      if (!idT || !desde) continue;
+      if (now >= desde && (!hasta || now <= hasta)) {
+        idTurnoActivo = idT;
+        break;
+      }
+    }
+    if (!idTurnoActivo) return { ok: true };
+
+    // 2. Leer definición del turno
+    const hojaTurnos = ss.getSheetByName('Turnos');
+    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { ok: true };
+
+    const dataTurnos = hojaTurnos.getDataRange().getValues();
+    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
+    // Día ISO: 1=Lun…7=Dom → d_idx 0=Lun…6=Dom
+    // bool col: 3+d_idx, Fin col (display): 11+d_idx*2
+    const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
+    const dIdx = diaISO - 1; // 0=Lun…6=Dom
+    const boolCol = 3 + dIdx;
+    const finCol  = 11 + dIdx * 2;
+
+    let horaFinStr = null;
+    let nombreTurno = '';
+    for (let i = 1; i < dataTurnos.length; i++) {
+      if (String(dataTurnos[i][0]).trim() !== idTurnoActivo) continue;
+      // Si el turno no aplica hoy, no bloquear
+      if (!dataTurnos[i][boolCol]) return { ok: true };
+      horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      nombreTurno = String(dataTurnos[i][1] || '').trim();
+      break;
+    }
+    if (!horaFinStr) return { ok: true };
+
+    let minFin = parseMin(horaFinStr);
+    if (minFin === null) return { ok: true };
+
+    // 3. Extender con Horas_Extra si las hay para hoy
+    const hojaExtra = ss.getSheetByName('Horas_Extra');
+    if (hojaExtra && hojaExtra.getLastRow() > 1) {
+      const dataExtra = hojaExtra.getDataRange().getValues();
+      const dispExtra = hojaExtra.getDataRange().getDisplayValues();
+      for (let i = 1; i < dataExtra.length; i++) {
+        const r = dataExtra[i];
+        if (String(r[0]).toLowerCase().trim() !== userEmail) continue;
+        const fechaE = r[1] instanceof Date
+          ? Utilities.formatDate(r[1], TIMEZONE, 'yyyy-MM-dd')
+          : String(r[1]).trim().substring(0, 10);
+        if (fechaE !== hoyStr) continue;
+        const minExtra = parseMin(dispExtra[i][3] || r[3]);
+        if (minExtra !== null && minExtra > minFin) minFin = minExtra;
+      }
+    }
+
+    if (minActual > minFin) {
+      return {
+        ok: false,
+        message: `⏰ Tu turno (${nombreTurno || horaFinStr}) finalizó a las ${horaFinStr}. No puedes recibir más casos por hoy.`
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    Logger.log('verificarTurnoActivo error: ' + e.message);
+    return { ok: true };
+  }
+}
+
+/**
  * Verifica el estado de cupos del analista actual.
  * Retorna cuántos ha usado hoy vs su límite, por cada subcategoría.
  * @param {string} equipo - 'DIGITAL', 'BIOMETRIA' o 'REESTUDIOS'
@@ -1532,13 +1638,94 @@ function solicitarPermiso(tipoNovedad, fechaInicio, fechaFin, observacion) {
       'PENDIENTE', '', '', ''
     ]);
     SpreadsheetApp.flush();
+    Logger.log('Admins encontrados: ' + admins.length + ' | ' + admins.join(', '));
     if (admins.length > 0) {
-      const asunto = '[Permiso Pendiente] ' + tipoNovedad + ' — ' + nombreAnalista;
-      const cuerpo = 'El analista ' + nombreAnalista + ' (' + correoAnalista + ') solicita:\n\n'
-        + 'Tipo: ' + tipoNovedad + '\nFecha inicio: ' + fechaInicio + '\nFecha fin: ' + fechaFin
-        + '\nObservación: ' + (observacion || '—')
-        + '\n\nIngresa al Panel Admin → Novedades → Solicitudes de Permisos para aprobar o rechazar.';
-      try { MailApp.sendEmail(admins.join(','), asunto, cuerpo); } catch(eM) { Logger.log('Email error: ' + eM.message); }
+      let appUrl = '';
+      try { appUrl = ScriptApp.getService().getUrl(); } catch(eU) { Logger.log('getUrl error: ' + eU.message); }
+      const btnHref = appUrl || '#';
+      const asunto = '[PERMISO PENDIENTE] ' + tipoNovedad + ' - ' + nombreAnalista;
+      const htmlBody =
+        '<div style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">'
+        + '<div style="max-width:600px;margin:0 auto;padding:32px 16px;">'
+
+        // Header
+        + '<div style="background:linear-gradient(135deg,#253150 0%,#1a2440 100%);border-radius:14px 14px 0 0;padding:0;overflow:hidden;">'
+        + '<div style="border-bottom:4px solid #BD0F14;padding:28px 32px;">'
+        + '<p style="margin:0 0 6px 0;color:rgba(255,255,255,0.55);font-size:11px;letter-spacing:2px;text-transform:uppercase;">Sistema de Asignaci&oacute;n · El Libertador</p>'
+        + '<h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3;">Solicitud de Permiso<br>Pendiente de Aprobaci&oacute;n</h1>'
+        + '</div>'
+        + '</div>'
+
+        // Alert bar
+        + '<div style="background:#fefce8;border-left:4px solid #f59e0b;border-right:none;padding:14px 24px;border-bottom:1px solid #fde68a;">'
+        + '<p style="margin:0;color:#92400e;font-size:13px;line-height:1.5;"><strong>Acci&oacute;n requerida:</strong> Un analista ha enviado una solicitud que requiere tu revisi&oacute;n y aprobaci&oacute;n.</p>'
+        + '</div>'
+
+        // Body
+        + '<div style="background:#ffffff;padding:32px;border:1px solid #e2e8f0;border-top:none;">'
+
+        // Analyst card
+        + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:18px 20px;margin-bottom:28px;display:flex;">'
+        + '<div style="background:#253150;border-radius:8px;width:42px;height:42px;display:inline-block;text-align:center;line-height:42px;font-size:18px;margin-right:16px;vertical-align:middle;">&#128100;</div>'
+        + '<div style="display:inline-block;vertical-align:middle;">'
+        + '<p style="margin:0 0 2px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;">Analista que solicita</p>'
+        + '<p style="margin:0;font-size:16px;font-weight:700;color:#1e293b;">' + nombreAnalista + '</p>'
+        + '<p style="margin:2px 0 0 0;font-size:13px;color:#64748b;">' + correoAnalista + '</p>'
+        + '</div>'
+        + '</div>'
+
+        // Section title
+        + '<p style="margin:0 0 12px 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;">Detalles de la Solicitud</p>'
+
+        // Details table
+        + '<table style="width:100%;border-collapse:collapse;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;">'
+        + '<tr>'
+        + '<td style="padding:14px 18px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;width:38%;border-bottom:1px solid #e2e8f0;">Tipo de Permiso</td>'
+        + '<td style="padding:14px 18px;background:#ffffff;border-bottom:1px solid #e2e8f0;"><span style="display:inline-block;background:#253150;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:0.5px;">' + tipoNovedad + '</span></td>'
+        + '</tr>'
+        + '<tr>'
+        + '<td style="padding:14px 18px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha / Hora inicio</td>'
+        + '<td style="padding:14px 18px;background:#ffffff;font-size:14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + fechaInicio + '</td>'
+        + '</tr>'
+        + '<tr>'
+        + '<td style="padding:14px 18px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha / Hora fin</td>'
+        + '<td style="padding:14px 18px;background:#ffffff;font-size:14px;color:#1e293b;border-bottom:1px solid #e2e8f0;">' + fechaFin + '</td>'
+        + '</tr>'
+        + '<tr>'
+        + '<td style="padding:14px 18px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;">Observaci&oacute;n</td>'
+        + '<td style="padding:14px 18px;background:#ffffff;font-size:13px;color:#475569;font-style:' + (observacion ? 'normal' : 'italic') + ';">' + (observacion || 'Sin observaciones') + '</td>'
+        + '</tr>'
+        + '</table>'
+
+        // CTA Button
+        + '<div style="text-align:center;margin-top:32px;">'
+        + '<a href="' + btnHref + '" style="display:inline-block;background:#BD0F14;color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:0.3px;">Revisar y Gestionar Solicitud</a>'
+        + '</div>'
+        + '<p style="text-align:center;margin:14px 0 0 0;color:#94a3b8;font-size:12px;">Panel Admin &rarr; Novedades &rarr; Solicitudes de Permisos</p>'
+
+        + '</div>'
+
+        // Footer
+        + '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 14px 14px;padding:18px 32px;text-align:center;">'
+        + '<p style="margin:0 0 4px 0;color:#94a3b8;font-size:11px;">Este correo fue generado autom&aacute;ticamente por el</p>'
+        + '<p style="margin:0;color:#253150;font-size:12px;font-weight:700;">Sistema de Asignaci&oacute;n &mdash; El Libertador &middot; Seguros Bol&iacute;var</p>'
+        + '</div>'
+
+        + '</div></div>';
+      try {
+        MailApp.sendEmail({ to: admins.join(','), subject: asunto, htmlBody: htmlBody });
+        Logger.log('Email enviado a: ' + admins.join(','));
+      } catch(eM) {
+        Logger.log('Email HTML error: ' + eM.message);
+        try {
+          MailApp.sendEmail(admins.join(','), asunto,
+            'Analista: ' + nombreAnalista + ' (' + correoAnalista + ')\n'
+            + 'Tipo: ' + tipoNovedad + '\nInicio: ' + fechaInicio + '\nFin: ' + fechaFin
+            + '\nObservacion: ' + (observacion || '-')
+            + '\n\nPanel Admin > Novedades > Solicitudes de Permisos.');
+          Logger.log('Email texto plano enviado correctamente.');
+        } catch(eM2) { Logger.log('Email texto plano error: ' + eM2.message); }
+      }
     }
     return { success: true, message: 'Solicitud enviada. El administrador revisará tu permiso.' };
   } catch(e) {
@@ -1559,10 +1746,10 @@ function verificarPermisoVigenteHoy() {
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][2]).toLowerCase().trim() !== correoAnalista) continue;
       if (String(data[i][8]).toUpperCase() !== 'APROBADO') continue;
-      const fi = String(data[i][5]).trim();
-      const ff = String(data[i][6]).trim();
+      const fi = String(data[i][5]).trim().substring(0, 10);
+      const ff = String(data[i][6]).trim().substring(0, 10);
       if (hoy >= fi && hoy <= ff) {
-        return { tienePermiso: true, tipo: String(data[i][4]).trim(), fechaInicio: fi, fechaFin: ff };
+        return { tienePermiso: true, tipo: String(data[i][4]).trim(), fechaInicio: String(data[i][5]).trim(), fechaFin: String(data[i][6]).trim() };
       }
     }
     return { tienePermiso: false };

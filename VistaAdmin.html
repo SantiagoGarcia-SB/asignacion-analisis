@@ -1607,8 +1607,17 @@ function renderTurnosVista() {
                 '<button class="btn-chip-mover" onclick="abrirModalAsignar(\'' + email + '\',\'' + nombre + '\')" title="Cambiar turno"><i class="bi bi-arrow-left-right"></i></button>' +
                 '</div>';
         }).join('');
-        var diasLabel = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']
-            .filter(function(_,i){ return [t.lun,t.mar,t.mie,t.jue,t.vie,t.sab,t.dom][i]; }).join(' · ');
+        var DIAS_KEYS_R = ['lun','mar','mie','jue','vie','sab','dom'];
+        var DIAS_LABELS_R = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+        var diasActivos = DIAS_KEYS_R.filter(function(k){ return t.dias && t.dias[k] && t.dias[k].activo; });
+        var diasLabel = diasActivos.map(function(k){ return DIAS_LABELS_R[DIAS_KEYS_R.indexOf(k)]; }).join(' · ');
+        // Horario: si todos los días activos tienen el mismo horario, mostrar uno; si no, por día
+        var horasUnicas = diasActivos.map(function(k){ return t.dias[k].horaInicio + '–' + t.dias[k].horaFin; });
+        var horasSet = horasUnicas.filter(function(v,i,a){ return a.indexOf(v) === i; });
+        var horarioLabel = diasActivos.length === 0 ? '—'
+            : horasSet.length === 1
+                ? (t.dias[diasActivos[0]].horaInicio + ' – ' + t.dias[diasActivos[0]].horaFin)
+                : diasActivos.map(function(k){ return DIAS_LABELS_R[DIAS_KEYS_R.indexOf(k)] + ': ' + t.dias[k].horaInicio + '–' + t.dias[k].horaFin; }).join('  ');
         var sinTurnoCount = (d.sinTurno || []).length;
         return '<div class="turno-col" ' +
             'ondragover="onColDragOver(event,this)" ondragleave="this.classList.remove(\'drag-over\')" ' +
@@ -1616,7 +1625,7 @@ function renderTurnosVista() {
             '<div class="turno-col-header">' +
             '<div>' +
             '<div class="turno-nombre">' + t.nombre + '<span class="turno-count">' + miembros.length + '</span></div>' +
-            '<div class="turno-horario"><i class="bi bi-clock"></i> ' + t.horaInicio + ' – ' + t.horaFin + '</div>' +
+            '<div class="turno-horario"><i class="bi bi-clock"></i> ' + horarioLabel + '</div>' +
             '<div class="turno-dias">' + diasLabel + '</div>' +
             '</div>' +
             '<div class="d-flex flex-column gap-1">' +
@@ -1666,18 +1675,51 @@ function renderTurnosVista() {
 }
 
 // ─── Modal Turno (crear/editar) ────────────────────────────────────────────────
+function toggleDiaHorario(dia) {
+    var activo = document.getElementById('turno-dia-' + dia).checked;
+    document.getElementById('turno-ini-' + dia).disabled = !activo;
+    document.getElementById('turno-fin-' + dia).disabled = !activo;
+    var row = document.getElementById('row-turno-' + dia);
+    if (activo) row.classList.remove('text-muted'); else row.classList.add('text-muted');
+}
+
+function copiarHorarioDesdeLunes() {
+    var ini = document.getElementById('turno-ini-lun').value;
+    var fin = document.getElementById('turno-fin-lun').value;
+    ['mar','mie','jue','vie','sab','dom'].forEach(function(d) {
+        if (document.getElementById('turno-dia-' + d).checked) {
+            document.getElementById('turno-ini-' + d).value = ini;
+            document.getElementById('turno-fin-' + d).value = fin;
+        }
+    });
+}
+
 function abrirModalTurno(idTurno) {
     _turnoEditando = null;
     var t = idTurno ? _turnosData.turnos.find(function(x){ return x.id === idTurno; }) : null;
     _turnoEditando = t || null;
 
     document.getElementById('turno-modal-titulo').textContent = t ? 'Editar turno' : 'Nuevo turno';
-    document.getElementById('turno-id').value       = t ? t.id : ('T' + Date.now());
-    document.getElementById('turno-nombre').value   = t ? t.nombre : '';
-    document.getElementById('turno-inicio').value   = t ? t.horaInicio : '06:00';
-    document.getElementById('turno-fin').value      = t ? t.horaFin : '15:00';
-    ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(d) {
-        document.getElementById('turno-dia-' + d).checked = t ? !!t[d] : (d !== 'sab' && d !== 'dom');
+    document.getElementById('turno-id').value     = t ? t.id : ('T' + Date.now());
+    document.getElementById('turno-nombre').value = t ? t.nombre : '';
+
+    var DIAS = ['lun','mar','mie','jue','vie','sab','dom'];
+    var DEF_ACTIVO = { lun:true, mar:true, mie:true, jue:true, vie:true, sab:false, dom:false };
+    var DEF_INI = '08:00';
+    var DEF_FIN_SEM = '17:00';
+    var DEF_FIN_FIN = '13:00';
+    DIAS.forEach(function(d) {
+        var dd = t && t.dias && t.dias[d];
+        var activo = t ? (dd ? dd.activo : false) : DEF_ACTIVO[d];
+        var ini    = (dd && dd.horaInicio) ? dd.horaInicio : DEF_INI;
+        var fin    = (dd && dd.horaFin)    ? dd.horaFin    : (d === 'sab' || d === 'dom' ? DEF_FIN_FIN : DEF_FIN_SEM);
+        document.getElementById('turno-dia-' + d).checked     = activo;
+        document.getElementById('turno-ini-' + d).value       = ini;
+        document.getElementById('turno-fin-' + d).value       = fin;
+        document.getElementById('turno-ini-' + d).disabled    = !activo;
+        document.getElementById('turno-fin-' + d).disabled    = !activo;
+        var row = document.getElementById('row-turno-' + d);
+        if (activo) row.classList.remove('text-muted'); else row.classList.add('text-muted');
     });
     var m = new bootstrap.Modal(document.getElementById('modalTurno'));
     m.show();
@@ -1685,16 +1727,24 @@ function abrirModalTurno(idTurno) {
 
 function guardarTurno() {
     var turno = {
-        id:        document.getElementById('turno-id').value.trim(),
-        nombre:    document.getElementById('turno-nombre').value.trim(),
-        activo:    true,
-        horaInicio: document.getElementById('turno-inicio').value,
-        horaFin:   document.getElementById('turno-fin').value
+        id:     document.getElementById('turno-id').value.trim(),
+        nombre: document.getElementById('turno-nombre').value.trim(),
+        activo: true,
+        dias:   {}
     };
     ['lun','mar','mie','jue','vie','sab','dom'].forEach(function(d) {
-        turno[d] = document.getElementById('turno-dia-' + d).checked;
+        var activo = document.getElementById('turno-dia-' + d).checked;
+        turno.dias[d] = {
+            activo:     activo,
+            horaInicio: activo ? document.getElementById('turno-ini-' + d).value : '',
+            horaFin:    activo ? document.getElementById('turno-fin-' + d).value : ''
+        };
     });
     if (!turno.nombre) { Swal.fire('Atención', 'El nombre del turno es obligatorio.', 'warning'); return; }
+    var activos = Object.values(turno.dias).filter(function(d){ return d.activo; });
+    if (activos.length === 0) { Swal.fire('Atención', 'Selecciona al menos un día laboral.', 'warning'); return; }
+    var invalido = activos.some(function(d){ return !d.horaInicio || !d.horaFin || d.horaInicio >= d.horaFin; });
+    if (invalido) { Swal.fire('Atención', 'Verifica que la hora de inicio sea menor a la hora de fin en cada día activo.', 'warning'); return; }
     Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function(){ Swal.showLoading(); } });
     google.script.run
         .withSuccessHandler(function(res) {
@@ -1737,7 +1787,14 @@ function abrirModalAsignar(email, nombre) {
     var select = document.getElementById('asignar-turno-select');
     select.innerHTML = _turnosData.turnos
         .filter(function(t){ return t.activo; })
-        .map(function(t){ return '<option value="' + t.id + '">' + t.nombre + ' (' + t.horaInicio + '–' + t.horaFin + ')</option>'; })
+        .map(function(t){
+            var dk = ['lun','mar','mie','jue','vie','sab','dom'];
+            var act = dk.filter(function(k){ return t.dias && t.dias[k] && t.dias[k].activo; });
+            var hs = act.map(function(k){ return t.dias[k].horaInicio + '–' + t.dias[k].horaFin; });
+            var u = hs.filter(function(v,i,a){ return a.indexOf(v)===i; });
+            var label = u.length===1 ? u[0] : (act.length ? 'horario variable' : '—');
+            return '<option value="' + t.id + '">' + t.nombre + ' (' + label + ')</option>';
+        })
         .join('');
     document.getElementById('asignar-desde').value = new Date().toISOString().split('T')[0];
     new bootstrap.Modal(document.getElementById('modalAsignar')).show();
@@ -2696,6 +2753,7 @@ function cargarSolicitudesPermisos(filtro) {
                 + '</tr>';
         });
         if (!html) html = '<tr><td colspan="8" class="text-center text-muted py-5">No hay solicitudes' + (filtro === 'PENDIENTE' ? ' pendientes' : '') + '.</td></tr>';
+        if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) { $('#tablaSolicitudesPermisos').DataTable().destroy(); }
         $('#cuerpoSolicitudesPermisos').html(html);
         $('#tablaSolicitudesPermisos').DataTable({
             language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
@@ -3043,7 +3101,7 @@ function resetearCuposIndividual() {
 
 <!-- Modal Crear/Editar Turno -->
 <div class="modal fade" id="modalTurno" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="turno-modal-titulo">Nuevo turno</h5>
@@ -3055,28 +3113,66 @@ function resetearCuposIndividual() {
                     <label class="form-label fw-bold">Nombre del turno</label>
                     <input type="text" id="turno-nombre" class="form-control" placeholder="Ej: Turno Mañana">
                 </div>
-                <div class="row mb-3">
-                    <div class="col">
-                        <label class="form-label fw-bold">Hora inicio</label>
-                        <input type="time" id="turno-inicio" class="form-control" value="06:00">
-                    </div>
-                    <div class="col">
-                        <label class="form-label fw-bold">Hora fin</label>
-                        <input type="time" id="turno-fin" class="form-control" value="15:00">
-                    </div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label fw-bold mb-0">Días y horarios</label>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copiarHorarioDesdeLunes()">
+                        <i class="bi bi-copy"></i> Copiar horario del lunes a todos
+                    </button>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label fw-bold">Días laborales</label>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-lun" class="form-check-input" checked> Lun</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-mar" class="form-check-input" checked> Mar</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-mie" class="form-check-input" checked> Mié</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-jue" class="form-check-input" checked> Jue</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-vie" class="form-check-input" checked> Vie</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-sab" class="form-check-input"> Sáb</label>
-                        <label class="form-check-label d-flex align-items-center gap-1"><input type="checkbox" id="turno-dia-dom" class="form-check-input"> Dom</label>
-                    </div>
-                </div>
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:110px">Día</th>
+                            <th class="text-center" style="width:70px">Activo</th>
+                            <th>Hora inicio</th>
+                            <th>Hora fin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr id="row-turno-lun">
+                            <td class="fw-semibold">Lunes</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-lun" class="form-check-input" checked onchange="toggleDiaHorario('lun')"></td>
+                            <td><input type="time" id="turno-ini-lun" class="form-control form-control-sm" value="08:00"></td>
+                            <td><input type="time" id="turno-fin-lun" class="form-control form-control-sm" value="17:00"></td>
+                        </tr>
+                        <tr id="row-turno-mar">
+                            <td class="fw-semibold">Martes</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-mar" class="form-check-input" checked onchange="toggleDiaHorario('mar')"></td>
+                            <td><input type="time" id="turno-ini-mar" class="form-control form-control-sm" value="08:00"></td>
+                            <td><input type="time" id="turno-fin-mar" class="form-control form-control-sm" value="17:00"></td>
+                        </tr>
+                        <tr id="row-turno-mie">
+                            <td class="fw-semibold">Miércoles</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-mie" class="form-check-input" checked onchange="toggleDiaHorario('mie')"></td>
+                            <td><input type="time" id="turno-ini-mie" class="form-control form-control-sm" value="08:00"></td>
+                            <td><input type="time" id="turno-fin-mie" class="form-control form-control-sm" value="17:00"></td>
+                        </tr>
+                        <tr id="row-turno-jue">
+                            <td class="fw-semibold">Jueves</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-jue" class="form-check-input" checked onchange="toggleDiaHorario('jue')"></td>
+                            <td><input type="time" id="turno-ini-jue" class="form-control form-control-sm" value="08:00"></td>
+                            <td><input type="time" id="turno-fin-jue" class="form-control form-control-sm" value="17:00"></td>
+                        </tr>
+                        <tr id="row-turno-vie">
+                            <td class="fw-semibold">Viernes</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-vie" class="form-check-input" checked onchange="toggleDiaHorario('vie')"></td>
+                            <td><input type="time" id="turno-ini-vie" class="form-control form-control-sm" value="08:00"></td>
+                            <td><input type="time" id="turno-fin-vie" class="form-control form-control-sm" value="17:00"></td>
+                        </tr>
+                        <tr id="row-turno-sab" class="text-muted">
+                            <td class="fw-semibold">Sábado</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-sab" class="form-check-input" onchange="toggleDiaHorario('sab')"></td>
+                            <td><input type="time" id="turno-ini-sab" class="form-control form-control-sm" value="08:00" disabled></td>
+                            <td><input type="time" id="turno-fin-sab" class="form-control form-control-sm" value="13:00" disabled></td>
+                        </tr>
+                        <tr id="row-turno-dom" class="text-muted">
+                            <td class="fw-semibold">Domingo</td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-dom" class="form-check-input" onchange="toggleDiaHorario('dom')"></td>
+                            <td><input type="time" id="turno-ini-dom" class="form-control form-control-sm" value="08:00" disabled></td>
+                            <td><input type="time" id="turno-fin-dom" class="form-control form-control-sm" value="13:00" disabled></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>

@@ -50,6 +50,10 @@ function RequestLeadReestudios() {
     const capTotal = parseInt(usuarioInfo[6]) || 0;
 
     if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
+
+    const turnoCheck = verificarTurnoActivo(userEmail, ss);
+    if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
+
     if (capTotal <= 0) return { success: false, message: "Capacidad en 0." };
 
     // Determinar equipo según especialidad para leer cupos correctos
