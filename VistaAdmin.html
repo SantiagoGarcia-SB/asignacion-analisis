@@ -197,62 +197,155 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 .l-step-sep { color:rgba(255,255,255,0.15); font-size:0.8rem; margin-top:-14px; }
 
 /* ================================================================
-   SIDEBAR
+   SIDEBAR — Mini with hover-expand
    ================================================================ */
 #sidebar {
-    width:var(--sidebar-w); height:100vh; background:var(--bg-card);
-    position:fixed; top:0; left:0;
-    display:flex; flex-direction:column;
-    border-right:1px solid var(--border); z-index:100;
-    transition: width 0.22s ease;
+    --sb-mini: 64px;
+    width: var(--sb-mini);
+    height: 100vh;
+    background: var(--bg-card);
+    position: fixed; top: 0; left: 0;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border);
+    z-index: 100;
+    overflow-x: hidden;
+    overflow-y: auto;
+    transition: width 0.28s cubic-bezier(0.4,0,0.2,1), box-shadow 0.28s ease;
+}
+#sidebar:hover {
+    width: var(--sidebar-w);
+    box-shadow: 6px 0 24px rgba(37,49,80,0.12);
+}
+
+/* ── Textos: ocultos en mini, visibles en hover ── */
+#sidebar .brand-name,
+#sidebar .sidebar-label,
+#sidebar .sidebar-profile-info,
+#sidebar .nav-text {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 0;
+    opacity: 0;
+    transition: max-width 0.28s ease, opacity 0.2s ease 0.06s;
+}
+#sidebar:hover .brand-name,
+#sidebar:hover .sidebar-label,
+#sidebar:hover .sidebar-profile-info,
+#sidebar:hover .nav-text {
+    max-width: 180px;
+    opacity: 1;
+}
+
+/* ── Nav links ── */
+#sidebar .nav-link-admin {
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 10px 0;
+    justify-content: center;
+}
+#sidebar:hover .nav-link-admin {
+    padding: 10px 14px;
+    justify-content: flex-start;
+}
+#sidebar .nav-link-admin i {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+
+/* ── Brand ── */
+#sidebar .sidebar-brand {
+    padding: 22px 0;
+    justify-content: center;
     overflow: hidden;
 }
-#sidebar.sidebar-mini {
-    width: 64px;
+#sidebar:hover .sidebar-brand {
+    padding: 22px 20px;
+    justify-content: flex-start;
 }
-#sidebar.sidebar-mini .brand-name,
-#sidebar.sidebar-mini .sidebar-label,
-#sidebar.sidebar-mini .sidebar-profile-info,
-#sidebar.sidebar-mini .nav-link-admin span:not(.nav-badge) {
-    display: none !important;
-}
-#sidebar.sidebar-mini .nav-link-admin {
+#sidebar .brand-icon { flex-shrink: 0; }
+
+/* ── Profile footer ── */
+#sidebar .sidebar-profile {
+    padding: 16px 0;
     justify-content: center;
-    padding: 10px 0;
+    overflow: hidden;
 }
-#sidebar.sidebar-mini .sidebar-profile {
-    justify-content: center;
-    padding: 12px 0;
+#sidebar:hover .sidebar-profile {
+    padding: 16px 16px;
+    justify-content: flex-start;
 }
-#sidebar.sidebar-mini .sidebar-profile .avatar-circle {
-    margin: 0;
+#sidebar .sidebar-profile .avatar-circle { flex-shrink: 0; }
+
+/* ── Section padding ── */
+#sidebar .sidebar-section {
+    padding: 18px 6px 4px;
+    overflow: hidden;
 }
-.sidebar-toggle-btn {
+#sidebar:hover .sidebar-section {
+    padding: 18px 12px 4px;
+}
+
+/* ── Badges en mini ── */
+#sidebar .nav-badge {
+    transition: all 0.2s ease;
+}
+#sidebar:not(:hover) .nav-badge {
     position: absolute;
-    top: 18px;
-    right: -14px;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 101;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    transition: transform 0.22s ease;
-    font-size: 0.75rem;
-    color: var(--text-muted);
+    top: 2px; right: 2px;
+    font-size: 0.5rem;
+    padding: 1px 4px;
+    min-width: 14px;
+    text-align: center;
 }
-.sidebar-toggle-btn:hover { color: var(--text-main); }
+
+/* ── Active indicator en mini ── */
+#sidebar:not(:hover) .nav-link-admin.active::before {
+    left: -6px;
+}
+
 .main-content {
-    transition: margin-left 0.22s ease;
+    margin-left: 64px !important;
+    transition: none;
 }
+
+/* ================================================================
+   SYNC OVERLAY
+   ================================================================ */
+#sync-overlay {
+    position: fixed; inset: 0; z-index: 99998;
+    background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+}
+#sync-overlay.active { display: flex; }
+#sync-overlay .sync-card {
+    background: white; border-radius: 18px; padding: 32px 48px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    animation: fadeUp 0.3s ease;
+}
+#sync-overlay .sync-spinner {
+    width: 44px; height: 44px; border: 4px solid var(--border);
+    border-top-color: var(--azul); border-radius: 50%;
+    animation: lSpin 0.8s linear infinite;
+}
+#sync-overlay .sync-text {
+    font-size: 1rem; font-weight: 700; color: var(--azul);
+    letter-spacing: -0.3px;
+}
+.sync-info {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.72rem; font-weight: 600; color: var(--text-muted);
+    white-space: nowrap;
+}
+.sync-info i { font-size: 0.8rem; color: var(--text-light); }
 .sidebar-brand {
     display:flex; align-items:center; gap:12px;
-    padding:22px 20px; border-bottom:1px solid var(--border);
+    border-bottom:1px solid var(--border);
 }
 .brand-icon {
     width:38px; height:38px; background:var(--grad-azul);
@@ -261,19 +354,18 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     box-shadow:0 4px 14px rgba(37,49,80,0.35);
 }
 .brand-name { font-size:1.1rem; font-weight:800; color:var(--text-main); letter-spacing:-0.3px; }
-.sidebar-section { padding:18px 12px 4px; }
 .sidebar-label {
     font-size:0.62rem; font-weight:700; text-transform:uppercase;
     letter-spacing:1.2px; color:var(--text-light); padding:0 8px; margin-bottom:6px;
 }
 .nav-link-admin {
     display:flex; align-items:center; gap:10px;
-    padding:10px 14px; border-radius:11px;
+    border-radius:11px;
     color:var(--text-muted); text-decoration:none;
     font-weight:500; font-size:0.875rem;
     transition:all 0.2s; position:relative; margin-bottom:2px;
 }
-.nav-link-admin i { font-size:1rem; flex-shrink:0; }
+.nav-link-admin i { font-size:1rem; flex-shrink:0; width:20px; text-align:center; }
 .nav-link-admin:hover { background:var(--azul-light); color:var(--azul); }
 .nav-link-admin.active { background:var(--azul-light); color:var(--azul); font-weight:700; }
 .nav-link-admin.active::before {
@@ -290,7 +382,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
    ================================================================ */
 .sidebar-profile {
     margin-top:auto;
-    padding:16px 16px;
     border-top:1px solid var(--border);
     display:flex; align-items:center; gap:10px;
 }
@@ -340,7 +431,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 /* ================================================================
    MAIN CONTENT
    ================================================================ */
-.main-content { margin-left:var(--sidebar-w); padding:32px 32px 48px; min-height:100vh; box-sizing:border-box; }
+.main-content { margin-left:64px; padding:32px 32px 48px; min-height:100vh; box-sizing:border-box; }
 .page-title { font-size:2rem; font-weight:800; letter-spacing:-0.5px; color:var(--text-main); }
 .page-sub   { font-size:0.83rem; color:var(--text-muted); margin-top:3px; }
 .btn-primary-brand {
@@ -645,10 +736,14 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     </div>
 </div>
 
+<div id="sync-overlay">
+    <div class="sync-card">
+        <div class="sync-spinner"></div>
+        <div class="sync-text">Sincronizando...</div>
+    </div>
+</div>
+
 <div id="sidebar">
-    <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Colapsar menú">
-        <i class="bi bi-chevron-left" id="sidebar-toggle-icon"></i>
-    </button>
     <div class="sidebar-brand">
         <div class="brand-icon"><i class="bi bi-grid-1x2-fill"></i></div>
         <span class="brand-name">Gestión de Analistas</span>
@@ -656,29 +751,25 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     <div class="sidebar-section">
         <div class="sidebar-label">Menu</div>
         <a href="#" id="link-dashboard" class="nav-link-admin active" onclick="mostrarSeccion('dashboard', event)">
-            <i class="bi bi-speedometer2"></i> Dashboard
+            <i class="bi bi-speedometer2"></i><span class="nav-text">Dashboard</span>
             <span class="nav-badge" id="sidebar-badge-count" style="display:none">0</span>
         </a>
         <a href="#" id="link-usuarios" class="nav-link-admin" onclick="mostrarSeccion('usuarios', event)">
-            <i class="bi bi-people-fill"></i> Usuarios
+            <i class="bi bi-people-fill"></i><span class="nav-text">Usuarios</span>
         </a>
         <a href="#" id="link-cupos" class="nav-link-admin" onclick="mostrarSeccion('cupos', event)">
-            <i class="bi bi-sliders"></i> Cupos
+            <i class="bi bi-sliders"></i><span class="nav-text">Cupos</span>
         </a>
         <a href="#" id="link-novedades" class="nav-link-admin" onclick="mostrarSeccion('novedades', event)">
-            <i class="bi bi-clock-history"></i> Novedades
+            <i class="bi bi-clock-history"></i><span class="nav-text">Novedades</span>
             <span class="nav-badge" id="badge-permisos-pendientes" style="display:none;background:#f59e0b;">0</span>
         </a>
         <a href="#" id="link-turnos" class="nav-link-admin" onclick="mostrarSeccion('turnos', event)">
-            <i class="bi bi-calendar2-week-fill"></i> Turnos
+            <i class="bi bi-calendar2-week-fill"></i><span class="nav-text">Turnos</span>
             <span class="nav-badge" id="badge-turnos-alerta" style="display:none;background:#ef4444;">0</span>
         </a>
-        <a href="#" id="link-horarios" class="nav-link-admin" onclick="mostrarSeccion('horarios', event)">
-            <i class="bi bi-calendar-week-fill"></i> Horarios
-        </a>
-        <!-- REDIRECCIÓN EXTERNA SEGURA AL NUEVO SCRIPT -->
         <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
-            <i class="bi bi-bar-chart-line-fill"></i> Métricas
+            <i class="bi bi-bar-chart-line-fill"></i><span class="nav-text">Métricas</span>
         </a>
     </div>
     <div class="sidebar-profile">
@@ -709,9 +800,13 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
         <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()">
             <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
         </button>
-        <button class="btn-outline-brand" onclick="refrescarDashboard()">
+        <button class="btn-outline-brand" id="btn-refresh" onclick="refrescarDashboardConOverlay()">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
+        <span class="sync-info" id="sync-info">
+            <i class="bi bi-clock"></i>
+            <span id="sync-timestamp">Sin sincronizar</span>
+        </span>
     </div>
 </div>
         <div class="metrics-row">
@@ -861,7 +956,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                             <span class="fw-bold" style="color:#1d4ed8;">Equipo Digital</span>
                         </div>
                         <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_digital_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="sugerirDistribucion('digital')">
+                        <input type="number" id="cupo_digital_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('digital')">
                         <div class="text-center mb-2">
                             <span class="badge" id="badge_digital" style="background:#dbeafe;color:#1d4ed8;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
                         </div>
@@ -884,7 +979,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                             <span class="fw-bold" style="color:#4338ca;">Equipo Biometría</span>
                         </div>
                         <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_biometria_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="sugerirDistribucion('biometria')">
+                        <input type="number" id="cupo_biometria_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('biometria')">
                         <div class="text-center mb-2">
                             <span class="badge" id="badge_biometria" style="background:#e0e7ff;color:#4338ca;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
                         </div>
@@ -907,7 +1002,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                             <span class="fw-bold" style="color:#7c3aed;">Equipo Reestudios</span>
                         </div>
                         <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_reestudios_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="sugerirDistribucion('reestudios')">
+                        <input type="number" id="cupo_reestudios_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('reestudios')">
                         <div class="text-center mb-2">
                             <span class="badge" id="badge_reestudios" style="background:#ede9fe;color:#7c3aed;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
                         </div>
@@ -932,30 +1027,42 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 
         <!-- MODO INDIVIDUAL -->
         <div id="cupos-modo-individual" style="display:none;">
-            <div class="row">
-                <div class="col-lg-5">
-                    <div class="p-4 rounded-3 mb-3" style="background:#f8fafc;border:1px solid #e2e8f0;">
-                        <label class="small fw-bold mb-2"><i class="bi bi-search me-1"></i>Buscar Analista</label>
-                        <input type="text" id="input-buscar-analista" class="form-control" placeholder="Nombre del analista..." oninput="buscarAnalistaCupos(this.value)" autocomplete="off">
-                        <div id="resultados-busqueda-analista" class="mt-2" style="max-height:250px;overflow-y:auto;"></div>
-                    </div>
+            <!-- Buscador -->
+            <div class="p-3 rounded-3 mb-4" style="background:#f8fafc;border:1px solid #e2e8f0;position:relative;">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-search" style="color:var(--text-muted);font-size:1rem;"></i>
+                    <input type="text" id="input-buscar-analista" class="form-control" placeholder="Escribe 2+ letras del nombre del analista..." oninput="buscarAnalistaCupos(this.value)" autocomplete="off" style="border:none;background:transparent;box-shadow:none !important;font-weight:600;">
+                    <span id="buscar-analista-hint" class="small text-muted" style="white-space:nowrap;">Buscar por nombre</span>
                 </div>
-                <div class="col-lg-7">
-                    <div id="panel-cupos-individual" class="p-4 rounded-3" style="background:#f8fafc;border:1px solid #e2e8f0;display:none;">
-                        <div class="d-flex align-items-center justify-content-between mb-3">
+                <div id="resultados-busqueda-analista" style="position:absolute;left:0;right:0;top:100%;z-index:50;background:white;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.1);display:none;"></div>
+            </div>
+
+            <div class="row g-4">
+                <!-- Panel edición -->
+                <div class="col-lg-5">
+                    <div id="panel-cupos-individual" class="p-4 rounded-3" style="background:white;border:2px solid #e2e8f0;display:none;position:relative;">
+                        <button onclick="cerrarPanelCuposIndividual()" title="Cerrar panel" style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;border:1.5px solid #e2e8f0;background:white;color:#94a3b8;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.8rem;transition:all 0.2s;z-index:1;" onmouseover="this.style.background='#fee2e2';this.style.color='#b91c1c';this.style.borderColor='#fecaca'" onmouseout="this.style.background='white';this.style.color='#94a3b8';this.style.borderColor='#e2e8f0'"><i class="bi bi-x-lg"></i></button>
+                        <div class="d-flex align-items-center justify-content-between mb-3" style="padding-right:32px;">
                             <div>
                                 <span class="fw-bold fs-5" id="ind_nombre_analista"></span>
                                 <br><span class="small text-muted" id="ind_email_analista"></span>
                             </div>
                             <span class="badge" id="ind_badge_equipo" style="padding:6px 12px;font-size:0.75rem;"></span>
                         </div>
-                        <div class="form-check form-switch mb-3">
+                        <div class="form-check form-switch mb-2">
                             <input class="form-check-input" type="checkbox" id="toggle-personalizado" onchange="toggleCuposPersonalizados()">
-                            <label class="form-check-label small fw-bold" for="toggle-personalizado">Usar cupos personalizados</label>
+                            <label class="form-check-label small fw-bold" for="toggle-personalizado">Cupos personalizados</label>
+                        </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" id="toggle-fijo">
+                            <label class="form-check-label small fw-bold" for="toggle-fijo" style="color:#b45309;">
+                                <i class="bi bi-pin-angle-fill me-1"></i>Asignación personalizada fija
+                            </label>
+                            <div class="small text-muted" style="font-size:0.7rem;margin-top:2px;">Permanente hasta que el admin la modifique o elimine</div>
                         </div>
                         <div id="campos-cupos-individual" style="display:none;">
                             <label class="small fw-bold mb-1">Total Cupos</label>
-                            <input type="number" id="ind_cupo_total" class="form-control fw-bold text-center mb-2" min="0" oninput="sugerirDistribucionIndividual()">
+                            <input type="number" id="ind_cupo_total" class="form-control fw-bold text-center mb-2" min="0" oninput="validarSubcuposIndividual()">
                             <div class="text-center mb-2">
                                 <span class="badge" id="badge_individual" style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
                             </div>
@@ -968,17 +1075,55 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                                 <div class="col-6"><label class="small">Nueva UAR</label><input type="number" id="ind_cupo_nuevaUar" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
                                 <div class="col-6"><label class="small">Deudor UAR</label><input type="number" id="ind_cupo_deudorUar" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
                             </div>
-                            <div class="text-end mt-3">
-                                <button class="btn btn-sm btn-outline-secondary me-2" onclick="resetearCuposIndividual()">
-                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Usar globales
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-sm btn-outline-danger flex-fill" onclick="resetearCuposIndividual()">
+                                    <i class="bi bi-trash me-1"></i>Eliminar
                                 </button>
-                                <button class="btn-primary-brand" onclick="guardarCuposIndividual()">
+                                <button class="btn-primary-brand flex-fill" onclick="guardarCuposIndividual()">
                                     <i class="bi bi-save me-1"></i> Guardar
                                 </button>
                             </div>
                         </div>
                         <div id="msg-usa-globales" class="text-center text-muted py-3">
                             <i class="bi bi-diagram-3 me-2"></i>Este analista usa los cupos globales de su equipo.
+                        </div>
+                    </div>
+                    <div id="panel-cupos-placeholder" class="p-4 rounded-3 text-center" style="background:#f8fafc;border:2px dashed #e2e8f0;">
+                        <i class="bi bi-person-badge" style="font-size:2rem;color:#cbd5e1;"></i>
+                        <div class="small text-muted mt-2">Busca un analista para configurar sus cupos</div>
+                    </div>
+                </div>
+
+                <!-- Tabla historial de analistas con cupos personalizados -->
+                <div class="col-lg-7">
+                    <div class="table-container" style="padding:18px;">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <div class="table-title"><i class="bi bi-person-gear me-2"></i>Cupos Personalizados Activos</div>
+                                <div class="table-sub">Analistas con asignación diferente a la global de su equipo</div>
+                            </div>
+                            <button class="btn-outline-brand btn-sm" onclick="cargarTablaCuposPersonalizados()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table id="tablaCuposPersonalizados" class="table w-100" style="font-size:0.82rem;">
+                                <thead>
+                                    <tr>
+                                        <th>Analista</th>
+                                        <th class="text-center">Total</th>
+                                        <th class="text-center">Nue</th>
+                                        <th class="text-center">Ree</th>
+                                        <th class="text-center">Ind</th>
+                                        <th class="text-center">Bio</th>
+                                        <th class="text-center">UAR</th>
+                                        <th class="text-center">Fijo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cuerpoCuposPersonalizados">
+                                    <tr><td colspan="8" class="text-center text-muted py-4">Cargando...</td></tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1024,7 +1169,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                     <option value="PENDIENTE_BIOMETRIA">Biometría</option>
                     <option value="REESTUDIOS">Reestudios</option>
                 </select>
-                <select id="filtroNovTurno" class="form-select form-select-sm" style="width:auto;" id="filtroNovTurno">
+                <select id="filtroNovTurno" class="form-select form-select-sm" style="width:auto;">
                     <option value="">Todos los turnos</option>
                 </select>
                 <button class="btn-outline-brand btn-sm" onclick="cargarNovedades()">
@@ -1153,61 +1298,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             <div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
         </div>
 
-        <div class="cal-grid-wrap mt-4">
-            <div class="cal-header">
-                <div class="d-flex align-items-center gap-3">
-                    <h5 class="mb-0 fw-bold">Horas Extra</h5>
-                    <select id="cal-filtro-email" class="form-select form-select-sm" style="width:auto;" onchange="renderCalendario(_calAnio,_calMes)">
-                        <option value="">Todos los analistas</option>
-                    </select>
-                </div>
-                <div class="d-flex align-items-center gap-2">
-                    <button class="btn btn-sm btn-outline-secondary" onclick="cambiarMes(-1)"><i class="bi bi-chevron-left"></i></button>
-                    <span id="cal-titulo" class="fw-bold" style="min-width:140px;text-align:center;"></span>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="cambiarMes(1)"><i class="bi bi-chevron-right"></i></button>
-                </div>
-            </div>
-            <div class="cal-inner">
-                <div class="cal-dias-semana">
-                    <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
-                </div>
-                <div id="cal-grid"></div>
-            </div>
-            <div class="mt-2 small text-muted"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>Día con horas extra registradas</div>
-        </div>
-    </div>
 
-    <!-- SECCION HORARIOS -->
-    <div id="seccion-horarios" class="seccion-admin" style="display:none;">
-        <div class="d-flex justify-content-between align-items-start mb-4">
-            <div>
-                <h1 class="page-title">Horarios de Asignación</h1>
-                <p class="page-sub">Define en qué horas y días los analistas pueden recibir casos nuevos.</p>
-            </div>
-            <button class="btn-outline-brand" onclick="cargarHorarios()">
-                <i class="bi bi-arrow-clockwise"></i>
-            </button>
-        </div>
-
-        <div class="p-3 mb-4 rounded-3 d-flex align-items-start gap-3" style="background:#f0f9ff;border:1px solid #bae6fd;">
-            <i class="bi bi-info-circle-fill" style="font-size:1.1rem;color:#0284c7;flex-shrink:0;margin-top:2px;"></i>
-            <div>
-                <span class="fw-bold" style="color:#0c4a6e;font-size:0.85rem;">¿Cómo funciona?</span>
-                <span class="text-muted" style="font-size:0.82rem;"> Si un analista intenta pedir un caso fuera del horario configurado, recibirá un mensaje de bloqueo y no podrá recibir asignaciones. Los días marcados como inactivos bloquean todo el día.</span>
-            </div>
-        </div>
-
-        <div class="d-flex flex-wrap gap-3 mb-4" id="grid-horarios">
-            <div class="text-center w-100 py-4" style="color:var(--text-muted);">
-                <div class="spinner-border spinner-border-sm me-2"></div>Cargando horarios...
-            </div>
-        </div>
-
-        <div class="text-end">
-            <button class="btn-primary-brand" onclick="guardarHorarios()">
-                <i class="bi bi-save me-2"></i> Guardar Horarios
-            </button>
-        </div>
     </div>
 </div>
 
@@ -1544,29 +1635,38 @@ function mostrarSeccion(id, e) {
     if (id === 'usuarios') cargarUsuarios();
     if (id === 'dashboard') refrescarDashboard();
     if (id === 'cupos') cargarCuposGenerales();
-<<<<<<< HEAD
-    if (id === 'novedades') cargarNovedades();
-    if (id === 'horarios') cargarHorarios();
-=======
     if (id === 'novedades') { cargarNovedades(); actualizarBadgePermisos(); }
     if (id === 'turnos') cargarTurnos();
 }
 
-// ─── SIDEBAR TOGGLE ────────────────────────────────────────────────────────────
-function toggleSidebar() {
-    var sidebar = document.getElementById('sidebar');
-    var main    = document.querySelector('.main-content');
-    var icon    = document.getElementById('sidebar-toggle-icon');
-    var mini    = sidebar.classList.toggle('sidebar-mini');
-    main.style.marginLeft = mini ? '64px' : 'var(--sidebar-w, 240px)';
-    icon.className = mini ? 'bi bi-chevron-right' : 'bi bi-chevron-left';
+// ─── SIDEBAR (hover-expand, no JS needed for transitions) ─────────────────────
+
+function refrescarDashboardConOverlay() {
+    var overlay = document.getElementById('sync-overlay');
+    overlay.classList.add('active');
+    refrescarDashboard();
+}
+
+function actualizarTimestampSync() {
+    var ahora = new Date();
+    var dia = String(ahora.getDate()).padStart(2, '0');
+    var mes = String(ahora.getMonth() + 1).padStart(2, '0');
+    var anio = ahora.getFullYear();
+    var horas = String(ahora.getHours()).padStart(2, '0');
+    var mins = String(ahora.getMinutes()).padStart(2, '0');
+    var texto = 'Última sincronización: ' + dia + '/' + mes + '/' + anio + ' ' + horas + ':' + mins;
+    document.getElementById('sync-timestamp').textContent = texto;
+}
+
+function ocultarSyncOverlay() {
+    var overlay = document.getElementById('sync-overlay');
+    overlay.classList.remove('active');
+    actualizarTimestampSync();
 }
 
 // ─── SECCIÓN TURNOS ────────────────────────────────────────────────────────────
 var _turnosData = { turnos: [], analistas: [], sinTurno: [] };
 var _turnoEditando = null;
-var _calMes = new Date().getMonth();
-var _calAnio = new Date().getFullYear();
 
 function cargarTurnos() {
     google.script.run
@@ -1632,7 +1732,6 @@ function renderTurnosVista() {
             '<div class="small mb-3">Crea el primer turno para comenzar a asignar analistas y medir tiempos.</div>' +
             '<button class="btn btn-primary" onclick="abrirModalTurno(null)"><i class="bi bi-plus-lg"></i> Crear primer turno</button>' +
             '</div></div>';
-        renderCalendario(_calAnio, _calMes);
         return;
     }
 
@@ -1702,20 +1801,10 @@ function renderTurnosVista() {
     document.getElementById('turnos-board').innerHTML = alertaHtml +
         '<div class="turnos-board-scroll"><div class="turnos-grid">' + cols + '</div></div>';
 
-    // Poblar filtro de calendario con analistas
-    var filtroSelect = document.getElementById('cal-filtro-email');
-    if (filtroSelect) {
-        filtroSelect.innerHTML = '<option value="">Todos los analistas</option>' +
-            (d.analistas || []).map(function(a) {
-                return '<option value="' + a.email + '">' + (a.nombre || a.email) + '</option>';
-            }).join('');
-    }
-
-    renderCalendario(_calAnio, _calMes);
 }
 
 // ─── Modal Turno (crear/editar) ────────────────────────────────────────────────
-function toggleDiaHorario(dia) {
+function toggleDiaTurno(dia) {
     var activo = document.getElementById('turno-dia-' + dia).checked;
     document.getElementById('turno-ini-' + dia).disabled = !activo;
     document.getElementById('turno-fin-' + dia).disabled = !activo;
@@ -1943,124 +2032,9 @@ function filtrarSinTurno(texto) {
     });
 }
 
-// ─── Calendario de horas extra ─────────────────────────────────────────────────
-function renderCalendario(anio, mes) {
-    _calAnio = anio; _calMes = mes;
-    var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    document.getElementById('cal-titulo').textContent = meses[mes] + ' ' + anio;
-
-    var primerDia = new Date(anio, mes, 1).getDay();
-    var diasEnMes = new Date(anio, mes + 1, 0).getDate();
-    var offset = primerDia === 0 ? 6 : primerDia - 1;
-
-    var celdas = '';
-    for (var i = 0; i < offset; i++) celdas += '<div class="cal-dia cal-vacio"></div>';
-    for (var d = 1; d <= diasEnMes; d++) {
-        var fechaStr = anio + '-' + String(mes+1).padStart(2,'0') + '-' + String(d).padStart(2,'0');
-        var dow = new Date(anio, mes, d).getDay();
-        var esFinSemana = dow === 0 || dow === 6;
-        celdas += '<div class="cal-dia' + (esFinSemana ? ' cal-finsemana' : '') + '" onclick="abrirDiaExtra(\'' + fechaStr + '\')">' +
-            '<span class="cal-num">' + d + '</span>' +
-            '<span class="cal-extra-dot" id="cal-dot-' + fechaStr + '" style="display:none"></span>' +
-            '</div>';
-    }
-    document.getElementById('cal-grid').innerHTML = celdas;
-
-    // Marcar días con extras
-    var emailFiltro = (document.getElementById('cal-filtro-email') || {}).value || '';
-    google.script.run
-        .withSuccessHandler(function(res) {
-            if (!res.success) return;
-            res.extras.forEach(function(e) {
-                var dot = document.getElementById('cal-dot-' + e.fecha);
-                if (dot) dot.style.display = 'inline-block';
-            });
-        })
-        .admin_getHorasExtra(emailFiltro, anio, mes + 1);
-}
-
-function cambiarMes(delta) {
-    _calMes += delta;
-    if (_calMes > 11) { _calMes = 0; _calAnio++; }
-    if (_calMes < 0)  { _calMes = 11; _calAnio--; }
-    renderCalendario(_calAnio, _calMes);
-}
-
-var _fechaDiaExtra = '';
-function abrirDiaExtra(fechaStr) {
-    _fechaDiaExtra = fechaStr;
-    document.getElementById('extra-fecha-label').textContent = fechaStr;
-    document.getElementById('extra-inicio').value = '15:00';
-    document.getElementById('extra-fin').value    = '18:00';
-    document.getElementById('extra-desc').value   = '';
-
-    var select = document.getElementById('extra-email-select');
-    select.innerHTML = (_turnosData.analistas || []).map(function(a) {
-        return '<option value="' + a.email + '">' + (a.nombre || a.email) + '</option>';
-    }).join('');
-
-    // Cargar extras del día
-    google.script.run
-        .withSuccessHandler(function(res) {
-            var html = '<div class="small text-muted mb-2">Extras registrados este día:</div>';
-            if (!res.success || res.extras.length === 0) {
-                html += '<span class="text-muted small">Ninguno.</span>';
-            } else {
-                html += res.extras.map(function(e) {
-                    return '<div class="d-flex align-items-center gap-2 mb-1">' +
-                        '<span class="badge bg-secondary">' + e.email + '</span>' +
-                        '<span>' + e.horaInicio + ' – ' + e.horaFin + '</span>' +
-                        '<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarExtra(' + e.fila + ')"><i class="bi bi-trash"></i></button>' +
-                        '</div>';
-                }).join('');
-            }
-            document.getElementById('extra-lista').innerHTML = html;
-        })
-        .admin_getHorasExtra('', parseInt(_calAnio), parseInt(_calMes) + 1);
-
-    new bootstrap.Modal(document.getElementById('modalExtra')).show();
-}
-
-function guardarHorasExtra() {
-    var extra = {
-        email:      document.getElementById('extra-email-select').value,
-        fecha:      _fechaDiaExtra,
-        horaInicio: document.getElementById('extra-inicio').value,
-        horaFin:    document.getElementById('extra-fin').value,
-        descripcion: document.getElementById('extra-desc').value
-    };
-    if (!extra.email || !extra.horaInicio || !extra.horaFin) {
-        Swal.fire('Atención', 'Completa todos los campos.', 'warning'); return;
-    }
-    google.script.run
-        .withSuccessHandler(function(res) {
-            if (res.success) {
-                abrirDiaExtra(_fechaDiaExtra);
-                renderCalendario(_calAnio, _calMes);
-            } else Swal.fire('Error', res.message, 'error');
-        })
-        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
-        .admin_guardarHorasExtra(extra);
-}
-
-function eliminarExtra(fila) {
-    Swal.fire({ title:'¿Eliminar esta entrada?', icon:'warning', showCancelButton:true,
-        confirmButtonColor:'#ef4444', cancelButtonColor:'#64748b',
-        confirmButtonText:'Sí, eliminar', cancelButtonText:'Cancelar'
-    }).then(function(r) {
-        if (!r.isConfirmed) return;
-        google.script.run
-            .withSuccessHandler(function(res) {
-                if (res.success) abrirDiaExtra(_fechaDiaExtra);
-                else Swal.fire('Error', res.message, 'error');
-            })
-            .admin_eliminarHorasExtra(fila);
-    });
->>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
-}
-
 function refrescarDashboard() {
     google.script.run.withSuccessHandler(function(res) {
+        ocultarSyncOverlay();
         window._dashData = res;
         
         document.getElementById('countNube').innerText = res.sinAsignar || 0;
@@ -2130,8 +2104,8 @@ function refrescarDashboard() {
                 html += '<td><span style="font-size:0.85rem">' + item.asesor + '</span></td>';
                 
                 html += '<td class="text-center">';
-                html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\', \'' + (item.tipo || 'digital') + '\')" title="Devolver a la nube">';
-                html += '<i class="bi bi-arrow-return-left"></i> Quitar';
+                html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirReasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\', \'' + (item.tipo || 'digital') + '\')" title="Reasignar a otro analista">';
+                html += '<i class="bi bi-person-lines-fill"></i> Reasignar';
                 html += '</button>';
                 html += '</td>';
                 
@@ -2150,6 +2124,9 @@ function refrescarDashboard() {
             responsive: true,
             dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
         });
+        ocultarLoader();
+    }).withFailureHandler(function() {
+        ocultarSyncOverlay();
         ocultarLoader();
     }).obtenerDatosDashboard();
 }
@@ -2286,103 +2263,126 @@ function formatearDuracion(valor) {
     return h + 'h ' + m + 'min';
 }
 
+var _detalleModalFiltro = '';
+var _detalleModalTipo = '';
+
 function verDetalleTarjeta(tipo) {
-    const data = window._dashData;
+    var data = window._dashData;
     if (!data) { Swal.fire('Cargando...', 'Espera a que el dashboard termine de cargar.', 'info'); return; }
-    let title = '';
-    let items = [];
-    let color = '#253150';
-    if (tipo === 'sinAsignar') {
-        title = '<i class="bi bi-cloud-arrow-down me-2"></i>Sin Asignar (' + data.sinAsignar + ')';
-        items = (data.listaSinAsignar || []).map(function(i) {
-            return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f5f9;">' +
-                '<span style="font-weight:800;color:#253150;min-width:90px;">' + i.id + '</span>' +
-                '<span style="color:#64748b;font-size:0.8rem;">Póliza ' + i.poliza + '</span>' +
-                getBadgeTipo(i.tipo) +
-            '</div>';
-        });
-        color = '#BD0F14';
-    } else if (tipo === 'enGestion') {
-        const lista = data.listaGestion || [];
-        title = '<i class="bi bi-person-workspace me-2"></i>En Gestión (' + lista.length + ')';
-        items = lista.map(function(i) {
-            return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f5f9;">' +
-                '<span style="font-weight:800;color:#253150;min-width:90px;">' + i.id + '</span>' +
-                '<span style="color:#64748b;font-size:0.8rem;">' + i.asesor + '</span>' +
-                getBadgeTipo(i.tipo) +
-            '</div>';
-        });
-        color = '#4f46e5';
-    } else if (tipo === 'gestionadasHoy') {
-        title = '<i class="bi bi-lightning-charge me-2"></i>Gestionadas Hoy (' + data.gestionadasHoyEquipo + ')';
-        items = (data.listaGestionadasHoy || []).map(function(i) {
-            return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #f1f5f9;">' +
-                '<span style="font-weight:800;color:#253150;min-width:90px;">' + i.id + '</span>' +
-                '<span style="color:#64748b;font-size:0.8rem;">' + i.asesor + '</span>' +
-                '<span style="font-size:0.72rem;font-weight:700;color:#15803d;">' + i.estado + '</span>' +
-            '</div>';
-        });
-        color = '#15803d';
-    } else if (tipo === 'asesores') {
-        title = '<i class="bi bi-people me-2"></i>Analistas (' + data.activos + ' activos / ' + data.inactivos + ' inactivos)';
+    _detalleModalTipo = tipo;
+    _detalleModalFiltro = '';
+
+    if (tipo === 'asesores') {
         Swal.fire({
-            title: title,
+            title: '<i class="bi bi-people me-2"></i>Analistas',
             html: '<div style="text-align:center;padding:20px;"><p style="font-size:3rem;font-weight:800;color:#253150;margin:0;">' + data.activos + '</p><p style="color:#64748b;">analistas activos ahora</p><p style="margin-top:16px;"><button class="btn-primary-brand" onclick="Swal.close();mostrarSeccion(\'usuarios\',null);" style="display:inline-flex;border:none;cursor:pointer;"><i class="bi bi-people-fill me-2"></i>Ver detalle en Usuarios</button></p></div>',
-            showConfirmButton: false,
-            showCloseButton: true,
-            width: 400,
+            showConfirmButton: false, showCloseButton: true, width: 420,
             customClass: { popup: 'rounded-4' }
         });
         return;
     }
-    let htmlContent = '';
-    let desgloseKey = '';
-    if (tipo === 'sinAsignar') desgloseKey = 'sinAsignar';
-    else if (tipo === 'enGestion') desgloseKey = 'enGestion';
-    else if (tipo === 'gestionadasHoy') desgloseKey = 'gestionadasHoy';
-    if (desgloseKey && data.desglose && data.desglose[desgloseKey]) {
-        const dg = data.desglose[desgloseKey];
-        const tiposInfo = [
-            { key: 'digital', icon: 'bi-laptop', label: 'Digital', bg: '#dbeafe', color: '#1d4ed8' },
-            { key: 'biometria', icon: 'bi-fingerprint', label: 'Biometría', bg: '#e0e7ff', color: '#4338ca' },
-            { key: 'induccion', icon: 'bi-easel', label: 'Inducciones', bg: '#fef3c7', color: '#b45309' },
-            { key: 'reestudios', icon: 'bi-layers', label: 'Reestudios', bg: '#ede9fe', color: '#7c3aed' },
-            { key: 'nuevaUar', icon: 'bi-person-plus', label: 'Nueva UAR', bg: '#fce7f3', color: '#be185d' },
-            { key: 'deudorUar', icon: 'bi-person-dash', label: 'Deudor UAR', bg: '#fee2e2', color: '#b91c1c' }
-        ];
-        htmlContent += '<div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 0;margin-bottom:12px;border-bottom:2px solid #f1f5f9;">';
-        tiposInfo.forEach(function(t) {
-            const val = dg[t.key] || 0;
-            if (val > 0) {
-                htmlContent += '<div style="display:flex;align-items:center;gap:8px;background:' + t.bg + ';color:' + t.color + ';padding:8px 14px;border-radius:10px;font-size:0.78rem;font-weight:700;border:1px solid ' + t.bg + ';">' +
-                    '<i class="bi ' + t.icon + '"></i>' +
-                    '<span>' + t.label + '</span>' +
-                    '<span style="background:' + t.color + ';color:white;border-radius:6px;padding:2px 7px;font-size:0.72rem;margin-left:2px;">' + val + '</span>' +
-                '</div>';
-            }
-        });
-        htmlContent += '</div>';
+    _renderDetalleModal(tipo, '');
+}
+
+function _renderDetalleModal(tipo, filtroTipo) {
+    var data = window._dashData;
+    var title = '', items = [], color = '#253150', desgloseKey = '', total = 0;
+
+    var tiposInfo = [
+        { key: 'digital',    icon: 'bi-laptop',       label: 'Digital',     bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe', tipoItem: 'digital' },
+        { key: 'biometria',  icon: 'bi-fingerprint',  label: 'Biometría',   bg: '#e0e7ff', color: '#4338ca', border: '#c7d2fe', tipoItem: 'biometria' },
+        { key: 'induccion',  icon: 'bi-mortarboard',  label: 'Inducciones', bg: '#fef3c7', color: '#b45309', border: '#fde68a', tipoItem: 'induccion' },
+        { key: 'reestudios', icon: 'bi-layers',       label: 'Reestudios',  bg: '#ede9fe', color: '#7c3aed', border: '#ddd6fe', tipoItem: 'reestudio' },
+        { key: 'nuevaUar',   icon: 'bi-person-plus',  label: 'Nueva UAR',   bg: '#fce7f3', color: '#be185d', border: '#fbcfe8', tipoItem: 'uar' },
+        { key: 'deudorUar',  icon: 'bi-person-dash',  label: 'Deudor UAR',  bg: '#fee2e2', color: '#b91c1c', border: '#fecaca', tipoItem: 'deudorUar' }
+    ];
+
+    if (tipo === 'sinAsignar') {
+        title = '<i class="bi bi-cloud-arrow-down me-2" style="color:#BD0F14;"></i>Sin Asignar';
+        total = data.sinAsignar || 0;
+        items = (data.listaSinAsignar || []).map(function(i) { return { id: i.id, col2: 'Póliza ' + i.poliza, tipo: i.tipo }; });
+        color = '#BD0F14'; desgloseKey = 'sinAsignar';
+    } else if (tipo === 'enGestion') {
+        var lista = data.listaGestion || [];
+        title = '<i class="bi bi-person-workspace me-2" style="color:#4f46e5;"></i>En Gestión';
+        total = lista.length;
+        items = lista.map(function(i) { return { id: i.id, col2: i.asesor, tipo: i.tipo }; });
+        color = '#4f46e5'; desgloseKey = 'enGestion';
+    } else if (tipo === 'gestionadasHoy') {
+        title = '<i class="bi bi-lightning-charge me-2" style="color:#15803d;"></i>Gestionadas Hoy';
+        total = data.gestionadasHoyEquipo || 0;
+        items = (data.listaGestionadasHoy || []).map(function(i) { return { id: i.id, col2: i.asesor, tipo: i.tipo, extra: i.estado }; });
+        color = '#15803d'; desgloseKey = 'gestionadasHoy';
     }
-    if (items.length === 0 && !desgloseKey) {
-        htmlContent += '<div style="text-align:center;padding:30px;"><i class="bi bi-check-all" style="font-size:2rem;color:#22c55e;"></i><p style="color:#64748b;margin-top:10px;">Sin registros</p></div>';
-    } else if (items.length === 0) {
-        htmlContent += '<div style="text-align:center;padding:20px;"><p style="color:#64748b;font-size:0.85rem;">No hay solicitudes en detalle</p></div>';
+
+    var filteredItems = filtroTipo ? items.filter(function(i) {
+        if (filtroTipo === 'uar') return i.tipo === 'uar' || i.tipo === 'nuevaUar' || i.tipo === 'deudorUar';
+        return i.tipo === filtroTipo;
+    }) : items;
+
+    var dg = (data.desglose && data.desglose[desgloseKey]) || {};
+
+    var html = '';
+    // Chips filtro
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">';
+    var totalActivo = !filtroTipo ? 'background:#253150;color:white;border-color:#253150;' : 'background:#f8fafc;color:#475569;border-color:#e2e8f0;cursor:pointer;';
+    html += '<button onclick="_filtrarDetalle(\'\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:0.75rem;font-weight:700;border:1.5px solid;transition:all 0.15s;' + totalActivo + '">';
+    html += '<i class="bi bi-grid-3x3-gap"></i>Total <span style="background:' + (!filtroTipo ? 'rgba(255,255,255,0.25)' : '#e2e8f0') + ';padding:1px 7px;border-radius:5px;font-size:0.7rem;">' + total + '</span></button>';
+    tiposInfo.forEach(function(t) {
+        var val = dg[t.key] || 0;
+        if (val <= 0) return;
+        var activo = filtroTipo === t.tipoItem;
+        var st = activo ? 'background:' + t.color + ';color:white;border-color:' + t.color + ';' : 'background:' + t.bg + ';color:' + t.color + ';border-color:' + t.border + ';cursor:pointer;';
+        html += '<button onclick="_filtrarDetalle(\'' + t.tipoItem + '\')" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-size:0.75rem;font-weight:700;border:1.5px solid;transition:all 0.15s;' + st + '">';
+        html += '<i class="bi ' + t.icon + '"></i>' + t.label;
+        html += ' <span style="background:' + (activo ? 'rgba(255,255,255,0.25)' : t.color) + ';color:white;padding:1px 7px;border-radius:5px;font-size:0.7rem;">' + val + '</span></button>';
+    });
+    html += '</div>';
+
+    // Contador filtrado
+    html += '<div style="font-size:0.78rem;color:#64748b;font-weight:600;margin-bottom:10px;">Mostrando <strong style="color:#253150;">' + filteredItems.length + '</strong> de ' + total + '</div>';
+
+    // Lista
+    if (filteredItems.length === 0) {
+        html += '<div style="text-align:center;padding:30px;"><i class="bi bi-inbox" style="font-size:2rem;color:#cbd5e1;"></i><p style="color:#94a3b8;margin-top:8px;">Sin registros</p></div>';
     } else {
-        htmlContent += '<div style="max-height:350px;overflow-y:auto;padding:4px 0;">' + items.join('') + '</div>';
-        if (tipo === 'sinAsignar' && data.sinAsignar > 50) {
-            htmlContent += '<p style="text-align:center;font-size:0.75rem;color:#94a3b8;margin-top:10px;">Mostrando 50 de ' + data.sinAsignar + '</p>';
+        html += '<div style="max-height:340px;overflow-y:auto;">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+        html += '<thead><tr style="position:sticky;top:0;background:white;border-bottom:2px solid #e2e8f0;">';
+        html += '<th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;">ID</th>';
+        html += '<th style="padding:8px 10px;text-align:left;font-size:0.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;">' + (tipo === 'sinAsignar' ? 'Póliza' : 'Analista') + '</th>';
+        html += '<th style="padding:8px 10px;text-align:right;font-size:0.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;">Tipo</th>';
+        html += '</tr></thead><tbody>';
+        filteredItems.forEach(function(item) {
+            html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+            html += '<td style="padding:8px 10px;font-weight:700;color:#253150;">' + item.id + '</td>';
+            html += '<td style="padding:8px 10px;color:#64748b;">' + item.col2 + (item.extra ? ' <span style="color:#15803d;font-weight:600;font-size:0.72rem;">· ' + item.extra + '</span>' : '') + '</td>';
+            html += '<td style="padding:8px 10px;text-align:right;">' + getBadgeTipo(item.tipo) + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        if (tipo === 'sinAsignar' && total > 50) {
+            html += '<p style="text-align:center;font-size:0.72rem;color:#94a3b8;margin-top:8px;">Mostrando máx. 50 de ' + total + '</p>';
         }
     }
+
     Swal.fire({
         title: title,
-        html: htmlContent,
+        html: html,
         showConfirmButton: true,
         confirmButtonText: 'Cerrar',
         confirmButtonColor: color,
-        width: 560,
+        width: 640,
         showCloseButton: true,
-        customClass: { popup: 'rounded-4' }
+        customClass: { popup: 'rounded-4' },
+        didOpen: function() {
+            _detalleModalFiltro = filtroTipo;
+        }
     });
+}
+
+function _filtrarDetalle(filtroTipo) {
+    _renderDetalleModal(_detalleModalTipo, filtroTipo);
 }
 
 function getBadgeTipo(tipo) {
@@ -2524,43 +2524,74 @@ function guardarNuevoUsuario() {
     }).admin_crearUsuario(datos);
 }
 
-function confirmarDesasignacion(idSolicitud, nombreAsesor, tipo) {
-    const esReestudio = (tipo === 'reestudio');
-    Swal.fire({
-        title: 'Devolver a la cola',
-        html: 'Vas a quitarle la solicitud <strong>' + idSolicitud + '</strong> a <strong>' + (nombreAsesor || 'el analista actual') + '</strong>.' + (esReestudio ? '<br><small class="text-muted">(Reestudio)</small>' : ''),
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#BD0F14',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'S—, desasignar',
-        cancelButtonText: 'Cancelar'
-    }).then(function(result) {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'Procesando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
-            if (esReestudio) {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res.success) {
-                        Swal.fire('—Hecho!', res.message, 'success');
-                        refrescarDashboard();
-                    } else {
-                        Swal.fire('Error', res.message, 'error');
-                        refrescarDashboard();
-                    }
-                }).desasignarSolicitudReestudio(idSolicitud);
-            } else {
-                google.script.run.withSuccessHandler(function(res) {
-                    if (res.success) {
-                        Swal.fire('—Hecho!', res.message, 'success');
-                        refrescarDashboard();
-                    } else {
-                        Swal.fire('Error', res.message, 'error');
-                        refrescarDashboard();
-                    }
-                }).desasignarSolicitud(idSolicitud);
+function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
+    var dashData = window._dashData || {};
+    var usuarios = window._listaUsuariosReasignar || [];
+
+    function mostrarModal(listaUsuarios) {
+        var opciones = listaUsuarios
+            .filter(function(u) { return u.estado === 'ACTIVO' || u.estado === 'DISPONIBLE'; })
+            .map(function(u) {
+                return '<option value="' + u.correo + '">' + u.nombreComercial + ' (' + u.especialidad + ')</option>';
+            }).join('');
+        if (!opciones) opciones = '<option value="">No hay analistas activos</option>';
+
+        Swal.fire({
+            title: '<i class="bi bi-person-lines-fill me-2"></i>Reasignar solicitud',
+            html: '<div style="text-align:left;font-size:0.88rem;">' +
+                '<div class="mb-3 p-3 rounded-3" style="background:#f1f5f9;border:1px solid #e2e8f0;">' +
+                '<div class="fw-bold" style="color:#253150;">Solicitud: <span style="color:#BD0F14;">' + idSolicitud + '</span></div>' +
+                '<div class="text-muted small">Analista actual: <strong>' + (nombreAsesorActual || 'N/A') + '</strong></div>' +
+                '<div class="text-muted small">Tipo: <strong>' + tipo + '</strong></div>' +
+                '</div>' +
+                '<label class="form-label fw-bold small">Nuevo analista</label>' +
+                '<select id="swal-select-analista" class="form-select">' + opciones + '</select>' +
+                '</div>',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-check-lg me-1"></i>Reasignar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#253150',
+            cancelButtonColor: '#64748b',
+            customClass: { popup: 'swal2-lg' },
+            preConfirm: function() {
+                var sel = document.getElementById('swal-select-analista').value;
+                if (!sel) { Swal.showValidationMessage('Selecciona un analista'); return false; }
+                return sel;
             }
-        }
-    });
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+            var correoNuevo = result.value;
+            Swal.fire({ title: 'Reasignando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+            google.script.run
+                .withSuccessHandler(function(res) {
+                    if (res.success) {
+                        Swal.fire({ icon: 'success', title: 'Reasignado', text: res.message, confirmButtonColor: '#253150', timer: 2500, timerProgressBar: true });
+                        refrescarDashboard();
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Error', text: res.message, confirmButtonColor: '#BD0F14' });
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#BD0F14' });
+                })
+                .admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo);
+        });
+    }
+
+    if (usuarios.length > 0) {
+        mostrarModal(usuarios);
+    } else {
+        Swal.fire({ title: 'Cargando analistas...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+        google.script.run
+            .withSuccessHandler(function(lista) {
+                window._listaUsuariosReasignar = lista;
+                mostrarModal(lista);
+            })
+            .withFailureHandler(function(err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar analistas: ' + err.message });
+            })
+            .admin_obtenerUsuariosGestion();
+    }
 }
 
 function ejecutarPanicGlobal() {
@@ -2871,6 +2902,7 @@ function cambiarModoCupos(modo) {
         $('#cupos-modo-individual').show();
         $('#btn-modo-general').removeClass('active');
         $('#btn-modo-individual').addClass('active');
+        cargarTablaCuposPersonalizados();
     }
 }
 
@@ -2957,7 +2989,7 @@ function guardarCuposGenerales() {
     }
     Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
     google.script.run.withSuccessHandler(function(res) {
-        if (res.success) Swal.fire({ icon: 'success', title: '—Cupos Actualizados!', text: res.message, confirmButtonColor: '#253150' });
+        if (res.success) Swal.fire({ icon: 'success', title: '¡Cupos Actualizados!', text: res.message, confirmButtonColor: '#253150' });
         else Swal.fire('Error', res.message, 'error');
     }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); }).admin_setCuotasGlobales(cupos);
 }
@@ -2966,19 +2998,24 @@ function guardarCuposGenerales() {
 var _timerBusqueda = null;
 function buscarAnalistaCupos(termino) {
     clearTimeout(_timerBusqueda);
-    if (termino.length < 2) { document.getElementById('resultados-busqueda-analista').innerHTML = ''; return; }
+    var contenedor = document.getElementById('resultados-busqueda-analista');
+    var hint = document.getElementById('buscar-analista-hint');
+    if (termino.length < 2) { contenedor.style.display = 'none'; contenedor.innerHTML = ''; if (hint) hint.textContent = 'Buscar por nombre'; return; }
+    if (hint) hint.innerHTML = '<div class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></div>';
     _timerBusqueda = setTimeout(function() {
         google.script.run.withSuccessHandler(function(resultados) {
+            if (hint) hint.textContent = resultados.length + ' resultado(s)';
             var html = '';
-            if (resultados.length === 0) { html = '<div class="text-muted small p-2">Sin resultados</div>'; }
+            if (resultados.length === 0) { html = '<div class="text-muted small p-3 text-center">Sin resultados para "' + termino + '"</div>'; }
             for (var i = 0; i < resultados.length; i++) {
                 var r = resultados[i];
-                html += '<div class="p-2 rounded-2 mb-1 d-flex justify-content-between align-items-center" style="cursor:pointer;border:1px solid #e2e8f0;transition:background 0.2s;" onmouseover="this.style.background=\'#f1f5f9\'" onmouseout="this.style.background=\'white\'" onclick="seleccionarAnalista(\'' + r.correo.replace(/'/g, "\\'") + '\',\'' + r.nombre.replace(/'/g, "\\'") + '\',\'' + r.especialidad.replace(/'/g, "\\'") + '\')">';
-                html += '<div><span class="fw-bold small">' + r.nombre + '</span><br><span class="text-muted" style="font-size:0.7rem;">' + r.correo + '</span></div>';
+                html += '<div class="px-3 py-2 d-flex justify-content-between align-items-center" style="cursor:pointer;transition:background 0.15s;border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background=\'#f0f7ff\'" onmouseout="this.style.background=\'white\'" onclick="seleccionarAnalista(\'' + r.correo.replace(/'/g, "\\'") + '\',\'' + r.nombre.replace(/'/g, "\\'") + '\',\'' + r.especialidad.replace(/'/g, "\\'") + '\')">';
+                html += '<div><span class="fw-bold" style="font-size:0.85rem;">' + r.nombre + '</span><br><span class="text-muted" style="font-size:0.7rem;">' + r.correo + '</span></div>';
                 html += '<span class="badge" style="background:#f1f5f9;color:#475569;font-size:0.65rem;">' + r.especialidad + '</span>';
                 html += '</div>';
             }
-            document.getElementById('resultados-busqueda-analista').innerHTML = html;
+            contenedor.innerHTML = html;
+            contenedor.style.display = resultados.length > 0 || termino.length >= 2 ? '' : 'none';
         }).admin_buscarAnalistasCupos(termino);
     }, 300);
 }
@@ -2993,12 +3030,16 @@ function seleccionarAnalista(correo, nombre, especialidad) {
     else if (especialidad.includes('REESTUDIO')) badgeEq.style.background = '#ede9fe';
     else badgeEq.style.background = '#dbeafe';
     document.getElementById('panel-cupos-individual').style.display = '';
-    document.getElementById('resultados-busqueda-analista').innerHTML = '';
+    document.getElementById('panel-cupos-placeholder').style.display = 'none';
+    document.getElementById('resultados-busqueda-analista').style.display = 'none';
+    document.getElementById('input-buscar-analista').value = nombre;
 
     google.script.run.withSuccessHandler(function(res) {
         var toggle = document.getElementById('toggle-personalizado');
+        var toggleFijo = document.getElementById('toggle-fijo');
         if (res.personalizado) {
             toggle.checked = true;
+            toggleFijo.checked = res.cupos.fijo === true;
             mostrarCamposIndividual(true);
             document.getElementById('ind_cupo_total').value = res.cupos.total || 0;
             document.getElementById('ind_cupo_nuevas').value = res.cupos.nuevas || 0;
@@ -3010,9 +3051,68 @@ function seleccionarAnalista(correo, nombre, especialidad) {
             validarSubcuposIndividual();
         } else {
             toggle.checked = false;
+            toggleFijo.checked = false;
             mostrarCamposIndividual(false);
         }
     }).admin_getCuposIndividual(correo);
+}
+
+function cargarTablaCuposPersonalizados() {
+    var tbody = document.getElementById('cuerpoCuposPersonalizados');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-2"></div>Cargando...</td></tr>';
+    google.script.run.withSuccessHandler(function(lista) {
+        if (!lista || lista.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-inbox me-2"></i>Ningún analista tiene cupos personalizados</td></tr>';
+            return;
+        }
+        var html = '';
+        lista.forEach(function(a) {
+            var c = a.cupos;
+            var uarTotal = (c.nuevaUar || 0) + (c.deudorUar || 0);
+            html += '<tr style="cursor:pointer;" onclick="seleccionarAnalista(\'' + a.correo.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\',\'' + a.especialidad.replace(/'/g, "\\'") + '\')" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'white\'">';
+            html += '<td><div class="fw-bold" style="font-size:0.82rem;">' + a.nombre + '</div><div class="text-muted" style="font-size:0.68rem;">' + a.correo.split('@')[0] + ' · ' + a.especialidad + '</div></td>';
+            html += '<td class="text-center fw-bold">' + (c.total || 0) + '</td>';
+            html += '<td class="text-center">' + (c.nuevas || 0) + '</td>';
+            html += '<td class="text-center">' + (c.reestudios || 0) + '</td>';
+            html += '<td class="text-center">' + (c.inducciones || 0) + '</td>';
+            html += '<td class="text-center">' + (c.biometria || 0) + '</td>';
+            html += '<td class="text-center">' + uarTotal + '</td>';
+            html += '<td class="text-center">';
+            if (a.fijo) html += '<span style="background:#fef3c7;color:#b45309;padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:700;"><i class="bi bi-pin-angle-fill me-1"></i>Fijo</span>';
+            else html += '<span style="background:#f1f5f9;color:#94a3b8;padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:600;">Temporal</span>';
+            html += '</td></tr>';
+        });
+        tbody.innerHTML = html;
+    }).withFailureHandler(function(err) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-3">Error: ' + err.message + '</td></tr>';
+    }).admin_getAnalistasConCuposPersonalizados();
+}
+
+function cerrarPanelCuposIndividual() {
+    var toggle = document.getElementById('toggle-personalizado');
+    if (toggle.checked) {
+        Swal.fire({
+            title: 'Cerrar sin guardar',
+            text: 'Los cambios no guardados se perderán.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Sí, cerrar',
+            cancelButtonText: 'Volver'
+        }).then(function(result) {
+            if (result.isConfirmed) _cerrarPanelCupos();
+        });
+    } else {
+        _cerrarPanelCupos();
+    }
+}
+
+function _cerrarPanelCupos() {
+    document.getElementById('panel-cupos-individual').style.display = 'none';
+    document.getElementById('panel-cupos-placeholder').style.display = '';
+    document.getElementById('input-buscar-analista').value = '';
+    _analistaSeleccionado = '';
 }
 
 function toggleCuposPersonalizados() {
@@ -3060,7 +3160,7 @@ function guardarCuposIndividual() {
     if (!_analistaSeleccionado) return;
     var total = parseInt(document.getElementById('ind_cupo_total').value) || 0;
     var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
-    var cupos = { total: total };
+    var cupos = { total: total, fijo: document.getElementById('toggle-fijo').checked };
     var suma = 0;
     for (var i = 0; i < subcats.length; i++) {
         var val = parseInt(document.getElementById('ind_cupo_' + subcats[i]).value) || 0;
@@ -3070,161 +3170,30 @@ function guardarCuposIndividual() {
     if (suma < total) { Swal.fire({ title: 'Cupos sin distribuir', html: 'La suma (' + suma + ') no alcanza el total (' + total + ').<br>Faltan <strong>' + (total - suma) + '</strong> por asignar.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
     Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
     google.script.run.withSuccessHandler(function(res) {
-        if (res.success) Swal.fire({ icon: 'success', title: '—Guardado!', text: res.message, confirmButtonColor: '#253150' });
-        else Swal.fire('Error', res.message, 'error');
+        if (res.success) {
+            Swal.fire({ icon: 'success', title: 'Guardado', text: res.message, confirmButtonColor: '#253150', timer: 2000, timerProgressBar: true });
+            cargarTablaCuposPersonalizados();
+        } else Swal.fire('Error', res.message, 'error');
     }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); }).admin_setCuposIndividual(_analistaSeleccionado, cupos);
 }
 
 function resetearCuposIndividual() {
     if (!_analistaSeleccionado) return;
-    Swal.fire({ title: '—Volver a cupos globales?', text: 'Se eliminar—n los cupos personalizados de este analista.', icon: 'question', showCancelButton: true, confirmButtonColor: '#253150', cancelButtonColor: '#64748b', confirmButtonText: 'S—, usar globales', cancelButtonText: 'Cancelar' }).then(function(result) {
+    Swal.fire({ title: 'Eliminar cupos personalizados', text: 'Este analista volverá a usar los cupos globales de su equipo.', icon: 'question', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#64748b', confirmButtonText: 'Sí, eliminar', cancelButtonText: 'Cancelar' }).then(function(result) {
         if (result.isConfirmed) {
             google.script.run.withSuccessHandler(function(res) {
                 if (res.success) {
-                    Swal.fire({ icon: 'success', title: 'Listo', text: res.message, confirmButtonColor: '#253150' });
+                    Swal.fire({ icon: 'success', title: 'Eliminado', text: res.message, confirmButtonColor: '#253150', timer: 2000, timerProgressBar: true });
                     document.getElementById('toggle-personalizado').checked = false;
+                    document.getElementById('toggle-fijo').checked = false;
                     mostrarCamposIndividual(false);
+                    cargarTablaCuposPersonalizados();
                 } else Swal.fire('Error', res.message, 'error');
             }).admin_setCuposIndividual(_analistaSeleccionado, null);
         }
     });
 }
 
-// ========== HORARIOS DE ASIGNACIÓN ==========
-var DIAS_CONFIG = [
-    { key: 'lunes',     label: 'Lunes',     color: '#1d4ed8', bg: '#dbeafe', border: '#bfdbfe' },
-    { key: 'martes',    label: 'Martes',    color: '#0369a1', bg: '#e0f2fe', border: '#bae6fd' },
-    { key: 'miercoles', label: 'Miércoles', color: '#0f766e', bg: '#ccfbf1', border: '#99f6e4' },
-    { key: 'jueves',    label: 'Jueves',    color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' },
-    { key: 'viernes',   label: 'Viernes',   color: '#b45309', bg: '#fef3c7', border: '#fde68a' },
-    { key: 'sabado',    label: 'Sábado',    color: '#64748b', bg: '#f1f5f9', border: '#e2e8f0' },
-    { key: 'domingo',   label: 'Domingo',   color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' }
-];
-
-function cargarHorarios() {
-    document.getElementById('grid-horarios').innerHTML =
-        '<div class="text-center w-100 py-4" style="color:var(--text-muted);"><div class="spinner-border spinner-border-sm me-2"></div>Cargando horarios...</div>';
-    google.script.run
-        .withSuccessHandler(function(horarios) { renderGridHorarios(horarios); })
-        .withFailureHandler(function(err) {
-            document.getElementById('grid-horarios').innerHTML =
-                '<div class="alert alert-danger">Error al cargar: ' + err.message + '</div>';
-        })
-        .admin_getHorariosAsignacion();
-}
-
-function renderGridHorarios(horarios) {
-    var html = '';
-    DIAS_CONFIG.forEach(function(dia) {
-        var cfg = (horarios && horarios[dia.key]) ? horarios[dia.key] : { activo: false, inicio: '08:00', fin: '18:00' };
-        var activo = cfg.activo !== false;
-        var colorActual = activo ? dia.color : '#94a3b8';
-        var bgActual    = activo ? dia.bg    : '#f9fafb';
-        var bordActual  = activo ? dia.border : '#e2e8f0';
-        var badgeHtml = activo
-            ? '<span style="background:' + dia.color + ';color:white;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-check-circle"></i>Activo</span>'
-            : '<span style="background:#e2e8f0;color:#64748b;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-dash-circle"></i>Inactivo</span>';
-
-        html += '<div style="flex:1;min-width:150px;max-width:210px;">';
-        html += '<div id="card-dia-' + dia.key + '" class="p-3 rounded-3 h-100" style="border:2px solid ' + bordActual + ';background:' + bgActual + ';transition:all 0.2s;">';
-
-        // Encabezado: nombre + toggle
-        html += '<div class="d-flex align-items-center justify-content-between mb-2">';
-        html += '<div class="d-flex align-items-center gap-2">';
-        html += '<i id="dia-icon-' + dia.key + '" class="bi bi-calendar-day" style="font-size:0.95rem;color:' + colorActual + ';"></i>';
-        html += '<span id="dia-label-' + dia.key + '" class="fw-bold" style="font-size:0.9rem;color:' + colorActual + ';">' + dia.label + '</span>';
-        html += '</div>';
-        html += '<div class="form-check form-switch mb-0" style="padding-left:2.5em;">';
-        html += '<input class="form-check-input" type="checkbox" id="toggle-dia-' + dia.key + '" ' + (activo ? 'checked' : '') + ' onchange="toggleDiaHorario(\'' + dia.key + '\')" style="cursor:pointer;">';
-        html += '</div>';
-        html += '</div>';
-
-        // Badge de estado
-        html += '<div id="dia-badge-' + dia.key + '" class="mb-3">' + badgeHtml + '</div>';
-
-        // Inputs de hora (visibles solo si activo)
-        html += '<div id="campos-hora-' + dia.key + '" style="display:' + (activo ? 'block' : 'none') + ';">';
-        html += '<label class="mb-1 d-block" style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Inicio</label>';
-        html += '<input type="time" id="inicio-' + dia.key + '" class="form-control form-control-sm mb-2 text-center fw-bold" value="' + (cfg.inicio || '08:00') + '">';
-        html += '<label class="mb-1 d-block" style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Fin</label>';
-        html += '<input type="time" id="fin-' + dia.key + '" class="form-control form-control-sm text-center fw-bold" value="' + (cfg.fin || '18:00') + '">';
-        html += '</div>';
-
-        // Mensaje día inactivo
-        html += '<div id="msg-inactivo-' + dia.key + '" style="display:' + (activo ? 'none' : 'block') + ';">';
-        html += '<span style="font-size:0.78rem;color:#94a3b8;">Sin asignaciones este día</span>';
-        html += '</div>';
-
-        html += '</div></div>';
-    });
-    document.getElementById('grid-horarios').innerHTML = html;
-}
-
-function toggleDiaHorario(diaKey) {
-    var checkbox  = document.getElementById('toggle-dia-' + diaKey);
-    var activo    = checkbox.checked;
-    var diaConfig = null;
-    for (var i = 0; i < DIAS_CONFIG.length; i++) { if (DIAS_CONFIG[i].key === diaKey) { diaConfig = DIAS_CONFIG[i]; break; } }
-    if (!diaConfig) return;
-
-    var card       = document.getElementById('card-dia-' + diaKey);
-    var icon       = document.getElementById('dia-icon-' + diaKey);
-    var label      = document.getElementById('dia-label-' + diaKey);
-    var badge      = document.getElementById('dia-badge-' + diaKey);
-    var camposHora = document.getElementById('campos-hora-' + diaKey);
-    var msgInact   = document.getElementById('msg-inactivo-' + diaKey);
-
-    if (activo) {
-        card.style.borderColor = diaConfig.border;
-        card.style.background  = diaConfig.bg;
-        icon.style.color       = diaConfig.color;
-        label.style.color      = diaConfig.color;
-        camposHora.style.display = 'block';
-        msgInact.style.display   = 'none';
-        badge.innerHTML = '<span style="background:' + diaConfig.color + ';color:white;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-check-circle"></i>Activo</span>';
-    } else {
-        card.style.borderColor = '#e2e8f0';
-        card.style.background  = '#f9fafb';
-        icon.style.color       = '#94a3b8';
-        label.style.color      = '#94a3b8';
-        camposHora.style.display = 'none';
-        msgInact.style.display   = 'block';
-        badge.innerHTML = '<span style="background:#e2e8f0;color:#64748b;padding:3px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;display:inline-flex;align-items:center;gap:4px;"><i class="bi bi-dash-circle"></i>Inactivo</span>';
-    }
-}
-
-function guardarHorarios() {
-    var horarios = {};
-    var errores  = [];
-
-    DIAS_CONFIG.forEach(function(dia) {
-        var activo = document.getElementById('toggle-dia-' + dia.key).checked;
-        var inicio = document.getElementById('inicio-' + dia.key) ? document.getElementById('inicio-' + dia.key).value || '08:00' : '08:00';
-        var fin    = document.getElementById('fin-' + dia.key)    ? document.getElementById('fin-' + dia.key).value    || '18:00' : '18:00';
-
-        if (activo && inicio >= fin) {
-            errores.push('<strong>' + dia.label + ':</strong> la hora de inicio (' + inicio + ') debe ser anterior a la de fin (' + fin + ').');
-        }
-        horarios[dia.key] = { activo: activo, inicio: inicio, fin: fin };
-    });
-
-    if (errores.length > 0) {
-        Swal.fire({ title: 'Error en horarios', html: errores.join('<br>'), icon: 'error', confirmButtonColor: '#253150' });
-        return;
-    }
-
-    Swal.fire({ title: 'Guardando horarios...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
-    google.script.run
-        .withSuccessHandler(function(res) {
-            if (res.success) {
-                Swal.fire({ icon: 'success', title: '¡Horarios Guardados!', text: res.message, confirmButtonColor: '#253150' });
-            } else {
-                Swal.fire('Error', res.message, 'error');
-            }
-        })
-        .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
-        .admin_setHorariosAsignacion(horarios);
-}
 </script>
 
 <!-- SECCIÓN TURNOS HTML -->
@@ -3247,17 +3216,6 @@ function guardarHorarios() {
 .turno-col.drag-over { border-color:#6366f1; background:#eef2ff; box-shadow:0 0 0 3px #c7d2fe; }
 .turno-col-warn.drag-over { border-color:#f59e0b; background:#fffbeb; box-shadow:0 0 0 3px #fde68a; }
 .turno-count { font-size:0.72rem; background:#e2e8f0; border-radius:20px; padding:1px 7px; color:#475569; font-weight:600; margin-left:6px; vertical-align:middle; }
-.cal-grid-wrap { background:var(--bg-card); border-radius:14px; padding:20px; border:1.5px solid #e2e8f0; overflow-x:auto; }
-.cal-inner { min-width: 560px; }
-.cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px; }
-.cal-dias-semana { display:grid; grid-template-columns:repeat(7,1fr); text-align:center; font-size:0.75rem; font-weight:600; color:#94a3b8; margin-bottom:4px; }
-#cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
-.cal-dia { border-radius:8px; padding:6px 4px; min-height:44px; cursor:pointer; transition:background .15s; text-align:center; border:1px solid transparent; position:relative; }
-.cal-dia:hover { background:#e2e8f0; }
-.cal-finsemana { background:#f8fafc; }
-.cal-vacio { border:none; cursor:default; }
-.cal-num { font-size:0.82rem; display:block; }
-.cal-extra-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#f59e0b; margin-top:3px; }
 </style>
 
 <!-- Modal lista sin turno -->
@@ -3308,43 +3266,43 @@ function guardarHorarios() {
                     <tbody>
                         <tr id="row-turno-lun">
                             <td class="fw-semibold">Lunes</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-lun" class="form-check-input" checked onchange="toggleDiaHorario('lun')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-lun" class="form-check-input" checked onchange="toggleDiaTurno('lun')"></td>
                             <td><input type="time" id="turno-ini-lun" class="form-control form-control-sm" value="08:00"></td>
                             <td><input type="time" id="turno-fin-lun" class="form-control form-control-sm" value="17:00"></td>
                         </tr>
                         <tr id="row-turno-mar">
                             <td class="fw-semibold">Martes</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-mar" class="form-check-input" checked onchange="toggleDiaHorario('mar')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-mar" class="form-check-input" checked onchange="toggleDiaTurno('mar')"></td>
                             <td><input type="time" id="turno-ini-mar" class="form-control form-control-sm" value="08:00"></td>
                             <td><input type="time" id="turno-fin-mar" class="form-control form-control-sm" value="17:00"></td>
                         </tr>
                         <tr id="row-turno-mie">
                             <td class="fw-semibold">Miércoles</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-mie" class="form-check-input" checked onchange="toggleDiaHorario('mie')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-mie" class="form-check-input" checked onchange="toggleDiaTurno('mie')"></td>
                             <td><input type="time" id="turno-ini-mie" class="form-control form-control-sm" value="08:00"></td>
                             <td><input type="time" id="turno-fin-mie" class="form-control form-control-sm" value="17:00"></td>
                         </tr>
                         <tr id="row-turno-jue">
                             <td class="fw-semibold">Jueves</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-jue" class="form-check-input" checked onchange="toggleDiaHorario('jue')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-jue" class="form-check-input" checked onchange="toggleDiaTurno('jue')"></td>
                             <td><input type="time" id="turno-ini-jue" class="form-control form-control-sm" value="08:00"></td>
                             <td><input type="time" id="turno-fin-jue" class="form-control form-control-sm" value="17:00"></td>
                         </tr>
                         <tr id="row-turno-vie">
                             <td class="fw-semibold">Viernes</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-vie" class="form-check-input" checked onchange="toggleDiaHorario('vie')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-vie" class="form-check-input" checked onchange="toggleDiaTurno('vie')"></td>
                             <td><input type="time" id="turno-ini-vie" class="form-control form-control-sm" value="08:00"></td>
                             <td><input type="time" id="turno-fin-vie" class="form-control form-control-sm" value="17:00"></td>
                         </tr>
                         <tr id="row-turno-sab" class="text-muted">
                             <td class="fw-semibold">Sábado</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-sab" class="form-check-input" onchange="toggleDiaHorario('sab')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-sab" class="form-check-input" onchange="toggleDiaTurno('sab')"></td>
                             <td><input type="time" id="turno-ini-sab" class="form-control form-control-sm" value="08:00" disabled></td>
                             <td><input type="time" id="turno-fin-sab" class="form-control form-control-sm" value="13:00" disabled></td>
                         </tr>
                         <tr id="row-turno-dom" class="text-muted">
                             <td class="fw-semibold">Domingo</td>
-                            <td class="text-center"><input type="checkbox" id="turno-dia-dom" class="form-check-input" onchange="toggleDiaHorario('dom')"></td>
+                            <td class="text-center"><input type="checkbox" id="turno-dia-dom" class="form-check-input" onchange="toggleDiaTurno('dom')"></td>
                             <td><input type="time" id="turno-ini-dom" class="form-control form-control-sm" value="08:00" disabled></td>
                             <td><input type="time" id="turno-fin-dom" class="form-control form-control-sm" value="13:00" disabled></td>
                         </tr>
@@ -3387,43 +3345,6 @@ function guardarHorarios() {
 </div>
 
 <!-- Modal Horas extra del día -->
-<div class="modal fade" id="modalExtra" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Horas extra — <span id="extra-fecha-label"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="extra-lista" class="mb-3 p-2 bg-light rounded"></div>
-                <hr>
-                <div class="mb-2 fw-bold small">Agregar horas extra</div>
-                <div class="mb-2">
-                    <label class="form-label small">Analista</label>
-                    <select id="extra-email-select" class="form-select form-select-sm"></select>
-                </div>
-                <div class="row mb-2">
-                    <div class="col">
-                        <label class="form-label small">Hora inicio</label>
-                        <input type="time" id="extra-inicio" class="form-control form-control-sm">
-                    </div>
-                    <div class="col">
-                        <label class="form-label small">Hora fin</label>
-                        <input type="time" id="extra-fin" class="form-control form-control-sm">
-                    </div>
-                </div>
-                <div class="mb-2">
-                    <label class="form-label small">Descripción (opcional)</label>
-                    <input type="text" id="extra-desc" class="form-control form-control-sm" placeholder="Ej: Sábado habilitado por cierre de mes">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
-                <button type="button" class="btn btn-warning" onclick="guardarHorasExtra()"><i class="bi bi-plus-lg"></i> Agregar extra</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 </body>
 </html>

@@ -1088,18 +1088,6 @@
       if (estado.includes('APLAZ')) {
         contAplaz.removeClass('d-none').hide().slideDown(250);
         contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
-<<<<<<< HEAD
-        tsSetVal('d_motivo_negacion', '');
-      } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
-        contNeg.removeClass('d-none').hide().slideDown(250);
-        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
-        tsSetVal('d_motivo_aplazamiento', '');
-      } else {
-        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
-        contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
-        tsSetVal('d_motivo_aplazamiento', '');
-        tsSetVal('d_motivo_negacion', '');
-=======
         $('#d_motivo_negacion').val('');
         if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('d_motivo_negacion');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
@@ -1116,7 +1104,6 @@
           MotivoPicker.reset('d_motivo_aplazamiento');
           MotivoPicker.reset('d_motivo_negacion');
         }
->>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
       }
     }
 
@@ -1347,18 +1334,6 @@
       if (estado.includes('APLAZ')) {
         $('#dig_contenedor_aplazamiento').removeClass('d-none').hide().slideDown(250);
         $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
-<<<<<<< HEAD
-        tsSetVal('dig_motivo_negacion', '');
-      } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
-        $('#dig_contenedor_negacion').removeClass('d-none').hide().slideDown(250);
-        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
-        tsSetVal('dig_motivo_aplazamiento', '');
-      } else {
-        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
-        $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
-        tsSetVal('dig_motivo_aplazamiento', '');
-        tsSetVal('dig_motivo_negacion', '');
-=======
         $('#dig_motivo_negacion').val('');
         if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('dig_motivo_negacion');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
@@ -1375,7 +1350,6 @@
           MotivoPicker.reset('dig_motivo_aplazamiento');
           MotivoPicker.reset('dig_motivo_negacion');
         }
->>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
       }
     }
 

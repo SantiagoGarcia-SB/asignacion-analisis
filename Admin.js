@@ -78,6 +78,7 @@ function obtenerDatosDashboard() {
     }
   }
   
+  // ── Sin Asignar desde hoja activa de solicitudes ──
   for (let i = 1; i < dataSol.length; i++) {
     const estado = String(dataSol[i][16] || "").toUpperCase();
     const asignado = String(dataSol[i][27] || "").trim();
@@ -85,18 +86,12 @@ function obtenerDatosDashboard() {
     const tipo = String(dataSol[i][20] || "").toUpperCase();
     const solicitudId = String(dataSol[i][0] || "").trim();
     const poliza = String(dataSol[i][1] || "");
-    const asesorNombre = String(dataSol[i][30] || "N/A");
-    
+
     if (solicitudId === "") continue;
     let tipoVisual = 'digital';
     if (estado.includes('BIOMETRIA')) tipoVisual = 'biometria';
     else if (tipo === 'INDUCCION') tipoVisual = 'induccion';
-    
-    if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
-      res.gestionadasHoyEquipo++;
-      res.desglose.gestionadasHoy[tipoVisual]++;
-      res.listaGestionadasHoy.push({ id: solicitudId, poliza: poliza, estado: estado, asesor: asesorNombre, tipo: tipoVisual });
-    }
+
     if (asignado === "" && fechaFin === "") {
       res.sinAsignar++;
       res.desglose.sinAsignar[tipoVisual]++;
@@ -104,19 +99,9 @@ function obtenerDatosDashboard() {
         res.listaSinAsignar.push({ id: solicitudId, poliza: poliza, tipo: tipoVisual });
       }
     }
-    if (!estado.includes("APROB") && !estado.includes("NEGAD") && asignado !== "" && fechaFin === "") {
-      res.desglose.enGestion[tipoVisual]++;
-      res.listaGestion.push({
-        id: solicitudId,
-        poliza: poliza,
-        estado: estado,
-        correo: asignado,
-        asesor: asesorNombre,
-        tipo: tipoVisual
-      });
-    }
   }
-  
+
+  // ── Sin Asignar desde hoja activa de reestudios ──
   try {
     const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
@@ -129,18 +114,15 @@ function obtenerDatosDashboard() {
           const origen = String(dataReest[i][3]).trim();
           const tipoProceso = String(dataReest[i][4]).trim();
           const analistaEmail = String(dataReest[i][6]).trim();
-          const nombreAnalista = String(dataReest[i][7]).trim();
-          const fechaAsignacion = String(dataReest[i][8]).trim();
           const fechaFin = String(dataReest[i][9]).trim();
-          const estadoGestion = String(dataReest[i][10]).trim();
-          
+
           if (solicitud === "") continue;
           const tipoUpper = tipoProceso.toUpperCase();
           const claseUpper = String(dataReest[i][5]).toUpperCase().trim();
           let tipoDesglose = 'reestudios';
           if (tipoUpper.includes("NUEVA UAR") || claseUpper.includes("NUEVA UAR")) tipoDesglose = 'nuevaUar';
           else if (tipoUpper.includes("DEUDOR UAR") || claseUpper.includes("DEUDOR UAR")) tipoDesglose = 'deudorUar';
-          
+
           if (analistaEmail === "" && fechaFin === "") {
             res.reestudios.sinAsignar++;
             res.sinAsignar++;
@@ -149,33 +131,144 @@ function obtenerDatosDashboard() {
               res.reestudios.listaSinAsignar.push({ id: solicitud, origen: origen, tipo: tipoProceso });
             }
           }
-          if (analistaEmail !== "" && fechaAsignacion !== "" && fechaFin === "") {
-            res.reestudios.pendientes++;
-            res.desglose.enGestion[tipoDesglose]++;
-            if (res.reestudios.listaPendientes.length < 50) {
-              res.reestudios.listaPendientes.push({ id: solicitud, origen: origen, tipo: tipoProceso, asesor: nombreAnalista });
-            }
-            res.listaGestion.push({
-              id: solicitud,
-              poliza: origen,
-              estado: "EN GESTIÓN",
-              correo: analistaEmail,
-              asesor: nombreAnalista,
-              tipo: 'reestudio'
-            });
-          }
-          if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
-            res.reestudios.gestionadasHoy++;
-            res.gestionadasHoyEquipo++;
-            res.desglose.gestionadasHoy[tipoDesglose]++;
-            res.reestudios.listaGestionadasHoy.push({ id: solicitud, origen: origen, estado: estadoGestion, asesor: nombreAnalista });
-            res.listaGestionadasHoy.push({ id: solicitud, poliza: origen, estado: estadoGestion, asesor: nombreAnalista, tipo: 'reestudio' });
-          }
         }
       }
     }
   } catch (e) {
-    Logger.log("Aviso: No se pudo leer hoja de reestudios para dashboard: " + e.message);
+    Logger.log("Aviso: No se pudo leer hoja activa de reestudios: " + e.message);
+  }
+
+  // ── En Gestión desde Historico_Gestiones (digitales, biometría, inducciones) ──
+  // Condición: col Z (idx 25) = analista asignado NO vacío, col AA (idx 26) = fecha fin vacía
+  try {
+    const hojaHistEnG = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHistEnG && hojaHistEnG.getLastRow() > 1) {
+      const colsEG = Math.max(31, hojaHistEnG.getLastColumn());
+      const dataEG = hojaHistEnG.getRange(2, 1, hojaHistEnG.getLastRow() - 1, colsEG).getDisplayValues();
+      for (let i = 0; i < dataEG.length; i++) {
+        const solicitudId = String(dataEG[i][0] || "").trim();
+        if (solicitudId === "") continue;
+        const asignadoH = String(dataEG[i][25] || "").trim();
+        const fechaFinH = String(dataEG[i][26] || "").trim();
+        if (asignadoH === "" || fechaFinH !== "") continue;
+        const estadoH = String(dataEG[i][16] || "").toUpperCase();
+        const tipoH = String(dataEG[i][20] || "").toUpperCase();
+        const polizaH = String(dataEG[i][1] || "");
+        const asesorH = String(dataEG[i][27] || dataEG[i][25] || "N/A");
+        let tipoVisual = 'digital';
+        if (estadoH.includes('BIOMETRIA')) tipoVisual = 'biometria';
+        else if (tipoH === 'INDUCCION') tipoVisual = 'induccion';
+        res.desglose.enGestion[tipoVisual]++;
+        res.listaGestion.push({
+          id: solicitudId,
+          poliza: polizaH,
+          estado: estadoH || "EN GESTIÓN",
+          correo: asignadoH,
+          asesor: asesorH,
+          tipo: tipoVisual
+        });
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: Error leyendo Historico_Gestiones enGestion principal: " + e.message);
+  }
+
+  // ── En Gestión desde Historico_Gestiones de reestudios/UAR ──
+  // Condición: col G (idx 6) = analista NO vacío, col J (idx 9) = fechaFin vacía
+  try {
+    const ssReestEG = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaHistReestEG = ssReestEG.getSheetByName("Historico_Gestiones");
+    if (hojaHistReestEG && hojaHistReestEG.getLastRow() > 1) {
+      const dataREG = hojaHistReestEG.getRange(2, 1, hojaHistReestEG.getLastRow() - 1, 14).getDisplayValues();
+      for (let i = 0; i < dataREG.length; i++) {
+        const solicitud = String(dataREG[i][1] || "").trim();
+        if (solicitud === "") continue;
+        const analistaEmail = String(dataREG[i][6] || "").trim();
+        const fechaFin = String(dataREG[i][9] || "").trim();
+        if (analistaEmail === "" || fechaFin !== "") continue;
+        const origen = String(dataREG[i][3] || "").trim();
+        const tipoProceso = String(dataREG[i][4] || "").toUpperCase();
+        const clase = String(dataREG[i][5] || "").toUpperCase();
+        const nombreAnalista = String(dataREG[i][7] || "N/A");
+        let tipoDesglose = 'reestudios';
+        if (tipoProceso.includes("NUEVA UAR") || clase.includes("NUEVA UAR")) tipoDesglose = 'nuevaUar';
+        else if (tipoProceso.includes("DEUDOR UAR") || clase.includes("DEUDOR UAR")) tipoDesglose = 'deudorUar';
+        res.reestudios.pendientes++;
+        res.desglose.enGestion[tipoDesglose]++;
+        if (res.reestudios.listaPendientes.length < 50) {
+          res.reestudios.listaPendientes.push({ id: solicitud, origen: origen, tipo: tipoProceso, asesor: nombreAnalista });
+        }
+        res.listaGestion.push({
+          id: solicitud,
+          poliza: origen,
+          estado: "EN GESTIÓN",
+          correo: analistaEmail,
+          asesor: nombreAnalista,
+          tipo: 'reestudio'
+        });
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: Error leyendo Historico_Gestiones enGestion reestudios: " + e.message);
+  }
+
+  // ── Gestionadas Hoy — desde Historico_Gestiones (digitales, biometría, inducciones) ──
+  // Columna AA (idx 26) = fecha fin gestión
+  try {
+    const hojaHistDig = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHistDig && hojaHistDig.getLastRow() > 1) {
+      const colsNeeded = Math.max(31, hojaHistDig.getLastColumn());
+      const dataHist = hojaHistDig.getRange(2, 1, hojaHistDig.getLastRow() - 1, colsNeeded).getDisplayValues();
+      for (let i = 0; i < dataHist.length; i++) {
+        const fechaFinH = String(dataHist[i][26] || "").trim(); // col AA
+        if (fechaFinH === "" || !fechaFinH.includes(hoyStr)) continue;
+        const solicitudId = String(dataHist[i][0] || "").trim();
+        if (solicitudId === "") continue;
+        const estadoH = String(dataHist[i][16] || "").toUpperCase();
+        const tipoH = String(dataHist[i][20] || "").toUpperCase();
+        const asesorH = String(dataHist[i][27] || dataHist[i][25] || "N/A");
+        const polizaH = String(dataHist[i][1] || "");
+        let tipoVisual = 'digital';
+        if (estadoH.includes('BIOMETRIA')) tipoVisual = 'biometria';
+        else if (tipoH === 'INDUCCION') tipoVisual = 'induccion';
+        res.gestionadasHoyEquipo++;
+        res.desglose.gestionadasHoy[tipoVisual]++;
+        res.listaGestionadasHoy.push({ id: solicitudId, poliza: polizaH, estado: estadoH, asesor: asesorH, tipo: tipoVisual });
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: Error leyendo Historico_Gestiones principal: " + e.message);
+  }
+
+  // ── Gestionadas Hoy — desde Historico_Gestiones de reestudios/UAR ──
+  // Columna J (idx 9) = fechaFinGestion
+  try {
+    const ssReest2 = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaHistReest = ssReest2.getSheetByName("Historico_Gestiones");
+    if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
+      const dataHistR = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, 14).getDisplayValues();
+      for (let i = 0; i < dataHistR.length; i++) {
+        const fechaFinR = String(dataHistR[i][9] || "").trim(); // col J
+        if (fechaFinR === "" || !fechaFinR.includes(hoyStr)) continue;
+        const solicitud = String(dataHistR[i][1] || "").trim();
+        if (solicitud === "") continue;
+        const origen = String(dataHistR[i][3] || "").trim();
+        const tipoProceso = String(dataHistR[i][4] || "").toUpperCase();
+        const clase = String(dataHistR[i][5] || "").toUpperCase();
+        const nombreAnalista = String(dataHistR[i][7] || "N/A");
+        const estadoGestion = String(dataHistR[i][10] || "").trim();
+        let tipoDesglose = 'reestudios';
+        if (tipoProceso.includes("NUEVA UAR") || clase.includes("NUEVA UAR")) tipoDesglose = 'nuevaUar';
+        else if (tipoProceso.includes("DEUDOR UAR") || clase.includes("DEUDOR UAR")) tipoDesglose = 'deudorUar';
+        res.reestudios.gestionadasHoy++;
+        res.gestionadasHoyEquipo++;
+        res.desglose.gestionadasHoy[tipoDesglose]++;
+        res.reestudios.listaGestionadasHoy.push({ id: solicitud, origen: origen, estado: estadoGestion, asesor: nombreAnalista });
+        res.listaGestionadasHoy.push({ id: solicitud, poliza: origen, estado: estadoGestion, asesor: nombreAnalista, tipo: 'reestudio' });
+      }
+    }
+  } catch (e) {
+    Logger.log("Aviso: Error leyendo Historico_Gestiones reestudios: " + e.message);
   }
   return res;
 }
@@ -364,6 +457,71 @@ function desasignarSolicitudReestudio(idSolicitud) {
       }
     }
     return { success: false, message: "Solicitud no encontrada en reestudios." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
+  try {
+    verificarPermisoAdmin();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+
+    const correoNorm = correoNuevo.toLowerCase().trim();
+
+    // Obtener nombre del analista destino
+    const ssMain = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaUser = ssMain.getSheetByName("Usuarios");
+    const dataUser = hojaUser.getDataRange().getValues();
+    const usuario = dataUser.find(function(f) { return String(f[2]).toLowerCase().trim() === correoNorm; });
+    const nombreNuevo = usuario ? String(usuario[1]).trim() : correoNorm;
+    const ahora = new Date();
+    const adminEmail = Session.getActiveUser().getEmail();
+
+    if (tipo === 'reestudio') {
+      // Historico_Gestiones de reestudios: G(7)=email, H(8)=nombre, I(9)=fechaAsig
+      const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaHR = ssReest.getSheetByName("Historico_Gestiones");
+      if (!hojaHR || hojaHR.getLastRow() <= 1) { lock.releaseLock(); return { success: false, message: "Historico_Gestiones de reestudios no encontrada." }; }
+      const dataR = hojaHR.getRange(2, 2, hojaHR.getLastRow() - 1, 9).getValues();
+      for (let i = 0; i < dataR.length; i++) {
+        if (String(dataR[i][0]).trim() === String(idSolicitud).trim() && String(dataR[i][8]).trim() === '') {
+          const fila = i + 2;
+          hojaHR.getRange(fila, 7).setValue(correoNorm);
+          hojaHR.getRange(fila, 8).setValue(nombreNuevo);
+          hojaHR.getRange(fila, 9).setValue(ahora);
+          hojaHR.getRange(fila, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+          hojaHR.getRange(fila, 19).setValue("ADMIN:" + adminEmail + "|" + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm"));
+          SpreadsheetApp.flush();
+          lock.releaseLock();
+          return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };
+        }
+      }
+      lock.releaseLock();
+      return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico reestudios." };
+
+    } else {
+      // Historico_Gestiones principal: Z(26)=email, AE(31)=nombre, Y(25)=fechaAsig, AA(27)=fechaFin
+      const hojaHP = ssMain.getSheetByName("Historico_Gestiones");
+      if (!hojaHP || hojaHP.getLastRow() <= 1) { lock.releaseLock(); return { success: false, message: "Historico_Gestiones no encontrada." }; }
+      const dataP = hojaHP.getRange(2, 1, hojaHP.getLastRow() - 1, 27).getValues();
+      for (let i = 0; i < dataP.length; i++) {
+        if (String(dataP[i][0]).trim() === String(idSolicitud).trim() && String(dataP[i][26]).trim() === '') {
+          const fila = i + 2;
+          hojaHP.getRange(fila, 25).setValue(ahora);
+          hojaHP.getRange(fila, 25).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+          hojaHP.getRange(fila, 26).setValue(correoNorm);
+          hojaHP.getRange(fila, 28).setValue(nombreNuevo);
+          hojaHP.getRange(fila, 38).setValue("ADMIN:" + adminEmail + "|" + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm"));
+          SpreadsheetApp.flush();
+          lock.releaseLock();
+          return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };
+        }
+      }
+      lock.releaseLock();
+      return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico principal." };
+    }
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -593,6 +751,29 @@ function admin_buscarAnalistasCupos(termino) {
  * Obtiene los cupos individuales de un analista.
  * Retorna null si usa los globales, o el objeto de cupos si tiene personalizados.
  */
+function admin_getAnalistasConCuposPersonalizados() {
+  verificarPermisoAdmin();
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Usuarios");
+  var datos = hoja.getDataRange().getValues();
+  var resultado = [];
+  for (var i = 1; i < datos.length; i++) {
+    var cuposRaw = String(datos[i][24] || '').trim();
+    if (!cuposRaw) continue;
+    try {
+      var cupos = JSON.parse(cuposRaw);
+      resultado.push({
+        correo: String(datos[i][2]).toLowerCase().trim(),
+        nombre: String(datos[i][1]).trim(),
+        especialidad: String(datos[i][4]).trim(),
+        cupos: cupos,
+        fijo: cupos.fijo === true
+      });
+    } catch(e) {}
+  }
+  return resultado;
+}
+
 function admin_getCuposIndividual(correoAnalista) {
   verificarPermisoAdmin();
   correoAnalista = String(correoAnalista).toLowerCase().trim();
@@ -660,7 +841,8 @@ function admin_setCuposIndividual(correoAnalista, cupos) {
         inducciones: parseInt(cupos.inducciones) || 0,
         biometria: parseInt(cupos.biometria) || 0,
         nuevaUar: parseInt(cupos.nuevaUar) || 0,
-        deudorUar: parseInt(cupos.deudorUar) || 0
+        deudorUar: parseInt(cupos.deudorUar) || 0,
+        fijo: cupos.fijo === true
       };
 
       hoja.getRange(row, 25).setValue(JSON.stringify(cuposObj)); // col Y (index 24)
@@ -943,6 +1125,423 @@ function admin_desactivarTodosAsesores() {
     const nuevosValores = new Array(lastRow - 1).fill(["INACTIVO"]);
     rangoEstados.setValues(nuevosValores);
     return { success: true, message: "⚠️ Sistema pausado: Todos los analistas han sido pasados a INACTIVO." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TURNOS — CRUD y asignación
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function admin_getTurnosData() {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const DIAS_KEYS = ['lun','mar','mie','jue','vie','sab','dom'];
+
+    // 1. Leer turnos
+    const hojaTurnos = ss.getSheetByName('Turnos');
+    const turnos = [];
+    if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+      const data = hojaTurnos.getDataRange().getValues();
+      const disp = hojaTurnos.getDataRange().getDisplayValues();
+      for (let i = 1; i < data.length; i++) {
+        const id = String(data[i][0]).trim();
+        if (!id) continue;
+        const activo = data[i][2] === true || String(data[i][2]).toUpperCase() === 'TRUE';
+        const dias = {};
+        for (let d = 0; d < 7; d++) {
+          const boolCol = 3 + d;
+          const iniCol = 10 + d * 2;
+          const finCol = 11 + d * 2;
+          dias[DIAS_KEYS[d]] = {
+            activo: data[i][boolCol] === true || String(data[i][boolCol]).toUpperCase() === 'TRUE',
+            horaInicio: String(disp[i][iniCol] || '').trim(),
+            horaFin:    String(disp[i][finCol] || '').trim()
+          };
+        }
+        turnos.push({ id: id, nombre: String(data[i][1]).trim(), activo: activo, dias: dias });
+      }
+    }
+
+    // 2. Leer analistas y sus turnos vigentes
+    const hojaUsuarios = ss.getSheetByName('Usuarios');
+    const datosU = hojaUsuarios.getDataRange().getValues();
+    const ahora = new Date();
+    const mapaEmailTurno = {};
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (hojaAT && hojaAT.getLastRow() > 1) {
+      const dat = hojaAT.getDataRange().getValues();
+      for (let i = 1; i < dat.length; i++) {
+        const email = String(dat[i][0]).toLowerCase().trim();
+        const idT = String(dat[i][1]).trim();
+        const desde = dat[i][2] instanceof Date ? dat[i][2] : null;
+        const hasta = dat[i][3] instanceof Date ? dat[i][3] : null;
+        if (!email || !idT || !desde) continue;
+        if (ahora >= desde && (!hasta || ahora <= hasta)) {
+          mapaEmailTurno[email] = idT;
+        }
+      }
+    }
+
+    const analistas = [];
+    const sinTurno = [];
+    const turnoIdsActivos = turnos.filter(function(t){ return t.activo; }).map(function(t){ return t.id; });
+    for (let i = 1; i < datosU.length; i++) {
+      const email = String(datosU[i][2]).toLowerCase().trim();
+      if (!email) continue;
+      const nombre = String(datosU[i][1]).trim();
+      const especialidad = String(datosU[i][4]).trim();
+      const idTurnoActual = mapaEmailTurno[email] || '';
+      analistas.push({ email: email, nombre: nombre, especialidad: especialidad, idTurnoActual: idTurnoActual });
+      if (!idTurnoActual || turnoIdsActivos.indexOf(idTurnoActual) === -1) {
+        sinTurno.push(email);
+      }
+    }
+
+    return { success: true, turnos: turnos, analistas: analistas, sinTurno: sinTurno };
+  } catch (e) {
+    return { success: false, message: e.message, turnos: [], analistas: [], sinTurno: [] };
+  }
+}
+
+function admin_guardarTurno(turno) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Turnos');
+    if (!hoja) {
+      hoja = ss.insertSheet('Turnos');
+      hoja.appendRow(['id','nombre','activo','lun','mar','mie','jue','vie','sab','dom',
+                       'iniLun','finLun','iniMar','finMar','iniMie','finMie',
+                       'iniJue','finJue','iniVie','finVie','iniSab','finSab','iniDom','finDom']);
+    }
+
+    const DIAS_KEYS = ['lun','mar','mie','jue','vie','sab','dom'];
+    const fila = [turno.id, turno.nombre, true];
+    DIAS_KEYS.forEach(function(d) {
+      fila.push(turno.dias[d] ? turno.dias[d].activo : false);
+    });
+    DIAS_KEYS.forEach(function(d) {
+      fila.push(turno.dias[d] && turno.dias[d].activo ? turno.dias[d].horaInicio : '');
+      fila.push(turno.dias[d] && turno.dias[d].activo ? turno.dias[d].horaFin : '');
+    });
+
+    // Buscar si ya existe
+    const data = hoja.getDataRange().getValues();
+    let filaIdx = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === turno.id) { filaIdx = i + 1; break; }
+    }
+
+    if (filaIdx > 0) {
+      hoja.getRange(filaIdx, 1, 1, fila.length).setValues([fila]);
+    } else {
+      hoja.appendRow(fila);
+    }
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_desactivarTurno(idTurno) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Turnos');
+    if (!hoja) return { success: false, message: 'Hoja Turnos no encontrada.' };
+
+    const data = hoja.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === idTurno) {
+        hoja.getRange(i + 1, 3).setValue(false);
+        break;
+      }
+    }
+
+    // Cerrar asignaciones vigentes de ese turno
+    const afectados = [];
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (hojaAT && hojaAT.getLastRow() > 1) {
+      const ahora = new Date();
+      const dat = hojaAT.getDataRange().getValues();
+      for (let i = 1; i < dat.length; i++) {
+        const idT = String(dat[i][1]).trim();
+        if (idT !== idTurno) continue;
+        const desde = dat[i][2] instanceof Date ? dat[i][2] : null;
+        const hasta = dat[i][3] instanceof Date ? dat[i][3] : null;
+        if (desde && ahora >= desde && (!hasta || ahora <= hasta)) {
+          hojaAT.getRange(i + 1, 4).setValue(ahora);
+          afectados.push(String(dat[i][0]).trim());
+        }
+      }
+    }
+
+    SpreadsheetApp.flush();
+    return { success: true, message: 'Turno desactivado.', afectados: afectados };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_asignarTurnoAnalista(email, idTurno, desde) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (!hojaAT) {
+      hojaAT = ss.insertSheet('Analistas_Turnos');
+      hojaAT.appendRow(['email','idTurno','desde','hasta']);
+    }
+
+    const ahora = new Date();
+    const emailNorm = email.toLowerCase().trim();
+    const fechaDesde = new Date(desde + 'T00:00:00');
+
+    // Cerrar asignación vigente anterior
+    if (hojaAT.getLastRow() > 1) {
+      const dat = hojaAT.getDataRange().getValues();
+      for (let i = 1; i < dat.length; i++) {
+        const em = String(dat[i][0]).toLowerCase().trim();
+        if (em !== emailNorm) continue;
+        const d = dat[i][2] instanceof Date ? dat[i][2] : null;
+        const h = dat[i][3] instanceof Date ? dat[i][3] : null;
+        if (d && ahora >= d && (!h || ahora <= h)) {
+          hojaAT.getRange(i + 1, 4).setValue(ahora);
+        }
+      }
+    }
+
+    // Nueva asignación
+    hojaAT.appendRow([emailNorm, idTurno, fechaDesde, '']);
+    hojaAT.getRange(hojaAT.getLastRow(), 3).setNumberFormat('yyyy-MM-dd');
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_asignarTodosSinTurno(idTurno, desde) {
+  try {
+    verificarPermisoAdmin();
+    const res = admin_getTurnosData();
+    if (!res.success) return res;
+    const sinTurno = res.sinTurno || [];
+    if (sinTurno.length === 0) return { success: true, message: 'No hay analistas sin turno.' };
+
+    let asignados = 0;
+    for (let i = 0; i < sinTurno.length; i++) {
+      var r = admin_asignarTurnoAnalista(sinTurno[i], idTurno, desde);
+      if (r.success) asignados++;
+    }
+    return { success: true, message: asignados + ' analista(s) asignados al turno.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HORAS EXTRA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function admin_getHorasExtra(emailFiltro, anio, mes) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja || hoja.getLastRow() <= 1) return { success: true, extras: [] };
+
+    const data = hoja.getDataRange().getValues();
+    const disp = hoja.getDataRange().getDisplayValues();
+    const extras = [];
+    for (let i = 1; i < data.length; i++) {
+      const em = String(data[i][0]).toLowerCase().trim();
+      const fecha = data[i][1] instanceof Date
+        ? Utilities.formatDate(data[i][1], TIMEZONE, 'yyyy-MM-dd')
+        : String(data[i][1]).trim().substring(0, 10);
+
+      if (emailFiltro && em !== emailFiltro.toLowerCase().trim()) continue;
+      const parts = fecha.split('-');
+      if (parseInt(parts[0]) !== anio || parseInt(parts[1]) !== mes) continue;
+
+      extras.push({
+        fila: i + 1,
+        email: em,
+        fecha: fecha,
+        horaInicio: String(disp[i][2] || '').trim(),
+        horaFin:    String(disp[i][3] || '').trim(),
+        descripcion: String(data[i][4] || '').trim()
+      });
+    }
+    return { success: true, extras: extras };
+  } catch (e) {
+    return { success: false, message: e.message, extras: [] };
+  }
+}
+
+function admin_guardarHorasExtra(extra) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja) {
+      hoja = ss.insertSheet('Horas_Extra');
+      hoja.appendRow(['email','fecha','horaInicio','horaFin','descripcion']);
+    }
+    hoja.appendRow([
+      extra.email.toLowerCase().trim(),
+      extra.fecha,
+      extra.horaInicio,
+      extra.horaFin,
+      extra.descripcion || ''
+    ]);
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_eliminarHorasExtra(fila) {
+  try {
+    verificarPermisoAdmin();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Horas_Extra');
+    if (!hoja) return { success: false, message: 'Hoja no encontrada.' };
+    if (fila < 2 || fila > hoja.getLastRow()) return { success: false, message: 'Fila inválida.' };
+    hoja.deleteRow(fila);
+    SpreadsheetApp.flush();
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PERMISOS / INCAPACIDADES — Admin
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function _fmtFechaPI_(val) {
+  if (!val) return '';
+  if (val instanceof Date) return Utilities.formatDate(val, TIMEZONE, 'yyyy-MM-dd');
+  var s = String(val).trim();
+  if (s.length >= 10 && s[4] === '-') return s.substring(0, 10);
+  if (s.includes('/')) {
+    var p = s.split(/[\s\/]/);
+    if (p[2] && p[2].length === 4) return p[2] + '-' + p[1].padStart(2,'0') + '-' + p[0].padStart(2,'0');
+  }
+  return s;
+}
+
+function _getHojaPermisos_() {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName('Permisos_Incapacidades');
+  if (!hoja) {
+    hoja = ss.insertSheet('Permisos_Incapacidades');
+    hoja.appendRow(['id','fechaSolicitud','correo','nombre','tipo','fechaInicio','fechaFin','observacionAnalista','estado','correoAdmin','fechaRevision','observacionAdmin']);
+  }
+  return hoja;
+}
+
+function admin_obtenerPermisosPendientes(filtro) {
+  verificarPermisoAdmin();
+  var hoja = _getHojaPermisos_();
+  if (hoja.getLastRow() <= 1) return { registros: [] };
+  var data = hoja.getDataRange().getValues();
+  var registros = [];
+  for (var i = 1; i < data.length; i++) {
+    var estado = String(data[i][8] || 'PENDIENTE').toUpperCase().trim();
+    if (filtro && filtro !== 'TODOS' && estado !== filtro) continue;
+    registros.push({
+      id: String(data[i][0]).trim(),
+      fechaSolicitud: _fmtFechaPI_(data[i][1]),
+      correo: String(data[i][2]).trim(),
+      nombre: String(data[i][3]).trim(),
+      tipo: String(data[i][4]).trim(),
+      fechaInicio: _fmtFechaPI_(data[i][5]),
+      fechaFin: _fmtFechaPI_(data[i][6]),
+      observacionAnalista: String(data[i][7] || '').trim(),
+      estado: estado,
+      correoAdmin: String(data[i][9] || '').trim(),
+      fechaRevision: _fmtFechaPI_(data[i][10]),
+      observacionAdmin: String(data[i][11] || '').trim()
+    });
+  }
+  return { registros: registros };
+}
+
+function admin_resolverPermiso(id, decision, observacion) {
+  try {
+    verificarPermisoAdmin();
+    var hoja = _getHojaPermisos_();
+    if (hoja.getLastRow() <= 1) return { success: false, message: 'Permiso no encontrado.' };
+    var data = hoja.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === id) {
+        var adminEmail = Session.getActiveUser().getEmail();
+        var ahora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+        hoja.getRange(i + 1, 9).setValue(decision);
+        hoja.getRange(i + 1, 10).setValue(adminEmail);
+        hoja.getRange(i + 1, 11).setValue(ahora);
+        hoja.getRange(i + 1, 12).setValue(observacion || '');
+        SpreadsheetApp.flush();
+        return { success: true, message: 'Permiso ' + decision.toLowerCase() + ' correctamente.' };
+      }
+    }
+    return { success: false, message: 'Permiso con ID ' + id + ' no encontrado.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+function admin_contarPermisosPendientes() {
+  try {
+    verificarPermisoAdmin();
+    var hoja = _getHojaPermisos_();
+    if (hoja.getLastRow() <= 1) return { pendientes: 0 };
+    var data = hoja.getRange(2, 9, hoja.getLastRow() - 1, 1).getValues();
+    var n = 0;
+    for (var i = 0; i < data.length; i++) {
+      if (String(data[i][0]).toUpperCase().trim() === 'PENDIENTE') n++;
+    }
+    return { pendientes: n };
+  } catch (e) {
+    return { pendientes: 0 };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HORARIOS DE ASIGNACIÓN — Admin
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function admin_getHorariosAsignacion() {
+  verificarPermisoAdmin();
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty('HORARIOS_ASIGNACION');
+  if (raw) {
+    try { return JSON.parse(raw); } catch(e) {}
+  }
+  return {
+    lunes:     { activo: true,  inicio: '08:00', fin: '18:00' },
+    martes:    { activo: true,  inicio: '08:00', fin: '18:00' },
+    miercoles: { activo: true,  inicio: '08:00', fin: '18:00' },
+    jueves:    { activo: true,  inicio: '08:00', fin: '18:00' },
+    viernes:   { activo: true,  inicio: '08:00', fin: '18:00' },
+    sabado:    { activo: false, inicio: '08:00', fin: '13:00' },
+    domingo:   { activo: false, inicio: '08:00', fin: '13:00' }
+  };
+}
+
+function admin_setHorariosAsignacion(horarios) {
+  try {
+    verificarPermisoAdmin();
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('HORARIOS_ASIGNACION', JSON.stringify(horarios));
+    return { success: true, message: 'Horarios actualizados correctamente.' };
   } catch (e) {
     return { success: false, message: e.message };
   }

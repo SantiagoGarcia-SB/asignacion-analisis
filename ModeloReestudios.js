@@ -56,10 +56,6 @@ function RequestLeadReestudios() {
 
     if (capTotal <= 0) return { success: false, message: "Capacidad en 0." };
 
-    // Validar horario de asignación configurado por el admin
-    const horarioCheck = verificarHorarioAsignacion();
-    if (!horarioCheck.permitido) return { success: false, message: "⏰ " + horarioCheck.mensaje };
-
     // Determinar equipo según especialidad para leer cupos correctos
     let equipoCupos = 'REESTUDIOS';
     if (especialidad.includes("ESTUDIO DIGITAL")) equipoCupos = 'DIGITAL';

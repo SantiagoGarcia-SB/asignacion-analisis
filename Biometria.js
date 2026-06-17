@@ -150,19 +150,17 @@ function eliminarTriggersBio() {
   });
 }
 
-function updateBiometriagpt(solicitud) {  
+function updateBiometriagpt(solicitud) {
   if (!solicitud) return false;
-  const baseUrl = getEndPointNewSai(); 
+  const baseUrl = getEndPointNewSai();
   const keyFull = getKeyFull();
   if (!baseUrl || !keyFull) return false;
-
   const url = baseUrl + solicitud;
   const options = {
     method: "GET",
     muteHttpExceptions: true,
     headers: { "x-api-key": keyFull, "Accept": "application/json" }
   };
-
   try {
     const response = UrlFetchApp.fetch(url, options);
     if (response.getResponseCode() !== 200) {
@@ -171,7 +169,6 @@ function updateBiometriagpt(solicitud) {
     }
     const parsed = JSON.parse(response.getContentText());
     const status = String(parsed.studyStatus || '').trim().toUpperCase();
-    console.log("updateBiometriagpt - Solicitud: " + solicitud + " | Status API: " + status);
     return status === 'APROBADO_PENDIENTE_BIOMETRIA';
   } catch (e) {
     console.error("updateBiometriagpt - Excepción para solicitud " + solicitud + ": " + e.toString());

@@ -179,7 +179,30 @@
 
     .dropdown-menu-dark-glass .dropdown-item:hover {
       background: rgba(255, 255, 255, 0.1);
-      color: --color-primario;
+      color: var(--color-primario);
+    }
+
+    .gestion-card {
+      background: var(--bg-page, #f8fafc);
+      border: 1.5px solid var(--border, #e2e8f0);
+      border-radius: 16px;
+    }
+    .gestion-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted, #64748b);
+      margin-bottom: 6px;
+    }
+    .gestion-select {
+      font-weight: 600;
+    }
+    .gestion-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    .estado-final {
+      font-weight: 700;
     }
 
     /*Loader*/

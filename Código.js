@@ -33,6 +33,7 @@ const props = PropertiesService.getScriptProperties();
 function getKeyFull() { return props.getProperty('KeyEndPointSaiFullProd'); }
 function getEndPointFull() { return props.getProperty('endPointSaiFullStageProd'); }
 
+
 /**
  * Obtiene los cupos efectivos para un analista (individuales si existen, o globales del equipo).
  * @param {string} userEmail - Email del analista
@@ -278,12 +279,58 @@ function getTableData() {
     Logger.log("Error incluyendo reestudios en getTableData: " + e.message);
   }
 
+  // Detectar reasignaciones recientes por admin (últimos 30 min)
+  var reasignaciones = [];
+  try {
+    var ahora = new Date();
+    var hace30 = new Date(ahora.getTime() - 30 * 60 * 1000);
+    // Principal: col 38 (idx 37)
+    var hojaHistCheck = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHistCheck && hojaHistCheck.getLastRow() > 1) {
+      var lastCol = Math.max(38, hojaHistCheck.getLastColumn());
+      var dataCheck = hojaHistCheck.getRange(2, 1, hojaHistCheck.getLastRow() - 1, lastCol).getDisplayValues();
+      for (var c = 0; c < dataCheck.length; c++) {
+        var asig = String(dataCheck[c][25]).trim().toLowerCase();
+        if (asig !== userEmail) continue;
+        var marca = String(dataCheck[c][37] || "").trim();
+        if (!marca.startsWith("ADMIN:")) continue;
+        var partes = marca.split("|");
+        if (partes.length >= 2) {
+          var fechaMarca = new Date(partes[1].trim());
+          if (!isNaN(fechaMarca.getTime()) && fechaMarca >= hace30) {
+            reasignaciones.push({ solicitud: String(dataCheck[c][0]).trim(), admin: partes[0].replace("ADMIN:","") });
+          }
+        }
+      }
+    }
+    // Reestudios: col 15 (idx 14)
+    var ssReestCheck = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    var hojaHistRCheck = ssReestCheck.getSheetByName("Historico_Gestiones");
+    if (hojaHistRCheck && hojaHistRCheck.getLastRow() > 1) {
+      var dataRCheck = hojaHistRCheck.getRange(2, 1, hojaHistRCheck.getLastRow() - 1, 19).getDisplayValues();
+      for (var r = 0; r < dataRCheck.length; r++) {
+        var asigR = String(dataRCheck[r][6]).trim().toLowerCase();
+        if (asigR !== userEmail) continue;
+        var marcaR = String(dataRCheck[r][18] || "").trim();
+        if (!marcaR.startsWith("ADMIN:")) continue;
+        var partesR = marcaR.split("|");
+        if (partesR.length >= 2) {
+          var fechaMarcaR = new Date(partesR[1].trim());
+          if (!isNaN(fechaMarcaR.getTime()) && fechaMarcaR >= hace30) {
+            reasignaciones.push({ solicitud: String(dataRCheck[r][1]).trim(), admin: partesR[0].replace("ADMIN:","") });
+          }
+        }
+      }
+    }
+  } catch(eR) { Logger.log("Detección reasignación: " + eR.message); }
+
   return {
     tabla: [headers, ...misFilasPendientes],
     stats: {
       hoy: gestionadasHoy,
       total: gestionadasTotal
-    }
+    },
+    reasignaciones: reasignaciones
   };
 }
 
@@ -291,8 +338,15 @@ function getHojaPolizas() {
   return SpreadsheetApp.openById(WAREHOUSE_ID).getSheetByName(SHEET_NAME_POLIZAS);
 }
 
+function resetProgress() {
+  props.deleteProperty(PROP_BLOCK_INDEX);
+  props.deleteProperty(PROP_POL_CHUNK_INDEX);
+  props.deleteProperty(PROP_POL_COUNT);
+  PropertiesService.getUserProperties().deleteProperty('CHECKPOINT_TRACKING');
+  PropertiesService.getUserProperties().deleteProperty('CHECKPOINT_NEGADAS_SIMPLE');
+}
 
-function getDataUniqueForSolicitud(solicitud) { 
+function getDataUniqueForSolicitud(solicitud) {
   solicitud = (solicitud || '').toString().trim();
   if (!solicitud) return { success: false, message: 'Solicitud vacía' };
 
@@ -354,15 +408,6 @@ function getDataUniqueForSolicitud(solicitud) {
     return { success: false, message: "Fallo de conexión al consultar el detalle en tiempo real." };
   }
 }
-
-function resetProgress() {
-  props.deleteProperty(PROP_BLOCK_INDEX);
-  props.deleteProperty(PROP_POL_CHUNK_INDEX);
-  props.deleteProperty(PROP_POL_COUNT);
-  PropertiesService.getUserProperties().deleteProperty('CHECKPOINT_TRACKING');
-  PropertiesService.getUserProperties().deleteProperty('CHECKPOINT_NEGADAS_SIMPLE');
-}
-
 
 function actualizarSolicitudesNuevasAPI() {
   Logger.log("Iniciando ejecución");
@@ -786,10 +831,6 @@ function guardarCambiosInternos(data) {
 
       // Guardar en Historico Secundario
       const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
-      let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
-      if (!hojaHistoricoR) {
-        hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
-      }
       hojaHistoricoR.appendRow(filaActualizadaR);
     }
 
@@ -954,23 +995,6 @@ function verificarTurnoActivo(userEmail, ss) {
 
     let minFin = parseMin(horaFinStr);
     if (minFin === null) return { ok: true };
-
-    // 3. Extender con Horas_Extra si las hay para hoy
-    const hojaExtra = ss.getSheetByName('Horas_Extra');
-    if (hojaExtra && hojaExtra.getLastRow() > 1) {
-      const dataExtra = hojaExtra.getDataRange().getValues();
-      const dispExtra = hojaExtra.getDataRange().getDisplayValues();
-      for (let i = 1; i < dataExtra.length; i++) {
-        const r = dataExtra[i];
-        if (String(r[0]).toLowerCase().trim() !== userEmail) continue;
-        const fechaE = r[1] instanceof Date
-          ? Utilities.formatDate(r[1], TIMEZONE, 'yyyy-MM-dd')
-          : String(r[1]).trim().substring(0, 10);
-        if (fechaE !== hoyStr) continue;
-        const minExtra = parseMin(dispExtra[i][3] || r[3]);
-        if (minExtra !== null && minExtra > minFin) minFin = minExtra;
-      }
-    }
 
     if (minActual > minFin) {
       return {
@@ -1276,7 +1300,6 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
     const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
     const fechaHoraActual = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
 
-    // Cerrar registro anterior en Historico_Estados
     if (hojaHistorico) {
       const lastRowH = hojaHistorico.getLastRow();
       if (lastRowH > 1) {
@@ -1302,7 +1325,6 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
         }
       }
 
-      // Escribir nuevo registro
       hojaHistorico.appendRow([
         fechaDiaHoy,
         correoAsesor,
@@ -1313,10 +1335,8 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
       ]);
     }
 
-    // Actualizar estado en Usuarios
     hojaUsuarios.getRange(filaEncontrada, columnaEstado + 1).setValue(estadoTextoPlano);
 
-    // Actualizar JSON local para UI
     const celdaHistorial = hojaUsuarios.getRange(filaEncontrada, columnaHistorial + 1);
     let historial = [];
     try {
@@ -1402,20 +1422,17 @@ function obtenerMiEstadoActual() {
   }
 }
 
-
 function parsearFechaApiSegura(fechaRaw) {
   if (!fechaRaw) return new Date(0);
   if (fechaRaw instanceof Date) return fechaRaw;
   if (String(fechaRaw).includes('/')) {
-    const p = fechaRaw.split(/[\/\s:]/); 
+    const p = fechaRaw.split(/[\/\s:]/);
     return new Date(p[2], p[1] - 1, p[0], p[3]||0, p[4]||0, p[5]||0);
   }
   return new Date(fechaRaw);
 }
 
-
 function calcularMinutosHabilesSLA(desde, hasta, ss) {
-  // Retorna minutos decimales (ej: 7.10 = 7 min 6 seg)
   if (!(desde instanceof Date) || isNaN(desde.getTime())) return 0;
   if (!(hasta instanceof Date) || isNaN(hasta.getTime())) return 0;
   if (desde > hasta) return 0;
@@ -1437,21 +1454,18 @@ function calcularMinutosHabilesSLA(desde, hasta, ss) {
       });
     }
   } catch (e) {
-    Logger.log("Aviso: No se pudo procesar la hoja de Festivos, se calculará sin ellos: " + e.message);
+    Logger.log("Aviso: No se pudo procesar la hoja de Festivos: " + e.message);
   }
-
   let totalMinutos = 0;
-  
   const HORA_INICIO = 8;
   const HORA_FIN = 18;
   let inicioBucle = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate());
   let finBucle = new Date(hasta.getFullYear(), hasta.getMonth(), hasta.getDate());
   for (let d = new Date(inicioBucle.getTime()); d <= finBucle; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay(); 
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue; 
-
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
     const fechaStr = Utilities.formatDate(d, "GMT-5", "yyyy-MM-dd");
-    if (festivosSet.has(fechaStr)) continue; 
+    if (festivosSet.has(fechaStr)) continue;
     let limiteInicio = new Date(d.getFullYear(), d.getMonth(), d.getDate(), HORA_INICIO, 0, 0);
     let limiteFin    = new Date(d.getFullYear(), d.getMonth(), d.getDate(), HORA_FIN, 0, 0);
     if (d.toDateString() === desde.toDateString()) {
@@ -1464,18 +1478,55 @@ function calcularMinutosHabilesSLA(desde, hasta, ss) {
       totalMinutos += (limiteFin.getTime() - limiteInicio.getTime()) / (1000 * 60);
     }
   }
-
   return totalMinutos;
 }
 
+function solicitarPermiso(tipo, fechaInicio, fechaFin, observacion) {
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    let hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja) {
+      hoja = ss.insertSheet('Permisos_Incapacidades');
+      hoja.appendRow(['id','fechaSolicitud','correo','nombre','tipo','fechaInicio','fechaFin','observacionAnalista','estado','correoAdmin','fechaRevision','observacionAdmin']);
+    }
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const hojaUser = ss.getSheetByName('Usuarios');
+    const dataUser = hojaUser.getDataRange().getValues();
+    const usuario = dataUser.find(f => String(f[2]).toLowerCase().trim() === userEmail);
+    const nombre = usuario ? String(usuario[1]).trim() : userEmail;
+    const id = 'PER-' + Date.now();
+    const ahora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+    hoja.appendRow([id, ahora, userEmail, nombre, tipo, fechaInicio, fechaFin, observacion || '', 'PENDIENTE', '', '', '']);
+    SpreadsheetApp.flush();
+    return { success: true, message: 'Tu solicitud de ' + tipo + ' fue enviada. El administrador la revisará pronto.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
 
-/**
- * Obtiene el conteo consolidado de gestiones del día actual para el analista logueado.
- * Consulta TODAS las fuentes de datos (solicitud principal + reestudios) para que
- * el analista vea su actividad total sin importar en qué vista esté.
- *
- * @returns {Object} { hoyTotal, detalle: { digital, reestudios } }
- */
+function verificarPermisoVigenteHoy() {
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName('Permisos_Incapacidades');
+    if (!hoja || hoja.getLastRow() <= 1) return { tienePermiso: false };
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+    const data = hoja.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][8]).toUpperCase().trim() !== 'APROBADO') continue;
+      if (String(data[i][2]).toLowerCase().trim() !== userEmail) continue;
+      const fi = data[i][5] instanceof Date ? Utilities.formatDate(data[i][5], TIMEZONE, 'yyyy-MM-dd') : String(data[i][5]).trim().substring(0, 10);
+      const ff = data[i][6] instanceof Date ? Utilities.formatDate(data[i][6], TIMEZONE, 'yyyy-MM-dd') : String(data[i][6]).trim().substring(0, 10);
+      if (hoyStr >= fi && hoyStr <= ff) {
+        return { tienePermiso: true, tipo: String(data[i][4]).trim() };
+      }
+    }
+    return { tienePermiso: false };
+  } catch (e) {
+    return { tienePermiso: false };
+  }
+}
+
 function obtenerGestionesHoyCruzadas() {
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
