@@ -50,6 +50,10 @@ function RequestLeadReestudios() {
     const capTotal = parseInt(usuarioInfo[6]) || 0;
 
     if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
+
+    const turnoCheck = verificarTurnoActivo(userEmail, ss);
+    if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
+
     if (capTotal <= 0) return { success: false, message: "Capacidad en 0." };
 
     // Validar horario de asignación configurado por el admin
@@ -105,12 +109,12 @@ function RequestLeadReestudios() {
 
       const fechaAsig = fila[8]; // col I
       const fechaFin = fila[9];  // col J
+      const origenFila = String(fila[3]).toUpperCase().trim(); // col D
       const tipoProceso = String(fila[4]).toUpperCase().trim(); // col E
-      const claseSolicitud = String(fila[5]).toUpperCase().trim(); // col F
 
       let tipo = 'reestudio';
-      if (tipoProceso.includes("NUEVA UAR") || claseSolicitud.includes("NUEVA UAR")) tipo = 'nuevaUar';
-      else if (tipoProceso.includes("DEUDOR UAR") || claseSolicitud.includes("DEUDOR UAR")) tipo = 'deudorUar';
+      if (origenFila === "CORREO" && tipoProceso === "NUEVA") tipo = 'nuevaUar';
+      else if (origenFila === "CORREO" && tipoProceso === "ADICIONAL") tipo = 'deudorUar';
 
       if (esHoy(fechaAsig) || esHoy(fechaFin)) {
         conteoHoy[tipo]++;
@@ -122,6 +126,27 @@ function RequestLeadReestudios() {
 
     let cupoDisponible = capTotal - cargaActual;
     if (cupoDisponible <= 0) return { success: false, message: "Capacidad llena. Gestiona casos pendientes primero." };
+
+    // También contar desde Historico_Gestiones (casos reestudios movidos al asignar)
+    try {
+      const hojaHistRR = ssReestudios.getSheetByName("Historico_Gestiones");
+      if (hojaHistRR && hojaHistRR.getLastRow() > 1) {
+        const dataHistRR = hojaHistRR.getRange(2, 1, hojaHistRR.getLastRow() - 1, 14).getValues();
+        for (let i = 0; i < dataHistRR.length; i++) {
+          const asignado = String(dataHistRR[i][6]).trim().toLowerCase();
+          if (asignado !== userEmail) continue;
+          const origenHist = String(dataHistRR[i][3]).toUpperCase().trim();
+          const tipoProceso = String(dataHistRR[i][4]).toUpperCase().trim();
+          const fechaAsig = dataHistRR[i][8];
+          const fechaFin  = dataHistRR[i][9];
+          let tipo = 'reestudio';
+          if (origenHist === "CORREO" && tipoProceso === "NUEVA") tipo = 'nuevaUar';
+          else if (origenHist === "CORREO" && tipoProceso === "ADICIONAL") tipo = 'deudorUar';
+          if (esHoy(fechaAsig) || esHoy(fechaFin)) conteoHoy[tipo]++;
+          if (String(fechaAsig).trim() !== "" && String(fechaFin).trim() === "") cargaActual++;
+        }
+      }
+    } catch(eH) { Logger.log("RequestLeadReestudios Hist count: " + eH.message); }
 
     Logger.log('Cupos Reestudios equipo: ' + JSON.stringify(cupos) + ' | Conteo hoy: ' + JSON.stringify(conteoHoy) + ' | capTotal: ' + capTotal + ' | cargaActual: ' + cargaActual);
 
@@ -136,8 +161,8 @@ function RequestLeadReestudios() {
 
       const fila = data[i];
       const analistaAsignado = String(fila[6]).trim(); // col G
+      const origenAsig = String(fila[3]).toUpperCase().trim(); // col D
       const tipoProceso = String(fila[4]).toUpperCase().trim(); // col E
-      const claseSolicitud = String(fila[5]).toUpperCase().trim(); // col F
       const solicitud = String(fila[1]).trim(); // col B
 
       // Solo solicitudes sin asignar
@@ -148,8 +173,8 @@ function RequestLeadReestudios() {
 
       // Determinar tipo para validar cupo
       let tipo = 'reestudio';
-      if (tipoProceso.includes("NUEVA UAR") || claseSolicitud.includes("NUEVA UAR")) tipo = 'nuevaUar';
-      else if (tipoProceso.includes("DEUDOR UAR") || claseSolicitud.includes("DEUDOR UAR")) tipo = 'deudorUar';
+      if (origenAsig === "CORREO" && tipoProceso === "NUEVA") tipo = 'nuevaUar';
+      else if (origenAsig === "CORREO" && tipoProceso === "ADICIONAL") tipo = 'deudorUar';
 
       // Validar cupo diario del tipo
       if (conteoHoy[tipo] >= cupos[tipo]) { saltadasPorCupo++; continue; }
@@ -160,6 +185,14 @@ function RequestLeadReestudios() {
         [userEmail, nombreUsuario, fechaAsignacion]
       ]);
       hoja.getRange(filaReal, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+
+      // Mover a Historico_Gestiones y eliminar del activo
+      const filaCompleta = hoja.getRange(filaReal, 1, 1, 18).getValues()[0];
+      const ssH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      let hojaHist = ssH.getSheetByName("Historico_Gestiones");
+      if (!hojaHist) hojaHist = ssH.insertSheet("Historico_Gestiones");
+      hojaHist.appendRow(filaCompleta);
+      hoja.deleteRow(filaReal);
 
       asignadas++;
       cupoDisponible--;

@@ -259,9 +259,9 @@
 
                   <!-- Motivo Aplazamiento -->
                   <div class="col-md-6 d-none" id="contenedor_aplazamiento">
-                    <label><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
-                    <select id="d_motivo_aplazamiento" class="form-select">
-                      <option value="" selected>Sin aplazamiento</option>
+                    <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
+                    <select id="d_motivo_aplazamiento" class="motivo-picker-hidden">
+                      <option value="">Sin aplazamiento</option>
                       <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
                       <option value="Acta de junta de socios">Acta de junta de socios</option>
                       <option value="Actualización de resultado">Actualización de resultado</option>
@@ -290,33 +290,49 @@
                       <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
                       <option value="Un deudor solidario">Un deudor solidario</option>
                     </select>
+                    <div id="picker_d_motivo_aplazamiento" class="motivo-picker">
+                      <div class="motivo-picker-wrap">
+                        <i class="bi bi-search motivo-picker-icon"></i>
+                        <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de aplazamiento...">
+                        <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                      <div class="motivo-picker-dropdown"></div>
+                    </div>
                   </div>
 
                   <!-- Motivo Negación -->
                   <div class="col-md-6 d-none" id="contenedor_negacion">
-                    <label><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
-                    <select id="d_motivo_negacion" class="form-select">
-                      <option value="" selected>Sin negación</option>
-                      <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
-                      <option value="Mora libertador">Mora libertador</option>
-                      <option value="Inconsistencias en validación">Inconsistencias en validación</option>
-                      <option value="Deudor de profesión">Deudor de profesión</option>
-                      <option value="Ingresos insuficientes">Ingresos insuficientes</option>
-                      <option value="Evidente no aprobado">Evidente no aprobado</option>
-                      <option value="Póliza no asegurable">Póliza no asegurable</option>
-                      <option value="Desistimiento">Desistimiento</option>
-                      <option value="Inducción sin garantias">Inducción sin garantías</option>
-                      <option value="Cuentas embargadas">Cuentas embargadas</option>
-                      <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
+                    <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
+                    <select id="d_motivo_negacion" class="motivo-picker-hidden">
+                      <option value="">Sin negación</option>
                       <option value="Alerta de suplantación">Alerta de suplantación</option>
-                      <option value="Traslado no solicitado">Traslado no solicitado</option>
-                      <option value="Destino no asegurable">Destino no asegurable</option>
-                      <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
-                      <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
-                      <option value="Solicitud duplicada">Solicitud duplicada</option>
+                      <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
                       <option value="Contrato firmado en traslados">Contrato firmado en traslados</option>
+                      <option value="Cuentas embargadas">Cuentas embargadas</option>
+                      <option value="Desistimiento">Desistimiento</option>
+                      <option value="Destino no asegurable">Destino no asegurable</option>
+                      <option value="Deudor de profesión">Deudor de profesión</option>
                       <option value="Empresa recien constituida">Empresa recién constituida</option>
+                      <option value="Evidente no aprobado">Evidente no aprobado</option>
+                      <option value="Inconsistencias en validación">Inconsistencias en validación</option>
+                      <option value="Inducción sin garantias">Inducción sin garantías</option>
+                      <option value="Ingresos insuficientes">Ingresos insuficientes</option>
+                      <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
+                      <option value="Mora libertador">Mora libertador</option>
+                      <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
+                      <option value="Póliza no asegurable">Póliza no asegurable</option>
+                      <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
+                      <option value="Solicitud duplicada">Solicitud duplicada</option>
+                      <option value="Traslado no solicitado">Traslado no solicitado</option>
                     </select>
+                    <div id="picker_d_motivo_negacion" class="motivo-picker">
+                      <div class="motivo-picker-wrap">
+                        <i class="bi bi-search motivo-picker-icon"></i>
+                        <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de negación...">
+                        <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                      <div class="motivo-picker-dropdown"></div>
+                    </div>
                   </div>
 
                   <!-- Observaciones -->
@@ -362,7 +378,7 @@
         <div class="modal-body p-0 d-flex flex-column flex-md-row" style="background: var(--bg-page); border-radius: 0 0 24px 24px;">
           <div class="nav flex-column nav-pills-custom p-4 border-end" style="width: 300px; min-height: 500px;" role="tablist" aria-orientation="vertical">
             <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#vr-fallas" type="button"><i class="bi bi-laptop fs-5"></i> Fallas Técnicas</button>
-            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-ausencias" type="button"><i class="bi bi-hospital fs-5"></i> Ausencias / Salud</button>
+            <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-ausencias" type="button"><i class="bi bi-calendar-x-fill fs-5"></i> Permisos e Incapacidades</button>
             <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-reuniones" type="button"><i class="bi bi-people fs-5"></i> Reuniones / Eventos</button>
             <button class="nav-link" data-bs-toggle="pill" data-bs-target="#vr-operativas" type="button"><i class="bi bi-briefcase fs-5"></i> Otras Actividades</button>
           </div>
@@ -394,17 +410,63 @@
                 <div class="rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px; background: rgba(59,130,246,0.1); color: #3b82f6;"><i class="bi bi-calendar-x-fill fs-5"></i></div>
                 <h6 class="fw-bold mb-0" style="color: #3b82f6;">Permisos e Incapacidades</h6>
               </div>
-              <div class="row g-3">
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
-                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+
+              <!-- Paso 1: Selección de tipo -->
+              <div id="ausencias-paso1">
+                <p class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Estas novedades requieren aprobación del administrador. Selecciona el tipo para continuar.</p>
+                <div class="row g-3">
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
+                  <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                </div>
+              </div>
+
+              <!-- Paso 2: Formulario de solicitud -->
+              <div id="ausencias-paso2" style="display:none;">
+                <div class="d-flex align-items-center gap-2 mb-4">
+                  <button class="btn btn-sm btn-outline-secondary" onclick="volverAusenciasPaso1()"><i class="bi bi-arrow-left"></i> Volver</button>
+                  <span id="ausencias-tipo-badge" class="badge px-3 py-2" style="font-size:0.85rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:10px;"></span>
+                </div>
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="small fw-bold mb-1" id="lbl-ausencia-fecha-inicio">Fecha de inicio <span class="text-danger">*</span></label>
+                    <input type="date" id="ausencia-fecha-inicio" class="form-control" style="border-radius:10px;">
+                  </div>
+                  <div class="col-md-6" id="col-ausencia-fecha-fin">
+                    <label class="small fw-bold mb-1">Fecha de fin <span class="text-danger">*</span></label>
+                    <input type="date" id="ausencia-fecha-fin" class="form-control" style="border-radius:10px;">
+                  </div>
+                  <div class="col-md-6" id="col-ausencia-hora-inicio" style="display:none;">
+                    <label class="small fw-bold mb-1">Hora de inicio <span class="text-danger">*</span></label>
+                    <input type="time" id="ausencia-hora-inicio" class="form-control" style="border-radius:10px;">
+                  </div>
+                  <div class="col-md-6" id="col-ausencia-hora-fin" style="display:none;">
+                    <label class="small fw-bold mb-1">Hora de fin <span class="text-danger">*</span></label>
+                    <input type="time" id="ausencia-hora-fin" class="form-control" style="border-radius:10px;">
+                  </div>
+                  <div class="col-12">
+                    <label class="small fw-bold mb-1">Observación <span class="text-muted fw-normal">(opcional)</span></label>
+                    <textarea id="ausencia-observacion" class="form-control" rows="3" placeholder="Detalla el motivo o información relevante..." style="border-radius:10px;resize:none;"></textarea>
+                  </div>
+                  <div class="col-12">
+                    <div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                      <p class="small mb-0" style="color:#1e40af;"><i class="bi bi-send-check me-1"></i><strong>Tu solicitud será enviada al administrador.</strong> Recibirás un correo cuando sea aprobada o rechazada. El estado no cambiará hasta que sea aprobada.</p>
+                    </div>
+                  </div>
+                  <div class="col-12 d-flex justify-content-end gap-2 pt-2">
+                    <button class="btn btn-outline-secondary px-4" onclick="volverAusenciasPaso1()">Cancelar</button>
+                    <button class="btn text-white px-5 fw-bold" id="btn-enviar-permiso" onclick="enviarSolicitudPermiso()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:10px;border:none;">
+                      <i class="bi bi-send-fill me-2"></i>Enviar Solicitud
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="tab-pane fade" id="vr-reuniones">
@@ -598,75 +660,91 @@
                   </div>
 
                   <div class="col-md-6 d-none" id="dig_contenedor_aplazamiento">
-                    <label><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
-                    <select id="dig_motivo_aplazamiento" class="form-select">
+                    <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
+                    <select id="dig_motivo_aplazamiento" class="motivo-picker-hidden">
                       <option value="">Sin aplazamiento</option>
-                      <option value="Un deudor solidario">Un deudor solidario</option>
-                      <option value="Dos deudores solidarios">Dos deudores solidarios</option>
-                      <option value="Extractos bancarios">Extractos bancarios</option>
-                      <option value="Estados financieros">Estados financieros</option>
-                      <option value="Cámara de comercio">Cámara de comercio</option>
-                      <option value="Acta de junta de socios">Acta de junta de socios</option>
                       <option value="Acta de constitución consorcio">Acta de constitución consorcio</option>
-                      <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
-                      <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
-                      <option value="Pendiente validación de datos">Pendiente validación de datos</option>
-                      <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
-                      <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
-                      <option value="Pendiente biometria">Pendiente biometría</option>
-                      <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+                      <option value="Acta de junta de socios">Acta de junta de socios</option>
+                      <option value="Actualización de resultado">Actualización de resultado</option>
+                      <option value="Cámara de comercio">Cámara de comercio</option>
+                      <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
                       <option value="Certificado laboral">Certificado laboral</option>
-                      <option value="Partida presupuestal">Partida presupuestal</option>
                       <option value="Confirmar solicitud simultánea">Confirmar solicitud simultánea</option>
                       <option value="Documento de identidad legible">Documento de identidad legible</option>
-                      <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
-                      <option value="Cerrada por intentos fallidos">Cerrada por intentos fallidos</option>
-                      <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
-                      <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+                      <option value="Dos deudores solidarios">Dos deudores solidarios</option>
                       <option value="Error de terceros">Error de terceros</option>
+                      <option value="Estados financieros">Estados financieros</option>
+                      <option value="Extractos bancarios">Extractos bancarios</option>
+                      <option value="Formulario con firma y huella legible">Formulario con firma y huella legible</option>
+                      <option value="Partida presupuestal">Partida presupuestal</option>
+                      <option value="Pendiente aceptación LMI">Pendiente aceptación LMI</option>
+                      <option value="Pendiente biometria">Pendiente biometría</option>
+                      <option value="Pendiente confirmar destino">Pendiente confirmar destino</option>
+                      <option value="Pendiente constitución CDT">Pendiente constitución CDT</option>
+                      <option value="Pendiente deudor y documentos">Pendiente deudor y documentos</option>
+                      <option value="Pendiente entrevista telefónica">Pendiente entrevista telefónica</option>
                       <option value="Pendiente recaudo">Pendiente recaudo</option>
-                      <option value="Pendiente simasol">Pendiente simasol</option>
                       <option value="Pendiente respuesta eli">Pendiente respuesta ELI</option>
+                      <option value="Pendiente resultado lote">Pendiente resultado lote</option>
+                      <option value="Pendiente simasol">Pendiente simasol</option>
+                      <option value="Pendiente validación de datos">Pendiente validación de datos</option>
+                      <option value="Presentar constituyentes del consorcio">Presentar constituyentes del consorcio</option>
+                      <option value="Un deudor solidario">Un deudor solidario</option>
                     </select>
+                    <div id="picker_dig_motivo_aplazamiento" class="motivo-picker">
+                      <div class="motivo-picker-wrap">
+                        <i class="bi bi-search motivo-picker-icon"></i>
+                        <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de aplazamiento...">
+                        <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                      <div class="motivo-picker-dropdown"></div>
+                    </div>
                   </div>
 
                   <div class="col-md-6 d-none" id="dig_contenedor_negacion">
-                    <label><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
-                    <select id="dig_motivo_negacion" class="form-select">
+                    <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
+                    <select id="dig_motivo_negacion" class="motivo-picker-hidden">
                       <option value="">Sin negación</option>
-                      <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
-                      <option value="Mora libertador">Mora libertador</option>
-                      <option value="Inconsistencias en validación">Inconsistencias en validación</option>
-                      <option value="Deudor de profesión">Deudor de profesión</option>
-                      <option value="Ingresos insuficientes">Ingresos insuficientes</option>
-                      <option value="Evidente no aprobado">Evidente no aprobado</option>
-                      <option value="Póliza no asegurable">Póliza no asegurable</option>
-                      <option value="Desistimiento">Desistimiento</option>
-                      <option value="Inducción sin garantias">Inducción sin garantías</option>
-                      <option value="Cuentas embargadas">Cuentas embargadas</option>
-                      <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
                       <option value="Alerta de suplantación">Alerta de suplantación</option>
-                      <option value="Traslado no solicitado">Traslado no solicitado</option>
-                      <option value="Destino no asegurable">Destino no asegurable</option>
-                      <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
-                      <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
-                      <option value="Solicitud duplicada">Solicitud duplicada</option>
+                      <option value="Anteriores negadas inconsistencias">Anteriores negadas inconsistencias</option>
                       <option value="Contrato firmado en traslados">Contrato firmado en traslados</option>
+                      <option value="Cuentas embargadas">Cuentas embargadas</option>
+                      <option value="Desistimiento">Desistimiento</option>
+                      <option value="Destino no asegurable">Destino no asegurable</option>
+                      <option value="Deudor de profesión">Deudor de profesión</option>
                       <option value="Empresa recien constituida">Empresa recién constituida</option>
+                      <option value="Evidente no aprobado">Evidente no aprobado</option>
+                      <option value="Inconsistencias en validación">Inconsistencias en validación</option>
+                      <option value="Inducción sin garantias">Inducción sin garantías</option>
+                      <option value="Ingresos insuficientes">Ingresos insuficientes</option>
+                      <option value="Modelo rechaza, causal diferente">Modelo rechaza, causal diferente</option>
+                      <option value="Mora libertador">Mora libertador</option>
+                      <option value="Patrimonio en negativo/pérdidas">Patrimonio en negativo/pérdidas</option>
+                      <option value="Póliza no asegurable">Póliza no asegurable</option>
+                      <option value="Reportes en centrales de riesgo">Reportes en centrales de riesgo</option>
+                      <option value="Solicitud duplicada">Solicitud duplicada</option>
+                      <option value="Traslado no solicitado">Traslado no solicitado</option>
                     </select>
+                    <div id="picker_dig_motivo_negacion" class="motivo-picker">
+                      <div class="motivo-picker-wrap">
+                        <i class="bi bi-search motivo-picker-icon"></i>
+                        <input type="text" class="form-control motivo-picker-input" placeholder="Buscar motivo de negación...">
+                        <button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                      </div>
+                      <div class="motivo-picker-dropdown"></div>
+                    </div>
                   </div>
 
                   <div class="col-md-6">
-                    <label><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
-                    <input type="datetime-local" id="dig_fecha_radicacion_sai" class="form-control" step="60">
-                  </div>
-
-                  <div class="col-md-6 d-flex align-items-end">
-                    <button type="button" class="btn btn-sm fw-bold px-3 py-2"
-                      onclick="document.getElementById('dig_fecha_radicacion_sai').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);"
-                      style="border-radius: 10px; background: var(--azul-light); color: var(--color-secundario); border: 1.5px solid var(--border);">
-                      <i class="bi bi-clock-fill me-1"></i> Ahora
-                    </button>
+                    <label class="gestion-label"><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
+                    <div class="input-group">
+                      <input type="datetime-local" id="dig_fecha_radicacion_sai" class="form-control" step="60">
+                      <button type="button" class="btn fw-bold" id="btnAhoraSaiDig"
+                              onclick="document.getElementById('dig_fecha_radicacion_sai').value = new Date(Date.now() - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);"
+                              style="background: var(--azul-light); color: var(--color-secundario); border: 1.5px solid var(--border); border-radius: 0 10px 10px 0 !important; font-size: 0.85rem; padding: 0 14px; white-space: nowrap;">
+                        <i class="bi bi-clock-fill me-1"></i>Ahora
+                      </button>
+                    </div>
                   </div>
 
                   <div class="col-12">
@@ -770,6 +848,13 @@
     let cacheSolicitudes = [];
     let yaSeIntentoAsignar = false;
     let estadoGlobalAsesor = "INACTIVO";
+
+    function _quitarFilaTabla(solicitudId) {
+      if (!$.fn.DataTable.isDataTable('#miTabla')) return;
+      $('#miTabla').DataTable()
+        .rows(function(i, d) { return String(d.solicitud) === String(solicitudId); })
+        .remove().draw(false);
+    }
     let cargaInicialHecha = false;
 
     function _miniLoader(on) {
@@ -780,6 +865,14 @@
     }
 
     $(document).ready(function () {
+      // Inicializar pickers de motivos
+      if (typeof MotivoPicker !== 'undefined') {
+        MotivoPicker.init('picker_d_motivo_aplazamiento',   'd_motivo_aplazamiento');
+        MotivoPicker.init('picker_d_motivo_negacion',       'd_motivo_negacion');
+        MotivoPicker.init('picker_dig_motivo_aplazamiento', 'dig_motivo_aplazamiento');
+        MotivoPicker.init('picker_dig_motivo_negacion',     'dig_motivo_negacion');
+      }
+
       // Mostrar nombre en el loader inmediatamente
       google.script.run.withSuccessHandler(function(email) {
         if (email) {
@@ -791,6 +884,7 @@
       }).getEmailUsuarioReestudios();
 
       sincronizarEstadoInicial(true);
+      verificarYAplicarPermisoVigente();
       $('#btnGuardarCambios').off('click').on('click', manejarGuardarCambios);
       $('#d_estado_q').on('change', actualizarCamposGestion);
 
@@ -972,10 +1066,15 @@
       }
 
       $('#form_filaReal').val(item.filaReal);
+      $('#form_solicitud_id').val(item.solicitud);
       $('#d_estado_q').val('');
       $('#d_motivo_aplazamiento').val('');
       $('#d_motivo_negacion').val('');
       $('#d_observaciones').val('');
+      if (typeof MotivoPicker !== 'undefined') {
+        MotivoPicker.reset('d_motivo_aplazamiento');
+        MotivoPicker.reset('d_motivo_negacion');
+      }
       actualizarCamposGestion();
 
       new bootstrap.Modal('#modalDetalles').show();
@@ -989,6 +1088,7 @@
       if (estado.includes('APLAZ')) {
         contAplaz.removeClass('d-none').hide().slideDown(250);
         contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
+<<<<<<< HEAD
         tsSetVal('d_motivo_negacion', '');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
         contNeg.removeClass('d-none').hide().slideDown(250);
@@ -999,6 +1099,24 @@
         contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
         tsSetVal('d_motivo_aplazamiento', '');
         tsSetVal('d_motivo_negacion', '');
+=======
+        $('#d_motivo_negacion').val('');
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('d_motivo_negacion');
+      } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
+        contNeg.removeClass('d-none').hide().slideDown(250);
+        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#d_motivo_aplazamiento').val('');
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('d_motivo_aplazamiento');
+      } else {
+        contAplaz.slideUp(200, function() { $(this).addClass('d-none'); });
+        contNeg.slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#d_motivo_aplazamiento').val('');
+        $('#d_motivo_negacion').val('');
+        if (typeof MotivoPicker !== 'undefined') {
+          MotivoPicker.reset('d_motivo_aplazamiento');
+          MotivoPicker.reset('d_motivo_negacion');
+        }
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
       }
     }
 
@@ -1015,6 +1133,7 @@
 
       const datos = {
         filaReal: $('#form_filaReal').val(),
+        solicitud: $('#form_solicitud_id').val(),
         estadoGestion: estado,
         motivoAplazamiento: $('#d_motivo_aplazamiento').val() || '',
         motivoNegacion: $('#d_motivo_negacion').val() || '',
@@ -1040,12 +1159,14 @@
             UX.showSuccessCheck(function() {
               UX.showToast('Gestión guardada: ' + datos.estadoGestion, 'success');
               bootstrap.Modal.getInstance(document.getElementById('modalDetalles')).hide();
+              _quitarFilaTabla($('#s_sidebar_solicitud').text().trim());
               yaSeIntentoAsignar = false;
               cargarDatos();
             });
           } else {
             Swal.fire({ icon: 'success', title: 'Operación Exitosa', html: r.message.replace(/\n/g, '<br>'), confirmButtonColor: '#253150' }).then(() => {
               bootstrap.Modal.getInstance(document.getElementById('modalDetalles')).hide();
+              _quitarFilaTabla($('#s_sidebar_solicitud').text().trim());
               yaSeIntentoAsignar = false;
               cargarDatos();
             });
@@ -1098,6 +1219,67 @@
       cambiarMiEstado(novedad);
     }
 
+    var _tipoPermisoSeleccionado = '';
+
+    function iniciarSolicitudPermiso(tipo) {
+      _tipoPermisoSeleccionado = tipo;
+      var hoy = new Date();
+      var hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+      document.getElementById('ausencia-fecha-inicio').value = hoyStr;
+      document.getElementById('ausencia-fecha-fin').value = hoyStr;
+      document.getElementById('ausencia-observacion').value = '';
+      document.getElementById('ausencias-tipo-badge').textContent = tipo;
+      document.getElementById('ausencias-paso1').style.display = 'none';
+      document.getElementById('ausencias-paso2').style.display = 'block';
+    }
+
+    function volverAusenciasPaso1() {
+      document.getElementById('ausencias-paso1').style.display = 'block';
+      document.getElementById('ausencias-paso2').style.display = 'none';
+      _tipoPermisoSeleccionado = '';
+    }
+
+    function enviarSolicitudPermiso() {
+      var fi = document.getElementById('ausencia-fecha-inicio').value;
+      var ff = document.getElementById('ausencia-fecha-fin').value;
+      if (!fi || !ff) {
+        Swal.fire({ icon: 'warning', title: 'Fechas requeridas', text: 'Por favor selecciona las fechas de inicio y fin.', confirmButtonColor: '#3b82f6' });
+        return;
+      }
+      if (ff < fi) {
+        Swal.fire({ icon: 'warning', title: 'Fechas inválidas', text: 'La fecha de fin no puede ser anterior a la de inicio.', confirmButtonColor: '#3b82f6' });
+        return;
+      }
+      var obs = document.getElementById('ausencia-observacion').value.trim();
+      var btn = document.getElementById('btn-enviar-permiso');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Enviando...';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+          bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+          volverAusenciasPaso1();
+          Swal.fire({ icon: res.success ? 'success' : 'error', title: res.success ? 'Solicitud enviada' : 'Error', text: res.message, confirmButtonColor: '#3b82f6', timer: res.success ? 4000 : undefined, timerProgressBar: res.success });
+        })
+        .withFailureHandler(function(err) {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+          Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#3b82f6' });
+        })
+        .solicitarPermiso(_tipoPermisoSeleccionado, fi, ff, obs);
+    }
+
+    function verificarYAplicarPermisoVigente() {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.tienePermiso && (estadoGlobalAsesor === 'INACTIVO' || estadoGlobalAsesor === '')) {
+            cambiarMiEstado(res.tipo);
+          }
+        })
+        .verificarPermisoVigenteHoy();
+    }
+
     // ── Modal Digital ─────────────────────────────────────────────────────────
     let tipoDigitalActual = 'digital';
 
@@ -1144,6 +1326,10 @@
       $('#dig_fecha_radicacion_sai').val('');
       $('#dig_contenedor_aplazamiento').addClass('d-none');
       $('#dig_contenedor_negacion').addClass('d-none');
+      if (typeof MotivoPicker !== 'undefined') {
+        MotivoPicker.reset('dig_motivo_aplazamiento');
+        MotivoPicker.reset('dig_motivo_negacion');
+      }
 
       // Inducciones: ocultar biometría
       if (tipoDigitalActual === 'induccion') {
@@ -1152,6 +1338,7 @@
         $('#dig_contenedor_biometria').removeClass('d-none');
       }
 
+      document.getElementById('dig_fecha_radicacion_sai').max = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       new bootstrap.Modal('#modalDetallesDigital').show();
     }
 
@@ -1160,6 +1347,7 @@
       if (estado.includes('APLAZ')) {
         $('#dig_contenedor_aplazamiento').removeClass('d-none').hide().slideDown(250);
         $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
+<<<<<<< HEAD
         tsSetVal('dig_motivo_negacion', '');
       } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
         $('#dig_contenedor_negacion').removeClass('d-none').hide().slideDown(250);
@@ -1170,6 +1358,24 @@
         $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
         tsSetVal('dig_motivo_aplazamiento', '');
         tsSetVal('dig_motivo_negacion', '');
+=======
+        $('#dig_motivo_negacion').val('');
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('dig_motivo_negacion');
+      } else if (estado.includes('NEGAD') || estado.includes('RECHAZ')) {
+        $('#dig_contenedor_negacion').removeClass('d-none').hide().slideDown(250);
+        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_motivo_aplazamiento').val('');
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('dig_motivo_aplazamiento');
+      } else {
+        $('#dig_contenedor_aplazamiento').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_contenedor_negacion').slideUp(200, function() { $(this).addClass('d-none'); });
+        $('#dig_motivo_aplazamiento').val('');
+        $('#dig_motivo_negacion').val('');
+        if (typeof MotivoPicker !== 'undefined') {
+          MotivoPicker.reset('dig_motivo_aplazamiento');
+          MotivoPicker.reset('dig_motivo_negacion');
+        }
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
       }
     }
 
@@ -1180,6 +1386,15 @@
       const estadoUpper = estado.toUpperCase();
       if (estadoUpper.includes('APLAZ') && !$('#dig_motivo_aplazamiento').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
       if (estadoUpper.includes('NEGAD') && !$('#dig_motivo_negacion').val()) { Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+
+      const fechaSaiDig = ($('#dig_fecha_radicacion_sai').val() || '').trim();
+      if (fechaSaiDig) {
+        const ahoraLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        if (fechaSaiDig > ahoraLocal) {
+          Swal.fire({ title: 'Fecha inválida', text: 'La Fecha y Hora de Radicación SAI no puede ser futura.', icon: 'warning', confirmButtonColor: '#253150' });
+          return;
+        }
+      }
 
       const datos = {
         solicitudId: $('#dig_solicitudId').val(),
@@ -1206,12 +1421,14 @@
             UX.showSuccessCheck(function() {
               UX.showToast('Gestión guardada: ' + estado, 'success');
               bootstrap.Modal.getInstance(document.getElementById('modalDetallesDigital')).hide();
+              _quitarFilaTabla(datos.solicitudId);
               yaSeIntentoAsignar = false;
               cargarDatos();
             });
           } else {
             Swal.fire({ icon: 'success', title: 'Operación Exitosa', html: r.message.replace(/\n/g, '<br>'), confirmButtonColor: '#253150' }).then(() => {
               bootstrap.Modal.getInstance(document.getElementById('modalDetallesDigital')).hide();
+              _quitarFilaTabla(datos.solicitudId);
               yaSeIntentoAsignar = false;
               cargarDatos();
             });

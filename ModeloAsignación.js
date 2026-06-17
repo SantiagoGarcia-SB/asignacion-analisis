@@ -45,9 +45,14 @@ function RequestLead() {
 
     if (estadoUsuario !== "ACTIVO") return "❌ Tu usuario no está Activo.";
 
+<<<<<<< HEAD
     // Validar horario de asignación configurado por el admin
     const horarioCheck = verificarHorarioAsignacion();
     if (!horarioCheck.permitido) return "⏰ " + horarioCheck.mensaje;
+=======
+    const turnoCheck = verificarTurnoActivo(userEmail, ss);
+    if (!turnoCheck.ok) return turnoCheck.message;
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
 
     // Determinar equipo según especialidad para leer cupos correctos
     let equipoCupos = 'DIGITAL';
@@ -110,6 +115,30 @@ function RequestLead() {
       }
     }
 
+    // Contar desde Historico_Gestiones (casos digitales movidos al asignar)
+    try {
+      const hojaHistD = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHistD && hojaHistD.getLastRow() > 1) {
+        const dataHistD = hojaHistD.getRange(2, 1, hojaHistD.getLastRow() - 1, 37).getValues();
+        for (let i = 0; i < dataHistD.length; i++) {
+          const row = dataHistD[i];
+          const asignado = String(row[25]).trim().toLowerCase(); // hist col 26: asignacion
+          if (asignado !== userEmail) continue;
+          const fechaAsig = row[24]; // hist col 25: fecha asignación
+          const fechaFin  = row[26]; // hist col 27: fecha fin gestión
+          const claseNorm  = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoNorm = String(row[16]).trim().toUpperCase();
+          let tipo = 'nueva';
+          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+          if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
+          const tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
+          const tieneFin  = fechaFin  instanceof Date || String(fechaFin).trim()  !== "";
+          if (tieneAsig && !tieneFin) capPendienteReal++;
+        }
+      }
+    } catch(eH) { Logger.log("RequestLead Hist digital count: " + eH.message); }
+
     // getValues() para obtener Date reales en cols I (fechaAsig) y J (fechaFin) de ORIGEN
     const dataReestudios = reestudiosSheet.getDataRange().getValues();
     for (let i = 1; i < dataReestudios.length; i++) {
@@ -117,14 +146,14 @@ function RequestLead() {
       const asignado = String(row[6]).trim().toLowerCase();
 
       if (asignado === userEmail) {
+        const origenR = String(row[3]).toUpperCase().trim();
         const tipoP  = String(row[4]).toUpperCase().trim();
-        const claseR = String(row[5]).toUpperCase().trim();
         const fechaAsig = row[8];
         const fechaFin  = row[9];
 
         let tipo = 'reestudio';
-        if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
-        else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
+        if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+        else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
           conteoHoy[tipo]++;
@@ -134,6 +163,30 @@ function RequestLead() {
         if (tieneAsigR && !tieneFinR) capPendienteReal++;
       }
     }
+
+    // Contar desde Historico_Gestiones de reestudios (casos movidos al asignar)
+    try {
+      const hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
+      if (hojaHistR && hojaHistR.getLastRow() > 1) {
+        const dataHistR = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, 14).getValues();
+        for (let i = 0; i < dataHistR.length; i++) {
+          const row = dataHistR[i];
+          const asignado = String(row[6]).trim().toLowerCase();
+          if (asignado !== userEmail) continue;
+          const origenR = String(row[3]).toUpperCase().trim();
+          const tipoP  = String(row[4]).toUpperCase().trim();
+          const fechaAsig = row[8];
+          const fechaFin  = row[9];
+          let tipo = 'reestudio';
+          if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+          else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
+          if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
+          const tieneAsigR = fechaAsig instanceof Date ? true : String(fechaAsig).trim() !== "";
+          const tieneFinR  = fechaFin  instanceof Date ? true : String(fechaFin).trim()  !== "";
+          if (tieneAsigR && !tieneFinR) capPendienteReal++;
+        }
+      }
+    } catch(eH) { Logger.log("RequestLead Hist reestudios count: " + eH.message); }
 
     Logger.log(`Analista: ${userEmail} | Límite Cupos Digital: ${JSON.stringify(cuotas)} | Realizado/Asignado Hoy: ${JSON.stringify(conteoHoy)}`);
 
@@ -188,12 +241,12 @@ function RequestLead() {
       if (asignado !== "") continue; 
       if (estadoGest !== "") continue; 
       
+      const origenR = String(row[3]).toUpperCase().trim();
       const tipoP = String(row[4]).toUpperCase().trim();
-      const claseR = String(row[5]).toUpperCase().trim();
-      
+
       let tipo = 'reestudio';
-      if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
-      else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
+      if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+      else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
       if (conteoHoy[tipo] >= cuotas[tipo]) continue;
 
@@ -304,6 +357,34 @@ function RequestLead() {
     }
 
     SpreadsheetApp.flush();
+
+    // Mover caso asignado a Historico_Gestiones (columnas equivalentes) y eliminar del activo
+    if (leadSeleccionado.base === 'PRINCIPAL') {
+      const s = solicitudesSheet.getRange(leadSeleccionado.rowIndex, 1, 1, 38).getValues()[0];
+      // Construir fila de 37 cols según estructura Historico_Gestiones
+      const histRow = [
+        s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
+        s[16],s[17],s[18],s[19],s[20],s[21],  // cols 1-22 iguales
+        s[23],s[24],                            // col 23 biometría, col 24 observaciones (omite s[22]=tiemporesp)
+        s[26],s[27],s[28],                      // col 25 fechaAsig, col 26 asignacion, col 27 fechaFin (omite s[25]=tracking)
+        s[30],s[31],s[32],s[33],                // col 28 Nombre, 29 motAplaz, 30 motNeg, 31 fechaGest (omite s[29]=tiempototal)
+        s[35],s[36],                            // col 32 Poliza, col 33 Canal (omite s[34]=Tiempogestion, s[37]=vacio)
+        '',0,0,0                                // col 34 fechaRadSAI, 35 min_cola, 36 min_gestion, 37 min_general
+      ];
+      let hojaHist = ss.getSheetByName("Historico_Gestiones");
+      if (!hojaHist) hojaHist = ss.insertSheet("Historico_Gestiones");
+      hojaHist.appendRow(histRow);
+      hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
+      solicitudesSheet.deleteRow(leadSeleccionado.rowIndex);
+    } else {
+      const filaRest = reestudiosSheet.getRange(leadSeleccionado.rowIndex, 1, 1, 18).getValues()[0];
+      const ssRestH  = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
+      let hojaHistR  = ssRestH.getSheetByName("Historico_Gestiones");
+      if (!hojaHistR) hojaHistR = ssRestH.insertSheet("Historico_Gestiones");
+      hojaHistR.appendRow(filaRest);
+      reestudiosSheet.deleteRow(leadSeleccionado.rowIndex);
+    }
+
     let _msgAsignacion = `✅ Asignado: 1 caso de ${_etiquetasTipo[leadSeleccionado.tipo] || leadSeleccionado.tipo.toUpperCase()}.`;
     if (cuposLlenosHoy.length > 0) {
       _msgAsignacion += `\n⚠️ Cupos del día completados: ${cuposLlenosHoy.join(', ')}`;

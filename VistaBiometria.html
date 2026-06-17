@@ -322,7 +322,7 @@
                         <i class="bi bi-laptop fs-5"></i> Fallas Técnicas
                     </button>
                     <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-ausencias" type="button">
-                        <i class="bi bi-hospital fs-5"></i> Ausencias / Salud
+                        <i class="bi bi-calendar-x-fill fs-5"></i> Permisos e Incapacidades
                     </button>
                     <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-reuniones" type="button">
                         <i class="bi bi-people fs-5"></i> Reuniones / Eventos
@@ -368,17 +368,62 @@
                             <h6 class="fw-bold mb-0" style="color: #3b82f6;">Permisos e Incapacidades</h6>
                         </div>
 
-                        <div class="row g-3">
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
-                            <div class="col-md-6"><button class="btn-novedad ausencia" onclick="seleccionarNovedad('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                        <!-- Paso 1: Selección de tipo -->
+                        <div id="ausencias-paso1">
+                            <p class="small text-muted mb-3"><i class="bi bi-info-circle me-1"></i>Estas novedades requieren aprobación del administrador. Selecciona el tipo para continuar.</p>
+                            <div class="row g-3">
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('AUSENCIA JUSTIFICADA')"><i class="bi bi-person-dash"></i> Ausencia Justificada</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CALAMIDAD')"><i class="bi bi-house-exclamation"></i> Calamidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('CITA MEDICA')"><i class="bi bi-heart-pulse"></i> Cita Médica</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA CIVICO')"><i class="bi bi-flag"></i> Día Cívico</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('DIA FAMILIAR')"><i class="bi bi-people"></i> Día Familiar</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('EXAMEN OCUPACIONAL')"><i class="bi bi-clipboard2-pulse"></i> Exámen Ocupacional</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('INCAPACIDAD')"><i class="bi bi-bandaid"></i> Incapacidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('LICENCIA DE MATERNIDAD')"><i class="bi bi-person-hearts"></i> Licencia Maternidad</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('PERMISO PERSONAL')"><i class="bi bi-clock-history"></i> Permiso Personal</button></div>
+                                <div class="col-md-6"><button class="btn-novedad ausencia" onclick="iniciarSolicitudPermiso('VACACIONES')"><i class="bi bi-airplane"></i> Vacaciones</button></div>
+                            </div>
+                        </div>
+
+                        <!-- Paso 2: Formulario de solicitud -->
+                        <div id="ausencias-paso2" style="display:none;">
+                            <div class="d-flex align-items-center gap-2 mb-4">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="volverAusenciasPaso1()"><i class="bi bi-arrow-left"></i> Volver</button>
+                                <span id="ausencias-tipo-badge" class="badge px-3 py-2" style="font-size:0.85rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:10px;"></span>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="small fw-bold mb-1" id="lbl-ausencia-fecha-inicio">Fecha de inicio <span class="text-danger">*</span></label>
+                                    <input type="date" id="ausencia-fecha-inicio" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6" id="col-ausencia-fecha-fin">
+                                    <label class="small fw-bold mb-1">Fecha de fin <span class="text-danger">*</span></label>
+                                    <input type="date" id="ausencia-fecha-fin" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6" id="col-ausencia-hora-inicio" style="display:none;">
+                                    <label class="small fw-bold mb-1">Hora de inicio <span class="text-danger">*</span></label>
+                                    <input type="time" id="ausencia-hora-inicio" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-md-6" id="col-ausencia-hora-fin" style="display:none;">
+                                    <label class="small fw-bold mb-1">Hora de fin <span class="text-danger">*</span></label>
+                                    <input type="time" id="ausencia-hora-fin" class="form-control" style="border-radius:10px;">
+                                </div>
+                                <div class="col-12">
+                                    <label class="small fw-bold mb-1">Observación <span class="text-muted fw-normal">(opcional)</span></label>
+                                    <textarea id="ausencia-observacion" class="form-control" rows="3" placeholder="Detalla el motivo o información relevante..." style="border-radius:10px;resize:none;"></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
+                                        <p class="small mb-0" style="color:#1e40af;"><i class="bi bi-send-check me-1"></i><strong>Tu solicitud será enviada al administrador.</strong> Recibirás un correo cuando sea aprobada o rechazada. El estado no cambiará hasta que sea aprobada.</p>
+                                    </div>
+                                </div>
+                                <div class="col-12 d-flex justify-content-end gap-2 pt-2">
+                                    <button class="btn btn-outline-secondary px-4" onclick="volverAusenciasPaso1()">Cancelar</button>
+                                    <button class="btn text-white px-5 fw-bold" id="btn-enviar-permiso" onclick="enviarSolicitudPermiso()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:10px;border:none;">
+                                        <i class="bi bi-send-fill me-2"></i>Enviar Solicitud
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -439,6 +484,14 @@
     let yaSeIntentoAsignar = false;
     let cargaInicialHecha = false;
 
+    function _quitarFilaTabla(solicitudId) {
+      if (!$.fn.DataTable.isDataTable('#tablaBiometria')) return;
+      var dt = $('#tablaBiometria').DataTable();
+      dt.rows(function(i, d, node) {
+        return $(node).find('td:first').text().trim() === String(solicitudId);
+      }).remove().draw(false);
+    }
+
     function _miniLoader(on) {
       const btn = document.getElementById('btnRefrescar');
       if (!btn) return;
@@ -465,6 +518,7 @@
 
         // Sincronizar estado y cargar datos al iniciar
         sincronizarEstadoInicial();
+        verificarYAplicarPermisoVigente();
         cargarDatos();
     });
 
@@ -477,9 +531,69 @@
     }
 
     function seleccionarNovedad(novedad) {
-        // Cierra el modal y manda a cambiar el estado
         bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
         cambiarMiEstado(novedad);
+    }
+
+    var _tipoPermisoSeleccionado = '';
+
+    function iniciarSolicitudPermiso(tipo) {
+        _tipoPermisoSeleccionado = tipo;
+        var hoy = new Date();
+        var hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+        document.getElementById('ausencia-fecha-inicio').value = hoyStr;
+        document.getElementById('ausencia-fecha-fin').value = hoyStr;
+        document.getElementById('ausencia-observacion').value = '';
+        document.getElementById('ausencias-tipo-badge').textContent = tipo;
+        document.getElementById('ausencias-paso1').style.display = 'none';
+        document.getElementById('ausencias-paso2').style.display = 'block';
+    }
+
+    function volverAusenciasPaso1() {
+        document.getElementById('ausencias-paso1').style.display = 'block';
+        document.getElementById('ausencias-paso2').style.display = 'none';
+        _tipoPermisoSeleccionado = '';
+    }
+
+    function enviarSolicitudPermiso() {
+        var fi = document.getElementById('ausencia-fecha-inicio').value;
+        var ff = document.getElementById('ausencia-fecha-fin').value;
+        if (!fi || !ff) {
+            Swal.fire({ icon: 'warning', title: 'Fechas requeridas', text: 'Por favor selecciona las fechas de inicio y fin.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        if (ff < fi) {
+            Swal.fire({ icon: 'warning', title: 'Fechas inválidas', text: 'La fecha de fin no puede ser anterior a la de inicio.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        var obs = document.getElementById('ausencia-observacion').value.trim();
+        var btn = document.getElementById('btn-enviar-permiso');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Enviando...';
+        google.script.run
+            .withSuccessHandler(function(res) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+                bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+                volverAusenciasPaso1();
+                Swal.fire({ icon: res.success ? 'success' : 'error', title: res.success ? 'Solicitud enviada' : 'Error', text: res.message, confirmButtonColor: '#3b82f6', timer: res.success ? 4000 : undefined, timerProgressBar: res.success });
+            })
+            .withFailureHandler(function(err) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+                Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#3b82f6' });
+            })
+            .solicitarPermiso(_tipoPermisoSeleccionado, fi, ff, obs);
+    }
+
+    function verificarYAplicarPermisoVigente() {
+        google.script.run
+            .withSuccessHandler(function(res) {
+                if (res && res.tienePermiso && (estadoGlobalAsesor === 'INACTIVO' || estadoGlobalAsesor === '')) {
+                    cambiarMiEstado(res.tipo);
+                }
+            })
+            .verificarPermisoVigenteHoy();
     }
 
     function sincronizarEstadoInicial() {
@@ -684,6 +798,7 @@ function abrirModal(id) {
         }
 
         const modalElement = document.getElementById('modalGestion');
+        document.getElementById('fechaRadicacionSai').max = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         const modal = bootstrap.Modal.getInstance(modalElement) || new bootstrap.Modal(modalElement);
         modal.show();
     }
@@ -740,15 +855,22 @@ function abrirModal(id) {
             fechaRadicacionSai: ($('#fechaRadicacionSai').val() || '').trim()
         };
 
-        // 👇 NUEVA VALIDACIÓN ESTRICTA 👇
         if (!datos.resLlamada || !datos.fueAprobada || !datos.resFinal) {
-            Swal.fire({ 
-                title: 'Atención', 
-                text: 'Por favor, completa todos los campos de gestión (Resultado Llamada, Aprobación y Resultado Final).', 
-                icon: 'warning', 
-                confirmButtonColor: '#253150' 
+            Swal.fire({
+                title: 'Atención',
+                text: 'Por favor, completa todos los campos de gestión (Resultado Llamada, Aprobación y Resultado Final).',
+                icon: 'warning',
+                confirmButtonColor: '#253150'
             });
             return;
+        }
+
+        if (datos.fechaRadicacionSai) {
+            const ahoraLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            if (datos.fechaRadicacionSai > ahoraLocal) {
+                Swal.fire({ title: 'Fecha inválida', text: 'La Fecha y Hora de Radicación SAI no puede ser futura.', icon: 'warning', confirmButtonColor: '#253150' });
+                return;
+            }
         }
 
         // UX: Button loading state
@@ -771,10 +893,11 @@ function abrirModal(id) {
                     UX.updateSyncTime();
                     UX.showSuccessCheck(function() {
                         UX.showToast('Biometría #' + id + ' → ' + datos.resFinal, 'success');
+                        _quitarFilaTabla(id);
                         cargarDatos();
                     });
                 } else {
-                    Swal.fire({ title: '¡Éxito!', text: res.message || 'Gestión guardada correctamente.', icon: 'success', confirmButtonColor: '#253150' }).then(cargarDatos);
+                    Swal.fire({ title: '¡Éxito!', text: res.message || 'Gestión guardada correctamente.', icon: 'success', confirmButtonColor: '#253150' }).then(function() { _quitarFilaTabla(id); cargarDatos(); });
                 }
             } else {
                 Swal.fire({ title: 'Error', text: res.error, icon: 'error', confirmButtonColor: '#BD0F14' });

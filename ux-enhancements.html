@@ -350,6 +350,45 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
     border: 1px solid rgba(255,255,255,0.1);
 }
+
+/* 13. MotivoPicker — searchable select component */
+.motivo-picker-hidden { display: none !important; }
+.motivo-picker { position: relative; }
+.motivo-picker-wrap { position: relative; }
+.motivo-picker-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--text-muted); font-size: 0.8rem; pointer-events: none; z-index: 2;
+}
+.motivo-picker-input { padding-left: 34px !important; padding-right: 36px !important; cursor: pointer; }
+.motivo-picker-input:focus { cursor: text; }
+.motivo-picker-clear {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 0.65rem;
+    transition: all 0.15s; z-index: 2;
+}
+.motivo-picker-clear:hover { background: rgba(239,68,68,0.1); color: #ef4444; }
+.motivo-picker-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: white; border: 1.5px solid var(--border);
+    border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    z-index: 1055; max-height: 220px; overflow-y: auto;
+    display: none; animation: pickerDropIn 0.15s ease;
+}
+.motivo-picker-dropdown.mp-open { display: block; }
+@keyframes pickerDropIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.motivo-picker-option {
+    padding: 8px 14px; font-size: 0.83rem; cursor: pointer;
+    color: var(--text-main); transition: background 0.12s;
+    border-radius: 8px; margin: 2px 4px;
+}
+.motivo-picker-option:hover { background: rgba(37,49,80,0.06); }
+.motivo-picker-option.mp-selected { background: rgba(37,49,80,0.1); font-weight: 700; color: var(--color-secundario); }
+.motivo-picker-empty { padding: 14px; text-align: center; font-size: 0.8rem; color: var(--text-muted); }
 </style>
 
 <div class="toast-ux" id="toastContainer"></div>
@@ -493,57 +532,68 @@ const UX = (function() {
         return html;
     }
 
-    // -- Show activity modal (using SweetAlert to avoid Bootstrap modal backdrop issues) --
+    // -- Show activity modal (data from both Historico_Gestiones sheets) --
     function showActivityModal() {
-        const log = getActivityLog();
-        const realCount = parseInt(document.getElementById('countHoy')?.textContent) || 0;
-
-        let htmlContent = '';
-
-        if (log.length === 0) {
-            if (realCount > 0) {
-                htmlContent = `<div style="text-align:center;padding:20px;"><p style="font-size:2rem;margin:0;">${realCount}</p><p style="color:#64748b;font-size:0.85rem;">gestiones hoy</p><p style="color:#94a3b8;font-size:0.75rem;">El detalle se registra a partir de esta sesión</p></div>`;
-            } else {
-                htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Sin actividad registrada aún</p></div>`;
-            }
-        } else {
-            let items = log.map(item => {
-                const dotColor = getDotColor(item.estado);
-                return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
-                    <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:55px;padding-top:2px;">${item.hora}</span>
-                    <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;"></div>
-                    <div style="flex:1;">
-                        <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.solicitud} → ${item.estado}</div>
-                        ${item.detalle ? `<div style="font-size:0.75rem;color:#64748b;">${item.detalle}</div>` : ''}
-                    </div>
-                </div>`;
-            }).join('');
-
-            let summaryParts = [];
-            const aprobadas = log.filter(l => l.estado.toUpperCase().includes('APROB')).length;
-            const negadas = log.filter(l => l.estado.toUpperCase().includes('NEGAD')).length;
-            const aplazadas = log.filter(l => l.estado.toUpperCase().includes('APLAZ')).length;
-            if (aprobadas) summaryParts.push('✅ ' + aprobadas + ' aprobada' + (aprobadas > 1 ? 's' : ''));
-            if (negadas) summaryParts.push('❌ ' + negadas + ' negada' + (negadas > 1 ? 's' : ''));
-            if (aplazadas) summaryParts.push('⏸️ ' + aplazadas + ' aplazada' + (aplazadas > 1 ? 's' : ''));
-
-            let header = realCount > log.length 
-                ? `<p style="font-size:0.75rem;color:#94a3b8;margin-bottom:12px;">${log.length} de ${realCount} gestiones registradas en esta sesión</p>`
-                : '';
-
-            htmlContent = `${header}<div style="max-height:350px;overflow-y:auto;">${items}</div>
-                <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${summaryParts.join(' · ')}</div>`;
-        }
-
         Swal.fire({
             title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
-            html: htmlContent,
-            showConfirmButton: true,
-            confirmButtonText: 'Cerrar',
-            confirmButtonColor: '#253150',
+            html: '<div style="text-align:center;padding:20px;"><i class="bi bi-arrow-repeat" style="font-size:2rem;color:#94a3b8;animation:btnSpin 0.6s linear infinite;display:inline-block;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Cargando gestiones...</p></div>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
             width: 480,
             customClass: { popup: 'rounded-4' }
         });
+
+        google.script.run
+            .withSuccessHandler(function(gestiones) {
+                let htmlContent = '';
+                if (!gestiones || gestiones.length === 0) {
+                    htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Sin gestiones registradas hoy</p></div>`;
+                } else {
+                    const items = gestiones.map(function(item) {
+                        const dotColor = getDotColor(item.estado);
+                        return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
+                            <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:40px;padding-top:2px;">${item.hora}</span>
+                            <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;"></div>
+                            <div style="flex:1;">
+                                <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.solicitud} → ${item.estado}</div>
+                                ${item.motivo ? `<div style="font-size:0.75rem;color:#64748b;">${item.motivo}</div>` : ''}
+                            </div>
+                        </div>`;
+                    }).join('');
+
+                    const aprobadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APROB'); }).length;
+                    const negadas   = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('NEGAD'); }).length;
+                    const aplazadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APLAZ'); }).length;
+                    const summaryParts = [];
+                    if (aprobadas) summaryParts.push('✅ ' + aprobadas + ' aprobada' + (aprobadas > 1 ? 's' : ''));
+                    if (negadas)   summaryParts.push('❌ ' + negadas   + ' negada'   + (negadas   > 1 ? 's' : ''));
+                    if (aplazadas) summaryParts.push('⏸️ ' + aplazadas + ' aplazada' + (aplazadas > 1 ? 's' : ''));
+
+                    htmlContent = `<div style="max-height:350px;overflow-y:auto;">${items}</div>
+                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${summaryParts.join(' · ')}</div>`;
+                }
+                Swal.fire({
+                    title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
+                    html: htmlContent,
+                    showConfirmButton: true,
+                    confirmButtonText: 'Cerrar',
+                    confirmButtonColor: '#253150',
+                    width: 480,
+                    customClass: { popup: 'rounded-4' }
+                });
+            })
+            .withFailureHandler(function() {
+                Swal.fire({
+                    title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
+                    html: '<div style="text-align:center;padding:20px;color:#ef4444;"><i class="bi bi-exclamation-triangle" style="font-size:2rem;"></i><p style="margin-top:10px;font-size:0.85rem;">Error al cargar las gestiones</p></div>',
+                    showConfirmButton: true,
+                    confirmButtonText: 'Cerrar',
+                    confirmButtonColor: '#253150',
+                    width: 480,
+                    customClass: { popup: 'rounded-4' }
+                });
+            })
+            .getResumenGestionesHoy();
     }
 
     function getDotColor(estado) {
@@ -688,4 +738,107 @@ const UX = (function() {
 document.addEventListener('DOMContentLoaded', function() {
     UX.init();
 });
+
+// ===== MotivoPicker — searchable select component =====
+const MotivoPicker = (function() {
+    const _state = {};
+
+    function init(wrapperId, hiddenSelectId) {
+        const wrapper   = document.getElementById(wrapperId);
+        const select    = document.getElementById(hiddenSelectId);
+        if (!wrapper || !select) return;
+
+        const textInput = wrapper.querySelector('.motivo-picker-input');
+        const dropdown  = wrapper.querySelector('.motivo-picker-dropdown');
+        const clearBtn  = wrapper.querySelector('.motivo-picker-clear');
+        const entry     = { wrapper, select, textInput, dropdown, clearBtn };
+        _state[hiddenSelectId] = entry;
+
+        function getOpts() {
+            return Array.from(select.options).filter(function(o) { return o.value !== ''; });
+        }
+
+        function buildList(filterText) {
+            const q = (filterText || '').toLowerCase().trim();
+            dropdown.innerHTML = '';
+            const currentVal = select.value;
+            let visible = 0;
+
+            getOpts().forEach(function(opt) {
+                if (q && !opt.text.toLowerCase().includes(q)) return;
+                visible++;
+                const div = document.createElement('div');
+                div.className = 'motivo-picker-option' + (opt.value === currentVal ? ' mp-selected' : '');
+                div.textContent = opt.text;
+                div.dataset.mpValue = opt.value;
+                div.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    pick(opt.value, opt.text);
+                });
+                dropdown.appendChild(div);
+            });
+
+            if (visible === 0) {
+                const em = document.createElement('div');
+                em.className = 'motivo-picker-empty';
+                em.textContent = 'Sin resultados';
+                dropdown.appendChild(em);
+            }
+        }
+
+        function pick(value, label) {
+            select.value = value;
+            textInput.value = label;
+            clearBtn.style.display = 'flex';
+            dropdown.classList.remove('mp-open');
+        }
+
+        function clear() {
+            select.value = '';
+            textInput.value = '';
+            clearBtn.style.display = 'none';
+            dropdown.classList.remove('mp-open');
+        }
+
+        entry._pick  = pick;
+        entry._clear = clear;
+
+        textInput.addEventListener('focus', function() {
+            buildList(this.value);
+            dropdown.classList.add('mp-open');
+        });
+
+        textInput.addEventListener('input', function() {
+            if (select.value) { select.value = ''; clearBtn.style.display = 'none'; }
+            buildList(this.value);
+            dropdown.classList.add('mp-open');
+        });
+
+        textInput.addEventListener('blur', function() {
+            setTimeout(function() { dropdown.classList.remove('mp-open'); }, 180);
+        });
+
+        clearBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        clearBtn.addEventListener('click', function() { clear(); textInput.focus(); });
+        clearBtn.style.display = 'none';
+
+        // Rebuild list when select options change (ajustarCamposPorTipoSolicitud rebuilds options)
+        new MutationObserver(function() { buildList(''); }).observe(select, { childList: true });
+    }
+
+    function reset(hiddenSelectId) {
+        const e = _state[hiddenSelectId];
+        if (e) e._clear();
+    }
+
+    function setValue(hiddenSelectId, value) {
+        if (!value) { reset(hiddenSelectId); return; }
+        const e = _state[hiddenSelectId];
+        if (!e) return;
+        const opt = Array.from(e.select.options).find(function(o) { return o.value === value; });
+        if (opt) e._pick(opt.value, opt.text);
+    }
+
+    return { init: init, reset: reset, setValue: setValue };
+})();
 </script>

@@ -9,6 +9,13 @@ let estadoGlobalAsesor = "INACTIVO";
 let tipoSolicitudActual = "";
 let cargaInicialHecha = false;
 
+function _quitarFilaTabla(solicitudId) {
+  if (!$.fn.DataTable.isDataTable('#miTabla')) return;
+  $('#miTabla').DataTable()
+    .rows(function(i, d) { return String(d[0]) === String(solicitudId); })
+    .remove().draw(false);
+}
+
 function _miniLoader(on) {
   const btn = document.getElementById('btnRefrescar');
   if (!btn) return;
@@ -29,6 +36,7 @@ $(document).ready(function () {
   }).getEmailUsuario();
 
   sincronizarEstadoInicial(true);
+  verificarYAplicarPermisoVigente();
 
   $('#btnGuardarCambios')
     .off('click')
@@ -62,7 +70,12 @@ function actualizarCamposGestion() {
       .fadeIn(200);
 
     selectAplaz.prop('required', true);
+<<<<<<< HEAD
     tsSetVal('d_motivo_negacion', '');
+=======
+    selectNeg.val('');
+    if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('d_motivo_negacion');
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
   }
 
   else if (
@@ -77,13 +90,27 @@ function actualizarCamposGestion() {
 
     selectNeg.prop('required', true);
 
+<<<<<<< HEAD
     tsSetVal('d_motivo_aplazamiento', '');
+=======
+    selectAplaz.val('');
+    if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('d_motivo_aplazamiento');
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
   }
 
   else {
 
+<<<<<<< HEAD
     tsSetVal('d_motivo_aplazamiento', '');
     tsSetVal('d_motivo_negacion', '');
+=======
+    selectAplaz.val('');
+    selectNeg.val('');
+    if (typeof MotivoPicker !== 'undefined') {
+      MotivoPicker.reset('d_motivo_aplazamiento');
+      MotivoPicker.reset('d_motivo_negacion');
+    }
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
   }
 }
 
@@ -467,11 +494,18 @@ function renderizarTabla(data) {
     $('#d_estado_q').val(fila[16] || '').trigger('change');
     
     setTimeout(() => {
-      if(fila[31]) $('#d_motivo_aplazamiento').val(fila[31]);
-      if(fila[32]) $('#d_motivo_negacion').val(fila[32]);
-    }, 10);      
+      if (fila[31]) {
+        $('#d_motivo_aplazamiento').val(fila[31]);
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.setValue('d_motivo_aplazamiento', fila[31]);
+      }
+      if (fila[32]) {
+        $('#d_motivo_negacion').val(fila[32]);
+        if (typeof MotivoPicker !== 'undefined') MotivoPicker.setValue('d_motivo_negacion', fila[32]);
+      }
+    }, 10);
 
     $('#btnGuardarCambios').attr('data-solicitud-id', solicitudId);
+    document.getElementById('d_fecha_radicacion_sai').max = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     new bootstrap.Modal('#modalDetalles').show();
 
     google.script.run
@@ -584,12 +618,20 @@ function manejarGuardarCambios() {
   } 
   if ((estadoUpper.includes('NEGAD') || estadoUpper.includes('RECHAZ')) && !datos.motivo_negacion) {
     Swal.fire({
-      title: 'Atención', 
-      text: 'El motivo de negación es obligatorio.', 
+      title: 'Atención',
+      text: 'El motivo de negación es obligatorio.',
       icon: 'warning',
       confirmButtonColor: '#253150'
     });
     return;
+  }
+
+  if (datos.fecha_radicacion_sai) {
+    const ahoraLocal = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    if (datos.fecha_radicacion_sai > ahoraLocal) {
+      Swal.fire({ title: 'Fecha inválida', text: 'La Fecha y Hora de Radicación SAI no puede ser futura.', icon: 'warning', confirmButtonColor: '#253150' });
+      return;
+    }
   }
 
   // UX: loading state on button
@@ -626,6 +668,7 @@ function manejarGuardarCambios() {
           const modalElement = document.getElementById('modalDetalles');
           const modalInstance = bootstrap.Modal.getInstance(modalElement);
           if (modalInstance) modalInstance.hide();
+          _quitarFilaTabla(datos.solicitudId);
           cargarDatos(); 
         });
       } else {
@@ -725,6 +768,7 @@ function seleccionarNovedad(novedad) {
     cambiarMiEstado(novedad);
 }
 
+<<<<<<< HEAD
 // ====== Gestión Reestudio/UAR desde vista Digital (modal Bootstrap) ======
 function abrirGestionReestudioDigital(solicitudId, fila) {
   var tipo = String(fila[20] || '').toUpperCase();
@@ -763,10 +807,160 @@ function abrirGestionReestudioDigital(solicitudId, fila) {
   $('#rmd_observaciones').val('');
   $('#rmd_cont_aplaz').addClass('d-none');
   $('#rmd_cont_neg').addClass('d-none');
+=======
+var _tipoPermisoSeleccionado = '';
+// Tipos que requieren hora (permisos parciales del día)
+var _TIPOS_CON_HORA = ['CITA MEDICA', 'PERMISO PERSONAL', 'EXAMEN OCUPACIONAL'];
+
+function iniciarSolicitudPermiso(tipo) {
+    _tipoPermisoSeleccionado = tipo;
+    var hoy = new Date();
+    var hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+    document.getElementById('ausencia-fecha-inicio').value = hoyStr;
+    document.getElementById('ausencia-fecha-fin').value = hoyStr;
+    document.getElementById('ausencia-observacion').value = '';
+    document.getElementById('ausencias-tipo-badge').textContent = tipo;
+
+    var esParcial = _TIPOS_CON_HORA.indexOf(tipo) !== -1;
+    var colHoraI = document.getElementById('col-ausencia-hora-inicio');
+    var colHoraF = document.getElementById('col-ausencia-hora-fin');
+    if (colHoraI) colHoraI.style.display = esParcial ? '' : 'none';
+    if (colHoraF) colHoraF.style.display = esParcial ? '' : 'none';
+    if (esParcial) {
+        document.getElementById('ausencia-hora-inicio').value = '08:00';
+        document.getElementById('ausencia-hora-fin').value = '09:00';
+    } else {
+        var hi = document.getElementById('ausencia-hora-inicio');
+        var hf = document.getElementById('ausencia-hora-fin');
+        if (hi) hi.value = '';
+        if (hf) hf.value = '';
+    }
+
+    document.getElementById('ausencias-paso1').style.display = 'none';
+    document.getElementById('ausencias-paso2').style.display = 'block';
+}
+
+function volverAusenciasPaso1() {
+    document.getElementById('ausencias-paso1').style.display = 'block';
+    document.getElementById('ausencias-paso2').style.display = 'none';
+    _tipoPermisoSeleccionado = '';
+}
+
+function enviarSolicitudPermiso() {
+    var fi = document.getElementById('ausencia-fecha-inicio').value;
+    var ff = document.getElementById('ausencia-fecha-fin').value;
+    if (!fi || !ff) {
+        Swal.fire({ icon: 'warning', title: 'Fechas requeridas', text: 'Por favor selecciona las fechas de inicio y fin.', confirmButtonColor: '#3b82f6' });
+        return;
+    }
+    if (ff < fi) {
+        Swal.fire({ icon: 'warning', title: 'Fechas inválidas', text: 'La fecha de fin no puede ser anterior a la de inicio.', confirmButtonColor: '#3b82f6' });
+        return;
+    }
+
+    var esParcial = _TIPOS_CON_HORA.indexOf(_tipoPermisoSeleccionado) !== -1;
+    var fechaInicioFinal = fi;
+    var fechaFinFinal = ff;
+
+    if (esParcial) {
+        var hi = document.getElementById('ausencia-hora-inicio').value;
+        var hf = document.getElementById('ausencia-hora-fin').value;
+        if (!hi || !hf) {
+            Swal.fire({ icon: 'warning', title: 'Horas requeridas', text: 'Por favor selecciona la hora de inicio y fin.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        if (fi === ff && hf <= hi) {
+            Swal.fire({ icon: 'warning', title: 'Horas inválidas', text: 'La hora de fin debe ser posterior a la de inicio.', confirmButtonColor: '#3b82f6' });
+            return;
+        }
+        fechaInicioFinal = fi + ' ' + hi;
+        fechaFinFinal = ff + ' ' + hf;
+    }
+
+    var obs = document.getElementById('ausencia-observacion').value.trim();
+    var btn = document.getElementById('btn-enviar-permiso');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Enviando...';
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+            bootstrap.Modal.getInstance(document.getElementById('modalNovedades')).hide();
+            volverAusenciasPaso1();
+            Swal.fire({
+                icon: res.success ? 'success' : 'error',
+                title: res.success ? 'Solicitud enviada' : 'Error',
+                text: res.message,
+                confirmButtonColor: '#3b82f6',
+                timer: res.success ? 4000 : undefined,
+                timerProgressBar: res.success
+            });
+        })
+        .withFailureHandler(function(err) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
+            Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#3b82f6' });
+        })
+        .solicitarPermiso(_tipoPermisoSeleccionado, fechaInicioFinal, fechaFinFinal, obs);
+}
+
+function verificarYAplicarPermisoVigente() {
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (res && res.tienePermiso && (estadoGlobalAsesor === 'INACTIVO' || estadoGlobalAsesor === '')) {
+                cambiarMiEstado(res.tipo);
+            }
+        })
+        .verificarPermisoVigenteHoy();
+}
+
+// ====== Gestión Reestudio/UAR desde vista Digital ======
+function abrirGestionReestudioDigital(solicitudId, fila) {
+  var tipo = String(fila[20] || '').toUpperCase();
+  var tipoBadgeColor = tipo.includes('NUEVA UAR') ? '#be185d' : tipo.includes('DEUDOR') ? '#b91c1c' : '#7c3aed';
+  var tipoBadgeBg   = tipo.includes('NUEVA UAR') ? '#fce7f3' : tipo.includes('DEUDOR') ? '#fee2e2' : '#ede9fe';
+  var tipoBorder    = tipo.includes('NUEVA UAR') ? '#fbcfe8' : tipo.includes('DEUDOR') ? '#fecaca' : '#ddd6fe';
+  var tipoLabel     = tipo.includes('NUEVA UAR') ? 'Nueva UAR' : tipo.includes('DEUDOR') ? 'Deudor UAR' : (fila[20] || 'Reestudio');
+
+  // Header
+  document.getElementById('rmd_header_sol').textContent = solicitudId;
+  document.getElementById('rmd_tipo_badge').innerHTML =
+    '<span class="badge" style="background:' + tipoBadgeBg + ';color:' + tipoBadgeColor + ';border:1px solid ' + tipoBorder + ';padding:4px 10px;border-radius:8px;font-size:0.72rem;">' + tipoLabel + '</span>';
+
+  // Info cards
+  document.getElementById('rmd_card_solicitud').textContent  = solicitudId;
+  document.getElementById('rmd_card_origen').textContent     = fila[1]  || '—';
+  document.getElementById('rmd_card_radicacion').textContent = fila[17] || '—';
+  document.getElementById('rmd_card_asignacion').textContent = fila[26] || '—';
+
+  // Reset form
+  document.getElementById('rmd_solicitudId').value = solicitudId;
+  document.getElementById('rmd_poliza').value      = '';
+  document.getElementById('rmd_estado_q').value    = '';
+  document.getElementById('rmd_observaciones').value = '';
+
+  // Drive button
+  var driveBtn = document.getElementById('btnDriveRmd');
+  if (driveBtn) {
+    var linkDrive = fila[2] || '';
+    if (linkDrive) { driveBtn.href = linkDrive; driveBtn.classList.remove('d-none'); }
+    else            { driveBtn.href = '#';       driveBtn.classList.add('d-none'); }
+  }
+
+  // Hide motivo containers and reset pickers
+  document.getElementById('rmd_cont_aplaz').classList.add('d-none');
+  document.getElementById('rmd_cont_neg').classList.add('d-none');
+  if (typeof MotivoPicker !== 'undefined') {
+    MotivoPicker.reset('rmd_motivo_aplazamiento');
+    MotivoPicker.reset('rmd_motivo_negacion');
+  }
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
 
   new bootstrap.Modal('#modalReestudioDigital').show();
 }
 
+<<<<<<< HEAD
 function rmdActualizarEstadoModal() {
   var estado = ($('#rmd_estado_q').val() || '').toUpperCase();
   if (estado === 'APLAZADA') {
@@ -794,20 +988,61 @@ function guardarReestudioDesdeModal() {
     Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return;
   }
   if (estado === 'NEGADA' && !$('#rmd_motivo_negacion').val()) {
+=======
+function swalRmdEstadoCambio() {
+  // Legacy alias — no longer used
+}
+
+function rmdActualizarEstado() {
+  var estado = document.getElementById('rmd_estado_q').value;
+  var contAplaz = document.getElementById('rmd_cont_aplaz');
+  var contNeg   = document.getElementById('rmd_cont_neg');
+  if (contAplaz) {
+    if (estado === 'APLAZADA') { contAplaz.classList.remove('d-none'); }
+    else { contAplaz.classList.add('d-none'); if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('rmd_motivo_aplazamiento'); }
+  }
+  if (contNeg) {
+    if (estado === 'NEGADA') { contNeg.classList.remove('d-none'); }
+    else { contNeg.classList.add('d-none'); if (typeof MotivoPicker !== 'undefined') MotivoPicker.reset('rmd_motivo_negacion'); }
+  }
+}
+
+function guardarGestionReestudioDesdeDigital() {
+  var solicitudId = document.getElementById('rmd_solicitudId').value;
+  var estado = document.getElementById('rmd_estado_q').value;
+  var poliza  = (document.getElementById('rmd_poliza').value || '').trim();
+
+  if (!estado) { Swal.fire({ title: 'Atención', text: 'Selecciona un estado de gestión.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+  if (!poliza)  { Swal.fire({ title: 'Atención', text: 'El campo Póliza es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
+  if (estado === 'APLAZADA' && !document.getElementById('rmd_motivo_aplazamiento').value) {
+    Swal.fire({ title: 'Atención', text: 'El motivo de aplazamiento es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return;
+  }
+  if (estado === 'NEGADA' && !document.getElementById('rmd_motivo_negacion').value) {
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
     Swal.fire({ title: 'Atención', text: 'El motivo de negación es obligatorio.', icon: 'warning', confirmButtonColor: '#253150' }); return;
   }
 
   var datos = {
+<<<<<<< HEAD
     solicitudId: $('#rmd_solicitudId').val(),
     estado_q: estado,
     poliza: poliza,
     motivo_aplazamiento: $('#rmd_motivo_aplazamiento').val() || '',
     motivo_negacion: $('#rmd_motivo_negacion').val() || '',
     comentarios_gestion: $('#rmd_observaciones').val() || '',
+=======
+    solicitudId: solicitudId,
+    estado_q: estado,
+    poliza: poliza,
+    motivo_aplazamiento: estado === 'APLAZADA' ? document.getElementById('rmd_motivo_aplazamiento').value : '',
+    motivo_negacion:     estado === 'NEGADA'   ? document.getElementById('rmd_motivo_negacion').value    : '',
+    comentarios_gestion: document.getElementById('rmd_observaciones').value || '',
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
     biometria: '',
     tipoSolicitudActual: 'reestudio'
   };
 
+<<<<<<< HEAD
   Swal.fire({ title: 'Procesando...', html: 'Guardando gestión y buscando nueva asignación...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
 
   var btnGuardar = document.getElementById('btnGuardarReestudioModal');
@@ -825,6 +1060,31 @@ function guardarReestudioDesdeModal() {
           yaSeIntentoAsignar = false;
           cargarDatos();
         });
+=======
+  var modalInstance = bootstrap.Modal.getInstance(document.getElementById('modalReestudioDigital'));
+  if (modalInstance) modalInstance.hide();
+
+  Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (r.success) {
+        if (typeof UX !== 'undefined') {
+          Swal.close();
+          UX.showSuccessCheck(function() {
+            UX.showToast('Gestión guardada: ' + datos.estado_q, 'success');
+            _quitarFilaTabla(datos.solicitudId);
+            yaSeIntentoAsignar = false;
+            cargarDatos();
+          });
+        } else {
+          Swal.fire({ icon: 'success', title: 'Guardado', text: r.message, confirmButtonColor: '#253150' }).then(function() {
+            _quitarFilaTabla(datos.solicitudId);
+            yaSeIntentoAsignar = false;
+            cargarDatos();
+          });
+        }
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
       } else {
         Swal.fire({ icon: 'success', title: '¡Operación Exitosa!', html: r.message ? r.message.replace(/\n/g, '<br>') : 'Gestión guardada correctamente.', confirmButtonColor: '#253150' }).then(function() {
           bootstrap.Modal.getInstance(document.getElementById('modalReestudioDigital')).hide();
@@ -832,6 +1092,7 @@ function guardarReestudioDesdeModal() {
           cargarDatos();
         });
       }
+<<<<<<< HEAD
     } else {
       Swal.fire({ title: 'Error', text: r.message, icon: 'error', confirmButtonColor: '#BD0F14' });
     }
@@ -844,5 +1105,12 @@ function guardarReestudioDesdeModal() {
 function guardarGestionReestudioDesdeDigital() {
   // Legacy — redirige al nuevo handler
   guardarReestudioDesdeModal();
+=======
+    })
+    .withFailureHandler(function(e) {
+      Swal.fire({ title: 'Error', text: e.message, icon: 'error', confirmButtonColor: '#BD0F14' });
+    })
+    .guardarCambiosInternos(datos);
+>>>>>>> 5703dc4648fdb01e805bc8b7badf94bd6d5c55d7
 }
 </script>

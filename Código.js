@@ -188,28 +188,54 @@ function getTableData() {
   let gestionadasHoy = 0;
   let gestionadasTotal = 0;
 
-  const misFilasPendientes = registros.filter(fila => {
-    const asignadoA = String(fila[27]).trim().toLowerCase();
-    const fechaFin = String(fila[28]).trim();
-    const fechaAsignacion = String(fila[26]).trim();
-    
-    if (asignadoA === userEmail && fechaFin !== "") {
-      gestionadasTotal++;
-      if (fechaFin.includes(hoyStr)) {
-        gestionadasHoy++;
-      }
-    }
-    return asignadoA === userEmail && fechaFin === "" && fechaAsignacion !== "" ; 
-  }).map(fila => {
-    let poliza = String(fila[1]).trim();
-    let polNorm = poliza.replace(/\D/g, '').replace(/^0+/, '');
-    
-    let categoria = mapaScore.get(poliza) || mapaScore.get(polNorm) || "";
-    fila.push(categoria); 
-    return fila;
-  });
+  // Casos del analista: leer de Historico_Gestiones (nuevos) + solicitud (legados sin migrar)
+  const misFilasPendientes = [];
 
-  // Incluir también reestudios/UAR asignados desde la hoja ORIGEN
+  // Convierte fila de Historico_Gestiones (37 cols) a formato solicitud (37 cols)
+  // para que el frontend no necesite saber de la estructura del Historico
+  function histToSol(h) {
+    const s = new Array(37).fill('');
+    for (let i = 0; i <= 21; i++) s[i] = h[i]; // cols 1-22 iguales
+    s[23] = h[22]; s[24] = h[23];               // biometría, observaciones
+    s[26] = h[24]; s[27] = h[25]; s[28] = h[26]; // fechaAsig, asignacion, fechaFin
+    s[30] = h[27]; s[31] = h[28]; s[32] = h[29]; s[33] = h[30]; // Nombre, motivos, fechaGest
+    s[35] = h[31]; s[36] = h[32];               // Poliza, Canal
+    return s;
+  }
+
+  function agregarDesdeRegistros(filas, fuente) {
+    for (const filaRaw of filas) {
+      const fila = fuente === 'HISTORICO' ? histToSol(filaRaw) : filaRaw;
+      const asignadoA = String(fila[27]).trim().toLowerCase();
+      const fechaFin  = String(fila[28]).trim();
+      const fechaAsig = String(fila[26]).trim();
+      if (asignadoA !== userEmail) continue;
+      if (fechaFin !== "") {
+        gestionadasTotal++;
+        if (fechaFin.includes(hoyStr)) gestionadasHoy++;
+        continue;
+      }
+      if (fechaAsig === "") continue;
+      const poliza  = String(fila[1]).trim();
+      const polNorm = poliza.replace(/\D/g, '').replace(/^0+/, '');
+      const cat = mapaScore.get(poliza) || mapaScore.get(polNorm) || "";
+      misFilasPendientes.push([...fila, cat]);
+    }
+  }
+
+  // 1. Historico_Gestiones — casos ya movidos al asignar (nueva lógica)
+  try {
+    const hojaHist = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHist && hojaHist.getLastRow() > 1) {
+      const dataH = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, Math.max(numCols, 37)).getDisplayValues();
+      agregarDesdeRegistros(dataH, 'HISTORICO');
+    }
+  } catch(e) { Logger.log("getTableData Historico: " + e.message); }
+
+  // 2. solicitud — casos legados aún no migrados
+  agregarDesdeRegistros(registros, 'SOLICITUD');
+
+  // 3. Reestudios: Historico_Gestiones (nueva lógica) + ORIGEN (legados)
   try {
     const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
@@ -236,7 +262,6 @@ function getTableData() {
           let filaAdaptada = new Array(numCols).fill("");
           filaAdaptada[0] = String(dataReest[i][1]).trim();    // solicitud
           filaAdaptada[1] = String(dataReest[i][3]).trim();    // origen como "poliza"
-          filaAdaptada[2] = String(dataReest[i][2]).trim();    // linkDrive (col C)
           filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
           filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
           filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
@@ -638,7 +663,7 @@ function guardarCambiosInternos(data) {
     motivo_aplazamiento = ""; motivo_negacion = "";
   }
 
-  const lock = LockService.getScriptLock();
+  const lock = LockService.getUserLock();
   try {
     lock.waitLock(15000);
   } catch(e) {
@@ -653,94 +678,82 @@ function guardarCambiosInternos(data) {
     // Definición de las 2 Bases de Datos
     const ID_WAREHOUSE = "1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0";
     const ssOrigen = SpreadsheetApp.openById(ID_WAREHOUSE);
-    const sheetOrigen = ssOrigen.getSheetByName("solicitud");
-    
+
     const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
     const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
-    const sheetReestudios = ssReestudios.getSheetByName("ORIGEN");
 
     const ahora = new Date();
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
-    const fechaTexto = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy HH:mm:ss');
     
     const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
     disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
 
-    // 1. BUSCAMOS EN EL EXCEL PRINCIPAL (Estudios, Bio, Inducciones)
-    const ids = sheetOrigen.getRange('A:A').getValues(); 
+    // 1. Buscar en Historico_Gestiones
+    const hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
     let targetRow = -1;
-    for (let i = 1; i < ids.length; i++) {
-      if (String(ids[i][0]).trim() === String(data.solicitudId).trim()) {
-        targetRow = i + 1;
-        break;
+
+    // Los reestudios viven en ssReestudios, no en el warehouse — saltar RUTA A
+    if (data.tipoSolicitudActual !== 'reestudio' && hojaHistorico && hojaHistorico.getLastRow() > 1) {
+      const lastRowH = hojaHistorico.getLastRow();
+      const dataH = hojaHistorico.getRange(2, 1, lastRowH - 1, 27).getValues();
+      for (let i = 0; i < dataH.length; i++) {
+        const idMatch  = String(dataH[i][0]).trim() === String(data.solicitudId).trim();
+        const fechaFin = String(dataH[i][26]).trim(); // col 27 = fechaFin
+        if (idMatch && fechaFin === '') {
+          targetRow = i + 2;
+          break;
+        }
       }
     }
 
     if (targetRow !== -1) {
-      // 🟢 RUTA A: ES UNA SOLICITUD DE LA BASE PRINCIPAL
-      const fechaAsignacion = sheetOrigen.getRange(targetRow, 27).getValue(); 
-      const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
-      let minutosDeGestion = 0;
-      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-        minutosDeGestion = Number(((ahora.getTime() - fechaAsignacion.getTime()) / (1000 * 60)).toFixed(2));
-      }
-      
-      const valorActualW = sheetOrigen.getRange(targetRow, 23).getValue();
-      let historialFechasW = !valorActualW ? fechaTexto : fechaTexto + "\n" + valorActualW;
+      // 🟢 RUTA A: SOLICITUD DE LA BASE PRINCIPAL (Historico_Gestiones)
+      const filaBase        = hojaHistorico.getRange(targetRow, 1, 1, 37).getValues()[0];
+      const fechaRadicacion = filaBase[17]; // col 18
+      const fechaAsignacion = filaBase[24]; // col 25
+      const emailAnalista   = String(filaBase[25] || usuarioActual).toLowerCase().trim(); // col 26
+      let valorClaseActual  = filaBase[20]; // col 21
 
-      // 🚀 TALLADO DE CLASE PERMANENTE PARA NO PERDER EL CONTEO
-      let valorClaseActual = sheetOrigen.getRange(targetRow, 21).getValue();
       if (data.tipoSolicitudActual === 'biometria') valorClaseActual = 'BIOMETRIA';
       else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
 
-      const valorUarActual = sheetOrigen.getRange(targetRow, 22).getValue();
-      
-      let minutosHabilesSLA = 0;
-      if (fechaAsignacion instanceof Date && !isNaN(fechaAsignacion.getTime())) {
-        minutosHabilesSLA = calcularMinutosHabilesSLA(fechaAsignacion, ahora, ssOrigen);
-      }
-      let horasHabilesSLA = Number((minutosHabilesSLA / 60).toFixed(2));
+      const tRadCola = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
+      const tiempos = calcularTiemposCaso(
+        tRadCola,
+        _parseFechaGAS(fechaAsignacion),
+        ahora,
+        emailAnalista
+      );
 
-      // Guardar en hoja principal
-      sheetOrigen.getRange(targetRow, 17).setValue(estado_q); 
-      sheetOrigen.getRange(targetRow, 21, 1, 5).setValues([[
-        valorClaseActual, valorUarActual, historialFechasW, data.biometria || '', data.comentarios_gestion || ''
-      ]]);
-      
-      sheetOrigen.getRange(targetRow, 32, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
-      sheetOrigen.getRange(targetRow, 29).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss"); 
-      sheetOrigen.getRange(targetRow, 30).setValue(horasHabilesSLA); 
-      sheetOrigen.getRange(targetRow, 34).setValue(fechaSoloDia); 
-      sheetOrigen.getRange(targetRow, 35).setValue(minutosDeGestion); 
-
-      // Tiempo general (minutos hábiles desde radicación hasta gestión)
-      let minutosHabilesGeneral = 0;
-      if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
-        minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
-      }
-      sheetOrigen.getRange(targetRow, 37).setValue(Number(minutosHabilesGeneral.toFixed(2)));
-
-      // Fecha y hora radicación SAI (ingresada manualmente por el analista)
-      if (data.fecha_radicacion_sai) {
-        sheetOrigen.getRange(targetRow, 38).setValue(data.fecha_radicacion_sai);
-      }
+      hojaHistorico.getRange(targetRow, 17).setValue(estado_q);
+      hojaHistorico.getRange(targetRow, 21).setValue(valorClaseActual);
+      hojaHistorico.getRange(targetRow, 23).setValue(data.biometria || '');
+      hojaHistorico.getRange(targetRow, 24).setValue(data.comentarios_gestion || '');
+      hojaHistorico.getRange(targetRow, 27).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaHistorico.getRange(targetRow, 29, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
+      hojaHistorico.getRange(targetRow, 31).setValue(fechaSoloDia);
 
       SpreadsheetApp.flush();
-      
-      // Guardar en Historico principal
-      const filaActualizada = sheetOrigen.getRange(targetRow, 1, 1, 38).getValues()[0];
-      let hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
-      if (!hojaHistorico) hojaHistorico = ssOrigen.insertSheet("Historico_Gestiones");
-      hojaHistorico.appendRow(filaActualizada);
+
+      hojaHistorico.getRange(targetRow, 34).setValue(data.fecha_radicacion_sai || '');
+      hojaHistorico.getRange(targetRow, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
+      hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
 
     } else {
-      // 🔵 RUTA B: NO ESTÁ EN PRINCIPAL, BUSCAMOS EN EXCEL DE REESTUDIOS/UAR
-      const idsReest = sheetReestudios.getRange('B:B').getValues(); 
+      // 🔵 RUTA B: REESTUDIO — buscar en Historico_Gestiones de ssReestudios
+      const hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
       let targetRowReest = -1;
-      for (let i = 1; i < idsReest.length; i++) {
-        if (String(idsReest[i][0]).trim() === String(data.solicitudId).trim()) {
-          targetRowReest = i + 1;
-          break;
+
+      if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {
+        const lastRowHR = hojaHistoricoR.getLastRow();
+        const dataHR = hojaHistoricoR.getRange(2, 2, lastRowHR - 1, 9).getValues(); // cols B–J
+        for (let i = 0; i < dataHR.length; i++) {
+          const idMatch  = String(dataHR[i][0]).trim() === String(data.solicitudId).trim();
+          const fechaFin = String(dataHR[i][8]).trim(); // col J = fechaFinGestion
+          if (idMatch && fechaFin === '') {
+            targetRowReest = i + 2;
+            break;
+          }
         }
       }
 
@@ -748,42 +761,31 @@ function guardarCambiosInternos(data) {
         return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
       }
 
-      // Guardar en hoja secundaria (Reestudios)
-      const fechaRadicacionR = sheetReestudios.getRange(targetRowReest, 1).getValue();
-      const fechaAsignacionR = sheetReestudios.getRange(targetRowReest, 9).getValue();
+      const filaReest      = hojaHistoricoR.getRange(targetRowReest, 1, 1, 18).getValues()[0];
+      const fechaRadR      = filaReest[0];
+      const fechaAsiR      = filaReest[8];
+      const emailAnalistaR = String(filaReest[6] || usuarioActual).toLowerCase().trim();
 
-      let tiempoTotalResolucion = 0;
-      let tiempoGestion = 0;
+      const tRadColaR = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadR);
+      const tiemposR = calcularTiemposCaso(
+        tRadColaR,
+        _parseFechaGAS(fechaAsiR),
+        ahora,
+        emailAnalistaR
+      );
 
-      if (fechaRadicacionR instanceof Date && !isNaN(fechaRadicacionR.getTime())) {
-        tiempoTotalResolucion = Number(calcularMinutosHabilesSLA(fechaRadicacionR, ahora, ssOrigen).toFixed(2));
-      }
-      if (fechaAsignacionR instanceof Date && !isNaN(fechaAsignacionR.getTime())) {
-        tiempoGestion = Number(((ahora.getTime() - fechaAsignacionR.getTime()) / 60000).toFixed(2));
-      }
-
-      // Guardar resultados en columnas J hasta P
-      sheetReestudios.getRange(targetRowReest, 10, 1, 7).setValues([[
-        ahora,                              // J: fechaFinGestion
-        estado_q,                           // K: estadoGestion
-        motivo_aplazamiento,                // L: motivoAplazamiento
-        motivo_negacion,                    // M: motivoNegacion
-        data.comentarios_gestion || "",     // N: observaciones
-        tiempoTotalResolucion,              // O: tiempo total
-        tiempoGestion                       // P: tiempo gestión
+      hojaHistoricoR.getRange(targetRowReest, 10, 1, 9).setValues([[
+        ahora, estado_q, motivo_aplazamiento, motivo_negacion,
+        data.comentarios_gestion || '',
+        tiemposR.minutos_cola, tiemposR.minutos_gestion, tiemposR.minutos_general,
+        data.poliza || ''
       ]]);
       sheetReestudios.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
-
-      // Póliza → columna Q (17)
-      if (data.poliza) {
-        var polizaNum = Number(data.poliza);
-        sheetReestudios.getRange(targetRowReest, 17).setValue(isNaN(polizaNum) ? data.poliza : polizaNum);
-      }
 
       SpreadsheetApp.flush();
 
       // Guardar en Historico Secundario
-      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 17).getValues()[0];
+      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
       let hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
       if (!hojaHistoricoR) {
         hojaHistoricoR = ssReestudios.insertSheet("Historico_Gestiones");
@@ -822,6 +824,165 @@ function guardarCambiosInternos(data) {
 }
 function getEmailUsuario() {
   return Session.getActiveUser().getEmail();
+}
+
+function getResumenGestionesHoy() {
+  const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  const hoy = Utilities.formatDate(new Date(), "GMT-5", "dd/MM/yyyy");
+  const resultado = [];
+
+  // Digital — Historico_Gestiones del warehouse
+  try {
+    const hojaHist = SpreadsheetApp.openById("1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0")
+                       .getSheetByName("Historico_Gestiones");
+    if (hojaHist && hojaHist.getLastRow() > 1) {
+      const data = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 30).getValues();
+      for (let i = 0; i < data.length; i++) {
+        const analista = String(data[i][25]).toLowerCase().trim(); // col 26
+        if (analista !== userEmail) continue;
+        const fechaFin = data[i][26]; // col 27
+        if (!(fechaFin instanceof Date)) continue;
+        if (Utilities.formatDate(fechaFin, "GMT-5", "dd/MM/yyyy") !== hoy) continue;
+        resultado.push({
+          solicitud: String(data[i][0]),
+          estado:    String(data[i][16]),
+          motivo:    String(data[i][28] || data[i][29] || ''),
+          hora:      Utilities.formatDate(fechaFin, "GMT-5", "HH:mm")
+        });
+      }
+    }
+  } catch(e) {}
+
+  // Reestudios — Historico_Gestiones de ssReestudios
+  try {
+    const hojaHistR = SpreadsheetApp.openById("1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U")
+                        .getSheetByName("Historico_Gestiones");
+    if (hojaHistR && hojaHistR.getLastRow() > 1) {
+      const data = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, 13).getValues();
+      for (let i = 0; i < data.length; i++) {
+        const analista = String(data[i][6]).toLowerCase().trim(); // col G
+        if (analista !== userEmail) continue;
+        const fechaFin = data[i][9]; // col J
+        if (!(fechaFin instanceof Date)) continue;
+        if (Utilities.formatDate(fechaFin, "GMT-5", "dd/MM/yyyy") !== hoy) continue;
+        resultado.push({
+          solicitud: String(data[i][1]),
+          estado:    String(data[i][10]),
+          motivo:    String(data[i][11] || data[i][12] || ''),
+          hora:      Utilities.formatDate(fechaFin, "GMT-5", "HH:mm")
+        });
+      }
+    }
+  } catch(e) {}
+
+  resultado.sort((a, b) => b.hora.localeCompare(a.hora));
+  return resultado;
+}
+
+/**
+ * Verifica si el analista está dentro de su turno activo.
+ * Si no tiene turno configurado, no bloquea (graceful).
+ * Respeta Horas_Extra para extender el fin de turno.
+ * @param {string} userEmail - email del analista (minúsculas)
+ * @param {Spreadsheet} ss - instancia ya abierta de TARGET_SOLICITUDES_SS_ID
+ * @returns {{ ok: boolean, message?: string }}
+ */
+function verificarTurnoActivo(userEmail, ss) {
+  try {
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, TIMEZONE, 'HH:mm');
+    const hoyStr = Utilities.formatDate(now, TIMEZONE, 'yyyy-MM-dd');
+    const [hNow, mNow] = nowStr.split(':').map(Number);
+    const minActual = hNow * 60 + mNow;
+
+    // Helper: convierte un valor de celda de hora a minutos desde medianoche
+    function parseMin(v) {
+      if (!v && v !== 0) return null;
+      if (v instanceof Date) return v.getUTCHours() * 60 + v.getUTCMinutes();
+      if (typeof v === 'number') return Math.round(v * 1440);
+      const s = String(v).trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      if (!s.includes(':')) return null;
+      const [h, m] = s.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    // 1. Buscar turno vigente del analista
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (!hojaAT || hojaAT.getLastRow() <= 1) return { ok: true };
+
+    const dataAT = hojaAT.getDataRange().getValues();
+    let idTurnoActivo = null;
+    for (let i = 1; i < dataAT.length; i++) {
+      const r = dataAT[i];
+      const email = String(r[0]).toLowerCase().trim();
+      if (email !== userEmail) continue;
+      const idT = String(r[1]).trim();
+      const desde = r[2] instanceof Date ? r[2] : null;
+      const hasta = r[3] instanceof Date ? r[3] : null;
+      if (!idT || !desde) continue;
+      if (now >= desde && (!hasta || now <= hasta)) {
+        idTurnoActivo = idT;
+        break;
+      }
+    }
+    if (!idTurnoActivo) return { ok: true };
+
+    // 2. Leer definición del turno
+    const hojaTurnos = ss.getSheetByName('Turnos');
+    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { ok: true };
+
+    const dataTurnos = hojaTurnos.getDataRange().getValues();
+    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
+    // Día ISO: 1=Lun…7=Dom → d_idx 0=Lun…6=Dom
+    // bool col: 3+d_idx, Fin col (display): 11+d_idx*2
+    const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
+    const dIdx = diaISO - 1; // 0=Lun…6=Dom
+    const boolCol = 3 + dIdx;
+    const finCol  = 11 + dIdx * 2;
+
+    let horaFinStr = null;
+    let nombreTurno = '';
+    for (let i = 1; i < dataTurnos.length; i++) {
+      if (String(dataTurnos[i][0]).trim() !== idTurnoActivo) continue;
+      // Si el turno no aplica hoy, no bloquear
+      if (!dataTurnos[i][boolCol]) return { ok: true };
+      horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      nombreTurno = String(dataTurnos[i][1] || '').trim();
+      break;
+    }
+    if (!horaFinStr) return { ok: true };
+
+    let minFin = parseMin(horaFinStr);
+    if (minFin === null) return { ok: true };
+
+    // 3. Extender con Horas_Extra si las hay para hoy
+    const hojaExtra = ss.getSheetByName('Horas_Extra');
+    if (hojaExtra && hojaExtra.getLastRow() > 1) {
+      const dataExtra = hojaExtra.getDataRange().getValues();
+      const dispExtra = hojaExtra.getDataRange().getDisplayValues();
+      for (let i = 1; i < dataExtra.length; i++) {
+        const r = dataExtra[i];
+        if (String(r[0]).toLowerCase().trim() !== userEmail) continue;
+        const fechaE = r[1] instanceof Date
+          ? Utilities.formatDate(r[1], TIMEZONE, 'yyyy-MM-dd')
+          : String(r[1]).trim().substring(0, 10);
+        if (fechaE !== hoyStr) continue;
+        const minExtra = parseMin(dispExtra[i][3] || r[3]);
+        if (minExtra !== null && minExtra > minFin) minFin = minExtra;
+      }
+    }
+
+    if (minActual > minFin) {
+      return {
+        ok: false,
+        message: `⏰ Tu turno (${nombreTurno || horaFinStr}) finalizó a las ${horaFinStr}. No puedes recibir más casos por hoy.`
+      };
+    }
+    return { ok: true };
+  } catch (e) {
+    Logger.log('verificarTurnoActivo error: ' + e.message);
+    return { ok: true };
+  }
 }
 
 /**
@@ -897,6 +1058,27 @@ function verificarMisCupos(equipo) {
       }
     }
 
+    // También contar desde Historico_Gestiones (casos asignados movidos al asignar)
+    try {
+      const hojaHistV = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHistV && hojaHistV.getLastRow() > 1) {
+        const dataHistV = hojaHistV.getRange(2, 1, hojaHistV.getLastRow() - 1, 37).getValues();
+        for (let i = 0; i < dataHistV.length; i++) {
+          const asignado = String(dataHistV[i][25]).trim().toLowerCase(); // hist col 26
+          if (asignado !== userEmail) continue;
+          const fechaAsig = dataHistV[i][24]; // hist col 25
+          const fechaFin  = dataHistV[i][26]; // hist col 27
+          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+          const claseNorm  = String(dataHistV[i][20]).toUpperCase().trim();
+          const estadoNorm = String(dataHistV[i][16]).toUpperCase().trim();
+          let tipo = 'nueva';
+          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+          conteoHoy[tipo]++;
+        }
+      }
+    } catch(e) {}
+
     // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR)
     try {
       const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
@@ -911,11 +1093,11 @@ function verificarMisCupos(equipo) {
             const fechaAsig = dataReest[i][8];
             const fechaFin = dataReest[i][9];
             if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+            const origenR = String(dataReest[i][3]).toUpperCase().trim();
             const tipoP = String(dataReest[i][4]).toUpperCase().trim();
-            const claseR = String(dataReest[i][5]).toUpperCase().trim();
             let tipo = 'reestudio';
-            if (tipoP.includes("NUEVA UAR") || claseR.includes("NUEVA UAR")) tipo = 'nuevaUar';
-            else if (tipoP.includes("DEUDOR UAR") || claseR.includes("DEUDOR UAR")) tipo = 'deudorUar';
+            if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+            else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
             conteoHoy[tipo]++;
           }
         }
@@ -951,9 +1133,9 @@ function verificarMisCupos(equipo) {
 }
 
 function actualizarEstadoPropio(nuevoEstado) {
-  const lock = LockService.getScriptLock();
+  const lock = LockService.getUserLock();
   try {
-    lock.waitLock(10000); 
+    lock.waitLock(10000);
   } catch (e) {
     return { success: false, message: "Servidor ocupado, reintenta." };
   }
@@ -1302,42 +1484,34 @@ function obtenerGestionesHoyCruzadas() {
     let conteoDigital = 0;
     let conteoReestudios = 0;
 
-    // 1. Contar gestiones hoy en hoja "solicitud" (estudio digital + biometria)
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
-    if (hojaSol) {
-      const lastRow = hojaSol.getLastRow();
-      if (lastRow > 1) {
-        const dataSol = hojaSol.getRange(2, 28, lastRow - 1, 2).getDisplayValues(); // cols AB(28) y AC(29)
-        for (let i = 0; i < dataSol.length; i++) {
-          const asignado = String(dataSol[i][0]).trim().toLowerCase();
-          const fechaFin = String(dataSol[i][1]).trim();
-          if (asignado === userEmail && fechaFin.includes(hoyStr)) {
-            conteoDigital++;
-          }
+    // 1. Contar desde Historico_Gestiones del warehouse (digitales, biometría, inducciones)
+    try {
+      const hojaHistG = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
+                          .getSheetByName("Historico_Gestiones");
+      if (hojaHistG && hojaHistG.getLastRow() > 1) {
+        const dataHistG = hojaHistG.getRange(2, 26, hojaHistG.getLastRow() - 1, 2).getDisplayValues(); // cols 26-27
+        for (let i = 0; i < dataHistG.length; i++) {
+          const asignado = String(dataHistG[i][0]).trim().toLowerCase(); // col 26
+          const fechaFin = String(dataHistG[i][1]).trim();               // col 27
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) conteoDigital++;
         }
       }
-    }
+    } catch(e) { Logger.log("obtenerGestionesHoyCruzadas Hist: " + e.message); }
 
-    // 2. Contar gestiones hoy en hoja de reestudios "ORIGEN"
+    // 2. Contar desde Historico_Gestiones de ssReestudios
     try {
-      const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-      const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
-      if (hojaReest) {
-        const lastRowR = hojaReest.getLastRow();
-        if (lastRowR > 1) {
-          const dataReest = hojaReest.getRange(2, 7, lastRowR - 1, 4).getDisplayValues(); // cols G(7), H(8), I(9), J(10)
-          for (let i = 0; i < dataReest.length; i++) {
-            const asignado = String(dataReest[i][0]).trim().toLowerCase();
-            const fechaFin = String(dataReest[i][3]).trim(); // col J = fechaFinGestion
-            if (asignado === userEmail && fechaFin.includes(hoyStr)) {
-              conteoReestudios++;
-            }
-          }
+      const hojaHistReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS)
+                              .getSheetByName("Historico_Gestiones");
+      if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
+        const dataReest = hojaHistReest.getRange(2, 7, hojaHistReest.getLastRow() - 1, 4).getDisplayValues(); // cols G(7)..J(10)
+        for (let i = 0; i < dataReest.length; i++) {
+          const asignado = String(dataReest[i][0]).trim().toLowerCase(); // col G
+          const fechaFin = String(dataReest[i][3]).trim();               // col J
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) conteoReestudios++;
         }
       }
     } catch (e) {
-      Logger.log("Aviso: No se pudo leer hoja de reestudios para conteo cruzado: " + e.message);
+      Logger.log("obtenerGestionesHoyCruzadas Reest: " + e.message);
     }
 
     return {
@@ -1365,49 +1539,48 @@ function obtenerDetalleGestionesHoy() {
     const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
     const listado = [];
 
-    // 1. Hoja principal (digitales, biometría, inducciones) — col A(1): solicitud, U(21): tipoProceso, AB(28): email, AC(29): fechaFin
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
-    if (hojaSol) {
-      const lastRow = hojaSol.getLastRow();
-      if (lastRow > 1) {
-        const data = hojaSol.getRange(2, 1, lastRow - 1, 29).getDisplayValues();
-        for (let i = 0; i < data.length; i++) {
-          const asignado = String(data[i][27]).trim().toLowerCase(); // col AB
-          const fechaFin = String(data[i][28]).trim();               // col AC
+    // 1. Desde Historico_Gestiones del warehouse (digitales, biometría, inducciones)
+    try {
+      const hojaHistDet = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
+                            .getSheetByName("Historico_Gestiones");
+      if (hojaHistDet && hojaHistDet.getLastRow() > 1) {
+        const dataHDet = hojaHistDet.getRange(2, 1, hojaHistDet.getLastRow() - 1, 27).getDisplayValues();
+        for (let i = 0; i < dataHDet.length; i++) {
+          const asignado = String(dataHDet[i][25]).trim().toLowerCase(); // col 26
+          const fechaFin = String(dataHDet[i][26]).trim();               // col 27
           if (asignado === userEmail && fechaFin.includes(hoyStr)) {
             const partes = fechaFin.split(' ');
+            const clH = String(dataHDet[i][20]).toUpperCase().trim();
             listado.push({
-              solicitud: String(data[i][0]).trim(),
-              tipo: String(data[i][20]).trim() || 'Digital',
+              solicitud: String(dataHDet[i][0]).trim(),
+              tipo: clH.includes('BIOMETRIA') ? 'Biometría'
+                  : (clH.includes('INDUCCI') || clH === 'IND') ? 'Inducción'
+                  : 'Digital',
               horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
               fuente: 'DIGITAL'
             });
           }
         }
       }
-    }
+    } catch(e) { Logger.log("obtenerDetalleGestionesHoy Hist: " + e.message); }
 
-    // 2. Hoja de reestudios — col B(2): solicitud, E(5): tipoProceso, G(7): email, J(10): fechaFin
+    // 2. Reestudios — Historico_Gestiones de ssReestudios (casos movidos al asignar y ya gestionados)
     try {
-      const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-      const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
-      if (hojaReest) {
-        const lastRowR = hojaReest.getLastRow();
-        if (lastRowR > 1) {
-          const data = hojaReest.getRange(2, 1, lastRowR - 1, 10).getDisplayValues();
-          for (let i = 0; i < data.length; i++) {
-            const asignado = String(data[i][6]).trim().toLowerCase(); // col G
-            const fechaFin = String(data[i][9]).trim();               // col J
-            if (asignado === userEmail && fechaFin.includes(hoyStr)) {
-              const partes = fechaFin.split(' ');
-              listado.push({
-                solicitud: String(data[i][1]).trim(),
-                tipo: String(data[i][4]).trim() || 'Reestudio',
-                horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
-                fuente: 'REESTUDIO'
-              });
-            }
+      const hojaHistReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS)
+                              .getSheetByName("Historico_Gestiones");
+      if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
+        const data = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, 10).getDisplayValues();
+        for (let i = 0; i < data.length; i++) {
+          const asignado = String(data[i][6]).trim().toLowerCase(); // col G
+          const fechaFin = String(data[i][9]).trim();               // col J
+          if (asignado === userEmail && fechaFin.includes(hoyStr)) {
+            const partes = fechaFin.split(' ');
+            listado.push({
+              solicitud: String(data[i][1]).trim(),
+              tipo: String(data[i][4]).trim() || 'Reestudio',
+              horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
+              fuente: 'REESTUDIO'
+            });
           }
         }
       }
@@ -1433,64 +1606,4 @@ function obtenerDetalleGestionesHoy() {
     Logger.log("Error en obtenerDetalleGestionesHoy: " + e.message);
     return { success: false, total: 0, porTipo: [], listado: [] };
   }
-}
-
-/**
- * Verifica si la hora y el día actuales están dentro del horario de asignación configurado.
- * Lee la config desde Script Property 'HORARIOS_ASIGNACION' (JSON).
- * Si no hay config guardada, aplica el default: Lun-Vie 08:00-18:00.
- * @returns {{ permitido: boolean, mensaje?: string }}
- */
-function verificarHorarioAsignacion() {
-  const DIAS_KEY = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-  const ahora = new Date();
-
-  // Obtener hora y fecha en zona Colombia (GMT-5) usando Utilities para evitar ambigüedad de TZ
-  const horaStr = Utilities.formatDate(ahora, TIMEZONE, 'HH:mm');
-  const yyyy    = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'yyyy'), 10);
-  const MM      = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'MM'),   10);
-  const dd      = parseInt(Utilities.formatDate(ahora, TIMEZONE, 'dd'),   10);
-  const diaIndex = new Date(yyyy, MM - 1, dd).getDay(); // 0=Dom, 1=Lun, ..., 6=Sáb
-  const diaKey   = DIAS_KEY[diaIndex];
-
-  const partes = horaStr.split(':').map(Number);
-  const minActual = partes[0] * 60 + partes[1];
-
-  const raw = PropertiesService.getScriptProperties().getProperty('HORARIOS_ASIGNACION');
-  let config = null;
-  if (raw) {
-    try {
-      const horarios = JSON.parse(raw);
-      config = horarios[diaKey] || null;
-    } catch (e) { /* JSON inválido — no bloquear */ }
-  }
-
-  // Defaults si no hay configuración: Lun-Vie 08:00-18:00, Sáb-Dom bloqueado
-  if (!config) {
-    if (diaIndex === 0 || diaIndex === 6) {
-      return { permitido: false, mensaje: 'No hay asignaciones habilitadas para el día de hoy.' };
-    }
-    if (minActual < 8 * 60 || minActual >= 18 * 60) {
-      return { permitido: false, mensaje: 'El horario de asignación es de 08:00 a 18:00.' };
-    }
-    return { permitido: true };
-  }
-
-  if (!config.activo) {
-    return { permitido: false, mensaje: 'Las asignaciones no están habilitadas para el día de hoy.' };
-  }
-
-  const inicioPartes = String(config.inicio || '08:00').split(':').map(Number);
-  const finPartes    = String(config.fin    || '18:00').split(':').map(Number);
-  const minInicio = inicioPartes[0] * 60 + inicioPartes[1];
-  const minFin    = finPartes[0]    * 60 + finPartes[1];
-
-  if (minActual < minInicio) {
-    return { permitido: false, mensaje: 'Las asignaciones empiezan a las ' + config.inicio + '. Vuelve más tarde.' };
-  }
-  if (minActual >= minFin) {
-    return { permitido: false, mensaje: 'El horario de asignación ya finalizó hoy (hasta las ' + config.fin + ').' };
-  }
-
-  return { permitido: true };
 }

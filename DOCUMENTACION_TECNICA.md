@@ -89,17 +89,18 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `Código.js` | **Núcleo del sistema.** Enrutador `doGet()`, autenticación, constantes globales, carga de datos de tabla, consulta a API SAI, función `guardarCambiosInternos()`, gestión de estados del analista, cálculo de SLA en minutos hábiles, sincronización de API para nuevas solicitudes. |
-| `ModeloAsignación.js` | **Motor de asignación inteligente (Estudio Digital).** Algoritmo `RequestLead()` que distribuye solicitudes de la API según prioridad (VIP, rotación por categorías de inmobiliaria), capacidad del analista y orden configurable globalmente. |
-| `Admin.js` | **Panel de administración.** CRUD de usuarios, dashboard de KPIs, control de prioridad global, cupos por equipo e individuales con histórico, visualización de novedades/estados del equipo, botón de pánico para desactivar todos los asesores, desasignación de solicitudes (principal y reestudios). |
+| `Código.js` | **Núcleo del sistema.** Enrutador `doGet()`, autenticación, constantes globales, carga de datos de tabla (desde `Historico_Gestiones` + fallback a `solicitud`), consulta a API SAI, `guardarCambiosInternos()`, gestión de estados del analista, sincronización de API, sistema de permisos/incapacidades (`solicitarPermiso`, `verificarPermisoVigenteHoy`), funciones de autoservicio del analista (`verificarMisCupos`, `getResumenGestionesHoy`, `obtenerDetalleGestionesHoy`). |
+| `ModeloAsignación.js` | **Motor de asignación inteligente (multi-equipo).** Algoritmo `RequestLead()` que detecta automáticamente el equipo del analista (DIGITAL/REESTUDIOS/BIOMETRIA) y distribuye solicitudes según prioridad (VIP, rotación por categorías), cupos efectivos y orden configurable globalmente. |
+| `Admin.js` | **Panel de administración.** CRUD de usuarios, dashboard de KPIs, control de prioridad global, cupos por equipo e individuales con histórico, novedades/estados del equipo, sistema de **turnos y horarios** (CRUD de turnos, asignación a analistas, horas extra, alertas), gestión de **permisos e incapacidades** (aprobación/rechazo), botón de pánico, desasignación de solicitudes. |
+| `MotorTiempos.js` | **Motor unificado de tiempos hábiles.** `calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista)` → `{ minutos_cola, minutos_gestion, minutos_general }`. Lee turnos de las hojas `Turnos`, `Analistas_Turnos` y `Horas_Extra` para calcular tiempos según el horario real de cada analista. |
 | `Biometria.js` | **Módulo de biometría.** Descarga desde API de solicitudes con códigos 500/503, asignación automática a analistas de biometría, verificación de estado en tiempo real, gestión y tipificación de casos. |
-| `ModeloReestudios.js` | **Motor de asignación equitativa (Reestudios).** Algoritmo `RequestLeadReestudios()` que distribuye solicitudes de Victoria y Correo según orden FIFO, capacidad del analista, cupos diarios por subcategoría y exclusión de tipos UAR. Asigna 1 caso por invocación con control de concurrencia. |
-| `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`), guardado de gestión (`guardarGestionReestudio()`) con auto-reasignación vía `ModeloReestudios.js`, y utilidades de sesión. |
-| `index.html` | **Vista del Asesor (Estudio Digital).** Tabla de solicitudes asignadas, modal de gestión con detalle en tiempo real desde la API, selector de estados, métricas personales, control de estado del analista. |
-| `VistaAdmin.html` | **Vista del Administrador.** Dashboard con métricas, tabla de usuarios, control segmentado de prioridades, sección de cupos (general + individual) con distribución inteligente, sección de novedades/estados del equipo en tiempo real, modales CRUD, botón de emergencia. |
+| `ModeloReestudios.js` | **Motor de asignación equitativa (Reestudios).** Algoritmo `RequestLeadReestudios()` que distribuye solicitudes de Victoria y Correo según FIFO, cupos diarios por subcategoría (`reestudio`, `nuevaUar`, `deudorUar`). Asigna 1 caso por invocación con control de concurrencia. |
+| `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`) — lee de `Historico_Gestiones` del ssReestudios; guardado de gestión (`guardarGestionReestudio()`) con búsqueda por solicitudId (caso abierto = fechaFin vacía) y auto-reasignación. |
+| `index.html` | **Vista del Analista (Estudio Digital).** Tabla de solicitudes asignadas, modal de gestión con detalle en tiempo real desde la API, selector de estados, métricas personales, control de estado del analista. Modal de gestión de reestudio (`#modalReestudioDigital`) con diseño Bootstrap (header gradiente, info cards, MotivoPicker, botón Ver Anexo). |
+| `VistaAdmin.html` | **Vista del Administrador.** Dashboard con métricas, tabla de usuarios, control de prioridades, sección de cupos (general + individual), novedades del equipo con tabs (disponibilidad + solicitudes de permisos), sección de **Turnos y Horarios** (CRUD de turnos, asignación de analistas, horas extra), modales CRUD, botón de emergencia. |
 | `VistaBiometria.html` | **Vista de Biometría.** Tabla de solicitudes pendientes de biometría, modal de tipificación con tabs (formulario + historial de deudores). |
 | `VistaReestudios.html` | **Vista de Reestudios.** Tabla unificada de casos asignados (Victoria + Correo), modal de gestión con estados, motivos y observaciones, métricas, control de estado del analista, auto-asignación al entrar. |
-| `main.js.html` | **JavaScript compartido del Asesor.** Lógica de renderizado de tabla con DataTables, auto-asignación al entrar, manejo de estados, guardado de gestiones, comunicación con backend. |
+| `main.js.html` | **JavaScript compartido del Analista.** Lógica de renderizado de tabla con DataTables, auto-asignación al entrar, manejo de estados, guardado de gestiones, comunicación con backend. Incluye: `_quitarFilaTabla()` para remoción optimista inmediata de filas tras guardar; `abrirGestionReestudioDigital()` para poblar y mostrar el modal de reestudio; `rmdActualizarEstado()` y `guardarGestionReestudioDesdeDigital()`. |
 | `appsscript.json` | **Manifiesto del proyecto.** Configuración de zona horaria, runtime V8, despliegue como Web App con ejecución como usuario desplegador y acceso por dominio. |
 | `.clasp.json` | **Configuración de clasp.** Vinculación con el proyecto de Google Apps Script para push/pull del código fuente. |
 
@@ -110,18 +111,23 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 | `Uar.js` | Módulo UAR eliminado. Las solicitudes UAR que vienen de Victoria/Correo ahora se gestionan desde el módulo de Reestudios. Las UAR de la API se gestionan por el modelo principal. |
 | `VistaUar.html` | Vista UAR eliminada. Ya no existe como especialidad independiente. |
 
+### Nuevo Archivo (v2.5)
+
+| Archivo | Responsabilidad |
+|---------|----------------|
+| `MotorTiempos.js` | **Motor unificado de cálculo de tiempos hábiles.** Reemplaza `calcularMinutosHabilesSLA()` para soportar turnos personalizados por analista. Función principal: `calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista)` que devuelve `{ minutos_cola, minutos_gestion, minutos_general }`. Lee configuración de las hojas `Turnos`, `Analistas_Turnos` y `Horas_Extra`. |
+
 ### Gestión de Datos
 
 El sistema utiliza **Google Sheets como base de datos relacional distribuida**, accediendo a múltiples Spreadsheets por su ID:
 
 | ID Variable | Hoja(s) Clave | Propósito |
 |-------------|---------------|-----------|
-| `TARGET_SOLICITUDES_SS_ID` | `solicitud`, `Usuarios`, `score`, `Historico_Gestiones`, `Historico_Estados`, `Festivos` | Base central de solicitudes, usuarios y scoring |
+| `TARGET_SOLICITUDES_SS_ID` | `solicitud`, `Usuarios`, `score`, `Historico_Gestiones`, `Historico_Estados`, `Festivos`, `historico_cupos`, `Turnos`, `Analistas_Turnos`, `Horas_Extra`, `Permisos_Incapacidades` | Base central de solicitudes, usuarios, scoring, turnos y permisos |
 | `WAREHOUSE_ID` | `Hoja 1` | Warehouse de pólizas |
 | `ID_SHEET_ORIGEN` (Biometría) | `Hoja 2` | Cola de biometrías pendientes descargadas de la API |
 | `ID_SHEET_GESTION` (Biometría) | `Hoja 1` | Registro de biometrías asignadas y gestionadas |
-| `ID_HOJA_REESTUDIOS` | `ORIGEN` | Hoja consolidada de solicitudes de reestudios y UAR (Victoria + Correo) para asignación equitativa |
-| `TARGET_SOLICITUDES_SS_ID` | `historico_cupos` | Registro histórico de todos los cambios de cupos (globales e individuales) |
+| `ID_HOJA_REESTUDIOS` | `ORIGEN`, `Historico_Gestiones` | Cola de solicitudes de reestudios/UAR pendientes de asignación (ORIGEN) y registro de casos asignados abiertos/cerrados (Historico_Gestiones) |
 
 **Mecanismos de lectura/escritura:**
 
@@ -201,27 +207,29 @@ function verificarPermisoAdmin() {
 
 ## 4. ⚙️ Flujos Clave del Sistema (Core Workflows)
 
-### 4.1 Flujo de Asignación Inteligente — Estudio Digital (`RequestLead`)
+### 4.1 Flujo de Asignación Inteligente — Multi-equipo (`RequestLead`)
 
-Este es el motor principal para solicitudes que vienen de la API SAI. También puede asignar reestudios y UAR de la hoja ORIGEN.
+Motor principal para solicitudes de la API SAI. También asigna reestudios y UAR de la hoja ORIGEN. Desde v2.5, detecta automáticamente el equipo del analista según su especialidad y no requiere "ESTUDIO DIGITAL" explícitamente.
 
 **Paso a paso:**
 
 1. **Bloqueo de concurrencia:** Se adquiere un `ScriptLock` para evitar asignaciones duplicadas.
-2. **Validación del usuario:** Se verifica que el analista esté ACTIVO, con especialidad "ESTUDIO DIGITAL" y con capacidad disponible.
-3. **Lectura de cupos del equipo Digital:** Se leen las propiedades `CUPOS_DIGITAL_*` que definen el límite diario por subcategoría.
-4. **Cálculo de capacidad real:**
+2. **Validación del usuario:** Se verifica que el analista esté ACTIVO y con capacidad disponible.
+3. **Detección de equipo:** Se determina `equipoCupos` según la especialidad (`ESTUDIO DIGITAL` → `DIGITAL`, `REESTUDIO` → `REESTUDIOS`, `BIOMETRIA` → `BIOMETRIA`).
+4. **Lectura de cupos efectivos:** `obtenerCuposEfectivos(email, equipo, dataUsuarios)` retorna cupos individuales si existen, o globales del equipo.
+5. **Cálculo de capacidad real:**
    ```javascript
    capacidadDisponible = capTotal - capPendienteReal
    ```
-5. **Conteo de asignaciones del día:** Se cuenta cuántos casos de cada tipo (nueva, biometría, inducción, reestudio, UAR) le fueron asignados hoy al analista. Se salta cualquier tipo cuyo cupo diario esté lleno.
-6. **Clasificación de solicitudes:** Se categorizan las pólizas en buckets (VIP, grande, mediana, pequeña, genérica, en desarrollo, revisar, otros) usando la hoja `score`.
-7. **Priorización configurable:** Se respeta el orden global definido por el admin:
-   - `NUEVAS_PRIMERO` → nueva > biometría > inducción > reestudio > uar
-   - `BIOMETRIA_PRIMERO` → biometría > nueva > inducción > reestudio > uar
-   - `INDUCCION_PRIMERO` → inducción > nueva > biometría > reestudio > uar
-8. **Rotación de categorías:** Se alterna entre VIP y el resto con un máximo de 2 VIP consecutivas.
-9. **Escritura en hoja:** Se registra la fecha de asignación, el email del analista y su nombre. Si el caso viene de la hoja ORIGEN (reestudios), se escribe en columnas G/H/I de esa hoja.
+6. **Conteo de asignaciones del día:** Se cuentan casos de cada tipo (nueva, biometría, inducción, reestudio, nuevaUar, deudorUar) del analista en la hoja `solicitud`, `Historico_Gestiones` (principal), hoja ORIGEN y `Historico_Gestiones` (reestudios). Se salta cualquier tipo cuyo cupo diario esté lleno.
+7. **Clasificación de solicitudes:** Se categorizan las pólizas en buckets (VIP, grande, mediana, pequeña, genérica, en desarrollo, revisar, otros) usando la hoja `score`.
+8. **Priorización configurable:** Se respeta el orden global definido por el admin:
+   - `NUEVAS_PRIMERO` → nueva > biometría > inducción > reestudio > nuevaUar > deudorUar
+   - `BIOMETRIA_PRIMERO` → biometría > nueva > inducción > reestudio > nuevaUar > deudorUar
+   - `INDUCCION_PRIMERO` → inducción > nueva > biometría > reestudio > nuevaUar > deudorUar
+   - Para analistas de Reestudios: reestudio > nuevaUar > deudorUar > nueva > biometría > inducción
+9. **Rotación de categorías:** Se alterna entre VIP y el resto con un máximo de 2 VIP consecutivas.
+10. **Escritura en hoja:** Se registra la fecha de asignación, el email del analista y su nombre. Si el caso viene de la hoja ORIGEN (reestudios), se escribe en columnas G/H/I de esa hoja.
 
 ### 4.2 Flujo de Asignación Equitativa — Reestudios (`RequestLeadReestudios` en `ModeloReestudios.js`)
 
@@ -235,10 +243,10 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
    - ¿Estado = "ACTIVO"? ✓
    - ¿Capacidad > 0? ✓
 3. **Lectura de cupos del equipo Reestudios:** Se leen las propiedades `CUPOS_REESTUDIOS_*` que definen el límite diario por subcategoría (reestudio, UAR, nuevas, inducciones, biometría).
-4. **Conteo de asignaciones del día:** Se cuenta cuántos casos de cada tipo le fueron asignados hoy al analista.
-5. **Cálculo de carga actual:** Cuenta filas donde columna G = email del analista Y columna J vacía (sin gestionar).
+4. **Conteo de asignaciones del día:** Se cuenta cuántos casos de cada tipo le fueron asignados hoy al analista (buscando en ORIGEN por fechaAsignacion del día).
+5. **Cálculo de carga actual:** Cuenta filas en ORIGEN donde columna G = email del analista Y columna J vacía (sin gestionar).
 6. **Cupo disponible:** `capacidad - cargaActual`. Si <= 0 → "Capacidad llena".
-7. **Búsqueda de caso disponible:** Recorre la hoja buscando la primera fila que cumpla:
+7. **Búsqueda de caso disponible:** Recorre la hoja ORIGEN buscando la primera fila que cumpla:
    - Columna G vacía (sin asignar)
    - Columna B no vacía (tiene nro solicitud)
    - NO es "NUEVA UAR" ni "DEUDOR UAR" (excluidos por tipo/clase)
@@ -247,13 +255,16 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
    - Col G: email del analista
    - Col H: nombre del analista
    - Col I: fecha/hora actual
-9. **Retorna resultado.** Si no hay casos disponibles o todos los cupos están llenos → "No hay solicitudes pendientes o tu cupo diario está lleno."
+9. **⚠️ Movimiento automático:** Inmediatamente después de escribir la asignación, la fila completa (18 columnas) se **copia a la hoja `Historico_Gestiones`** del mismo spreadsheet y se **elimina de ORIGEN**. El caso asignado ya NO existe en ORIGEN.
+10. **Retorna resultado.** Si no hay casos disponibles o todos los cupos están llenos → "No hay solicitudes pendientes o tu cupo diario está lleno."
 
 **Cuándo se ejecuta:**
 - Al entrar el analista a la vista (si no tiene pendientes y está ACTIVO)
 - Al guardar una gestión (se intenta asignar un nuevo caso automáticamente)
 
-**Estructura de la hoja "ORIGEN":**
+**Estructura de la hoja "ORIGEN" y `Historico_Gestiones` de ssReestudios:**
+
+Ambas hojas comparten el mismo esquema de columnas (la fila se mueve completa al asignar):
 
 | Col | Campo | Quién lo escribe |
 |-----|-------|-----------------|
@@ -266,27 +277,45 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
 | G(7) | analistaAsignado (email) | Motor de asignación |
 | H(8) | nombreAnalista | Motor de asignación |
 | I(9) | fechaAsignacion | Motor de asignación |
-| J(10) | fechaFinGestion | Vista (al guardar) |
-| K(11) | estadoGestion | Vista (al guardar) |
-| L(12) | motivoAplazamiento | Vista (al guardar) |
-| M(13) | motivoNegacion | Vista (al guardar) |
-| N(14) | observaciones | Vista (al guardar) |
+| J(10) | fechaFinGestion | Vista (al guardar gestión) |
+| K(11) | estadoGestion | Vista (al guardar gestión) |
+| L(12) | motivoAplazamiento | Vista (al guardar gestión) |
+| M(13) | motivoNegacion | Vista (al guardar gestión) |
+| N(14) | observaciones | Vista (al guardar gestión) |
+| O(15) | tiempoTotalResolucion (min) | Cálculo al guardar |
+| P(16) | tiempoGestion (min) | Cálculo al guardar |
+| Q-R (17-18) | Campos adicionales | Script de ingesta |
+
+**ORIGEN** = cola de casos pendientes de asignación (col G vacía). **Historico_Gestiones** = todos los casos ya asignados (col G llena), abiertos (col J vacía) o cerrados (col J con fecha).
 
 ### 4.3 Flujo de Gestión de una Solicitud — Estudio Digital (`guardarCambiosInternos`)
 
-1. **Frontend (index.html):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos.
-2. **Validación:** Se verifica que los motivos correspondan al estado seleccionado.
-3. **Escritura en hoja central:** Se actualizan las columnas de estado (17), tracking (23), biometría (24), observaciones (25), fecha fin (29), SLA (30), motivos (32-33).
-4. **Cálculo de SLA en horas hábiles:** Función `calcularMinutosHabilesSLA()` que excluye fines de semana y festivos, solo cuenta entre 8:00 y 18:00.
-5. **Registro histórico:** Se copia la fila completa a la hoja `Historico_Gestiones`.
-6. **Auto-asignación:** Si el estado es de cierre o aplazamiento, se dispara automáticamente `RequestLead()`.
+1. **Frontend (index.html):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos. Puede gestionar tanto solicitudes digitales (de la hoja `solicitud`) como reestudios (de ssReestudios).
+2. **Discriminador de ruta (`tipoSolicitudActual`):** El frontend envía `tipoSolicitudActual: 'reestudio'` cuando el caso proviene del modal de gestión de reestudio (`#modalReestudioDigital`). Esto permite al backend saber a qué hoja escribir.
+3. **Búsqueda de fila destino (RUTA A — solicitudes digitales y del warehouse):**
+   - Solo se ejecuta si `tipoSolicitudActual !== 'reestudio'`.
+   - Busca en `Historico_Gestiones` del spreadsheet principal por col A (solicitudId) Y col AA (fechaFinGestion) vacía.
+   - Fallback: busca en la hoja `solicitud` activa.
+4. **Búsqueda de fila destino (RUTA B — reestudios):**
+   - Se ejecuta si RUTA A no encontró nada O si `tipoSolicitudActual === 'reestudio'`.
+   - Busca en `Historico_Gestiones` de ssReestudios por col B (solicitudId) Y col J (fechaFinGestion) vacía.
+   - Igual que en `guardarGestionReestudio`, requiere que el caso esté abierto (fechaFin vacía) para evitar sobreescribir casos con el mismo solicitudId ya cerrados.
+5. **Escritura en hoja central:** Se actualizan las columnas de estado (17), tracking (23), biometría (24), observaciones (25), fecha fin (29), SLA (30), motivos (32-33).
+6. **Cálculo de SLA en horas hábiles:** Función `calcularMinutosHabilesSLA()` que excluye fines de semana y festivos, solo cuenta entre 8:00 y 18:00.
+7. **Registro histórico:** Se copia la fila completa a la hoja `Historico_Gestiones`.
+8. **Auto-asignación:** Si el estado es de cierre o aplazamiento, se dispara automáticamente `RequestLead()`.
 
 ### 4.4 Flujo de Gestión de una Solicitud — Reestudios (`guardarGestionReestudio` en `Reestudios.js`)
 
-1. **Frontend (VistaReestudios.html):** El analista selecciona estado, motivo y observaciones.
-2. **Validación:** Se verifica que la fila no haya sido gestionada previamente.
-3. **Escritura en hoja "ORIGEN":** Se escriben columnas J-N (fecha fin, estado, motivos, observaciones).
-4. **Auto-asignación:** Se llama a `RequestLeadReestudios()` (de `ModeloReestudios.js`) para asignar un nuevo caso.
+1. **Frontend (VistaReestudios.html):** El analista selecciona estado, motivo y observaciones. El `datos` enviado incluye `solicitud` (número de caso) además de `filaReal`.
+2. **Búsqueda de la fila destino (búsqueda por ID, no por número de fila):**
+   - **Primero busca en `Historico_Gestiones`** de ssReestudios: recorre cols B–J buscando la fila donde col B = `solicitudId` Y col J (fechaFinGestion) está vacía (caso abierto). Esto cubre todos los casos asignados normalmente (fueron movidos al asignar).
+   - **Fallback:** Si no encuentra en Historico, usa `filaReal` como número de fila en ORIGEN (casos legacy asignados antes del movimiento automático).
+3. **Validación:** Se verifica que la fila encontrada no tenga `fechaFinGestion` ya escrita (previene doble gestión).
+4. **Escritura en la hoja correspondiente:** Cols J-N (fecha fin, estado, motivos, observaciones) + cols O-P (tiempos calculados).
+5. **Auto-asignación:** Se llama a `RequestLeadReestudios()` (de `ModeloReestudios.js`) para asignar un nuevo caso.
+
+**¿Por qué búsqueda por ID y no por número de fila?** El mismo número de solicitud puede entrar varias veces al sistema de reestudios (el cliente puede solicitar múltiples revisiones). `Historico_Gestiones` puede tener múltiples filas con el mismo solicitudId: la que tiene `fechaFinGestion` vacía es el caso activo actual; las demás son revisiones anteriores ya cerradas. La búsqueda solo hace match con `fechaFin === ''` para evitar sobreescribir gestiones antiguas.
 
 ### 4.5 Flujo de Sincronización de Nuevas Solicitudes (`actualizarSolicitudesNuevasAPI`)
 
@@ -306,36 +335,35 @@ Motor de asignación para solicitudes de Victoria y Correo. Opera sobre la hoja 
 
 ### 4.7 Sistema de Medición de Tiempos
 
-El sistema mide dos tipos de tiempo que reflejan diferentes perspectivas de rendimiento:
+El sistema mide **tres** tipos de tiempo que reflejan diferentes perspectivas de rendimiento (desde v2.5 vía `MotorTiempos.js`):
 
-| Métrica | Desde | Hasta | Mide | Unidad | Columna (Solicitudes) | Columna (Reestudios) |
-|---------|-------|-------|------|--------|----------------------|---------------------|
-| **Tiempo de Gestión** | Asignación al analista | Resultado/cierre | Eficiencia individual del analista | Minutos brutos | Col AI (35) | Col P (16) |
-| **Tiempo General** | Radicación de la solicitud | Resultado/cierre | Nivel de servicio al cliente (incluye cola de espera) | Horas hábiles* | Col AK (37) | Col O (15)** |
+| Métrica | Desde | Hasta | Mide | Unidad |
+|---------|-------|-------|------|--------|
+| **Tiempo Cola** | Radicación | Asignación al analista | Espera antes de atender | Minutos hábiles (horario equipo) |
+| **Tiempo Gestión** | Asignación al analista | Resultado/cierre | Eficiencia individual del analista | Minutos hábiles (horario turno analista) |
+| **Tiempo General** | Radicación | Resultado/cierre | Nivel de servicio al cliente | cola + gestión |
 
-\* En la hoja de solicitudes, el Tiempo General se calcula con `calcularMinutosHabilesSLA()` que excluye noches (fuera de 8am-6pm), fines de semana y festivos.
+**Motor unificado (`MotorTiempos.js` — `calcularTiemposCaso`):**
 
-\** En la hoja de reestudios, el Tiempo General se almacena en minutos brutos y se convierte a horas en los reportes.
-
-**Cálculo del Tiempo General (solicitudes — `guardarCambiosInternos`):**
 ```javascript
-const fechaRadicacion = sheetOrigen.getRange(targetRow, 18).getValue();
-let horasHabilesGeneral = 0;
-if (fechaRadicacion instanceof Date && !isNaN(fechaRadicacion.getTime())) {
-  const minutosHabilesGeneral = calcularMinutosHabilesSLA(fechaRadicacion, ahora, ssOrigen);
-  horasHabilesGeneral = Number((minutosHabilesGeneral / 60).toFixed(2));
-}
-sheetOrigen.getRange(targetRow, 37).setValue(horasHabilesGeneral);
+const tiempos = calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista);
+// → { minutos_cola, minutos_gestion, minutos_general }
 ```
 
-**Cálculo del Tiempo General (reestudios — `guardarGestionReestudio`):**
-```javascript
-const fechaRadicacionRaw = hoja.getRange(targetRow, 1).getValue();
-if (fechaRadicacionRaw instanceof Date && !isNaN(fechaRadicacionRaw.getTime())) {
-  tiempoTotalResolucion = Math.round((ahora.getTime() - fechaRadicacionRaw.getTime()) / 60000);
-}
-hoja.getRange(targetRow, 15).setValue(tiempoTotalResolucion); // col O
-```
+- **Horario del equipo** (`_horarioEquipo`): Unión de todos los turnos activos en la hoja `Turnos`. Excluye festivos.
+- **Horario del analista** (`_horarioAnalista`): Turno asignado al analista en `Analistas_Turnos` para la fecha del cálculo. Se añaden las `Horas_Extra` del día.
+- Si no hay `tAsignacion`: cola = radicación → resultado con horario equipo; gestión = 0.
+- Si no hay `tRadicacion`: cola = 0; gestión = asignación → resultado con horario analista.
+
+**Columnas en hoja `solicitud` (por `guardarCambiosInternos`):**
+
+| Col | Índice | Valor guardado |
+|-----|--------|----------------|
+| AI | 34 | `minutos_gestion` |
+| AJ | 35 | Canal |
+| AK | 36 | `minutos_general` |
+
+> `calcularMinutosHabilesSLA()` (función heredada en `Código.js`) sigue disponible para compatibilidad pero `MotorTiempos.js` es el motor activo.
 
 **Dónde se exponen estos tiempos:**
 
@@ -398,7 +426,7 @@ El sistema de cupos define **límites diarios de asignación por equipo y subcat
 
 **Propiedades almacenadas (ScriptProperties) — Cupos Globales:**
 
-Cada equipo tiene 6 propiedades:
+Cada equipo tiene 7 propiedades (UAR se divide en dos subtipos desde v2.5):
 
 ```
 CUPOS_{EQUIPO}_TOTAL        → Tope máximo del equipo (la suma de subcategorías debe igualar este valor)
@@ -406,7 +434,8 @@ CUPOS_{EQUIPO}_NUEVAS       → Cupo para solicitudes nuevas digitales
 CUPOS_{EQUIPO}_REESTUDIOS   → Cupo para reestudios
 CUPOS_{EQUIPO}_INDUCCIONES  → Cupo para inducciones
 CUPOS_{EQUIPO}_BIOMETRIA    → Cupo para biometrías
-CUPOS_{EQUIPO}_UAR          → Cupo para solicitudes UAR
+CUPOS_{EQUIPO}_NUEVA_UAR    → Cupo para solicitudes Nueva UAR (CORREO + tipoProceso = "NUEVA")
+CUPOS_{EQUIPO}_DEUDOR_UAR   → Cupo para solicitudes Deudor UAR (CORREO + tipoProceso = "ADICIONAL")
 ```
 
 **Cupos Individuales (por analista):**
@@ -414,7 +443,7 @@ CUPOS_{EQUIPO}_UAR          → Cupo para solicitudes UAR
 Se almacenan como JSON en la columna Y (index 24) de la hoja `Usuarios`:
 
 ```json
-{"total":12,"nuevas":8,"reestudios":2,"inducciones":1,"biometria":0,"uar":1}
+{"total":12,"nuevas":8,"reestudios":2,"inducciones":1,"biometria":0,"nuevaUar":1,"deudorUar":1}
 ```
 
 Si un analista tiene cupos individuales, estos prevalecen sobre los globales del equipo. Si no tiene (celda vacía), usa los globales.
@@ -435,7 +464,8 @@ Todos los motores de asignación llaman esta función que:
 | REESTUDIOS | 10 | 0 | 10 |
 | INDUCCIONES | 8 | 0 | 2 |
 | BIOMETRIA | 0 | 8 | 0 |
-| UAR | 2 | 2 | 3 |
+| NUEVA_UAR | 2 | 0 | 3 |
+| DEUDOR_UAR | 2 | 0 | 2 |
 
 **UI — Sección Cupos (VistaAdmin.html):**
 
@@ -507,13 +537,11 @@ Sección del panel de administración que muestra en tiempo real los estados y n
 - Cada registro incluye: nombre, correo, especialidad, estado actual, y array de historial
 
 **UI (VistaAdmin.html):**
-- Tabla DataTable con columnas: Analista, Equipo, Estado Actual, Historial del Día
-- El historial se muestra como timeline de badges con:
-  - Hora de inicio de cada estado
-  - Nombre del estado
-  - Duración en minutos (si ya finalizó)
-  - Indicador verde pulsante si el estado está "EN CURSO"
-- Botón de refresh para recargar datos
+
+Sección "Novedades" con dos tabs:
+
+1. **Disponibilidad del Equipo:** Tabla DataTable con Analista, Equipo, Estado Actual, Historial del Día. El historial se muestra como timeline de badges con hora de inicio, nombre del estado, duración en minutos y un indicador verde pulsante si está "EN CURSO". Incluye filtros de fecha, turno y botón de refresh.
+2. **Solicitudes de Permisos:** Tabla de solicitudes con estado PENDIENTE/APROBADO/RECHAZADO. Permite aprobar/rechazar directamente. El sidebar muestra un badge naranja con el número de permisos pendientes.
 
 **Estructura del historial JSON (col L de Usuarios):**
 
@@ -531,6 +559,71 @@ Sección del panel de administración que muestra en tiempo real los estados y n
 - Ausencias: AUSENCIA JUSTIFICADA, CALAMIDAD, CITA MÉDICA, INCAPACIDAD, VACACIONES, etc.
 - Reuniones: CAPACITACION, CURSOS XPLORA, REUNIÓN, EVENTO SEGUROS BOLÍVAR, etc.
 - Operativas: ACTIVIDADES DE OFICINA, ANALISTA DESPLAZAMIENTO, etc.
+
+### 4.12 Sistema de Turnos y Horarios
+
+Permite al administrador definir horarios de trabajo (turnos) y asignarlos a analistas. El `MotorTiempos.js` los usa para calcular tiempos hábiles precisos por analista.
+
+**Acceso:** Sidebar Admin → "Turnos"
+
+**Hojas de datos (en `TARGET_SOLICITUDES_SS_ID`):**
+
+| Hoja | Columnas | Propósito |
+|------|----------|-----------|
+| `Turnos` | A=ID_Turno, B=Nombre, C=Activo(bool), D-J=Lun-Dom(bool), K=HoraInicio, L=HoraFin | Catálogo de turnos |
+| `Analistas_Turnos` | A=Email, B=ID_Turno, C=Fecha_Desde, D=Fecha_Hasta | Asignación de turnos a analistas con vigencia |
+| `Horas_Extra` | A=Email, B=Fecha, C=HoraInicio, D=HoraFin, E=Descripcion | Horas fuera del turno regular |
+
+**Funciones backend (Admin.js):**
+
+| Función | Descripción |
+|---------|-------------|
+| `admin_getTurnosData()` | Retorna turnos activos y asignaciones de analistas |
+| `admin_guardarTurno(turno)` | Crea o actualiza un turno |
+| `admin_desactivarTurno(idTurno)` | Marca un turno como inactivo |
+| `admin_asignarTurnoAnalista(email, idTurno, fechaDesde)` | Asigna turno a un analista desde una fecha |
+| `admin_asignarTodosSinTurno(idTurno, fechaDesde)` | Asigna un turno a todos los analistas que no tienen uno |
+| `admin_getHorasExtra(email, anio, mes)` | Retorna horas extra del analista para un mes |
+| `admin_guardarHorasExtra(extra)` | Registra horas extra |
+| `admin_eliminarHorasExtra(fila)` | Elimina una entrada de horas extra |
+| `admin_getAlertasTurnos()` | Lista analistas activos sin turno asignado |
+
+### 4.13 Sistema de Permisos e Incapacidades
+
+Los analistas pueden solicitar permisos o registrar incapacidades directamente desde su vista. Los administradores los aprueban o rechazan desde el panel.
+
+**Hoja:** `Permisos_Incapacidades` (se crea automáticamente en `TARGET_SOLICITUDES_SS_ID` si no existe)
+
+| Col | Campo |
+|-----|-------|
+| A | ID (timestamp) |
+| B | Email analista |
+| C | Nombre analista |
+| D | Tipo novedad |
+| E | Fecha inicio |
+| F | Fecha fin |
+| G | Observación analista |
+| H | Estado (PENDIENTE / APROBADO / RECHAZADO) |
+| I | Observación admin |
+| J | Email admin que resolvió |
+| K | Fecha de resolución |
+
+**Funciones para analistas (Código.js):**
+
+| Función | Descripción |
+|---------|-------------|
+| `solicitarPermiso(tipoNovedad, fechaInicio, fechaFin, observacion)` | Crea solicitud con estado PENDIENTE. Notifica al admin vía Google Chat. |
+| `verificarPermisoVigenteHoy()` | Retorna `true` si el analista tiene permiso APROBADO que cubre la fecha actual. |
+
+**Funciones para admin (Admin.js):**
+
+| Función | Descripción |
+|---------|-------------|
+| `admin_contarPermisosPendientes()` | Retorna conteo de permisos PENDIENTE (para badge en sidebar). |
+| `admin_obtenerPermisosPendientes(filtroEstado)` | Lista permisos filtrados por estado. |
+| `admin_resolverPermiso(id, decision, observacionAdmin)` | Aprueba o rechaza un permiso. |
+
+**UI en VistaAdmin:** Sección "Novedades" tiene dos tabs: "Disponibilidad del Equipo" (historial de estados) y "Solicitudes de Permisos" (tabla de permisos con badge de pendientes en el sidebar).
 
 ---
 
@@ -586,7 +679,8 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | `CUPOS_{EQUIPO}_REESTUDIOS` | Cupo diario de reestudios para el equipo | `10` |
 | `CUPOS_{EQUIPO}_INDUCCIONES` | Cupo diario de inducciones para el equipo | `8` |
 | `CUPOS_{EQUIPO}_BIOMETRIA` | Cupo diario de biometría para el equipo | `0` |
-| `CUPOS_{EQUIPO}_UAR` | Cupo diario de UAR para el equipo | `2` |
+| `CUPOS_{EQUIPO}_NUEVA_UAR` | Cupo diario de Nueva UAR (CORREO + tipoProceso NUEVA) | `2` |
+| `CUPOS_{EQUIPO}_DEUDOR_UAR` | Cupo diario de Deudor UAR (CORREO + tipoProceso ADICIONAL) | `2` |
 
 ### IDs de Hojas de Cálculo
 
@@ -656,7 +750,9 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | AJ | 35 | Canal |
 | AK | 36 | Tiempo general — radicación (horas hábiles, radicación → cierre) |
 
-### Estructura de la Hoja "ORIGEN" (Reestudios) — 16 Columnas
+### Estructura de la Hoja "ORIGEN" y `Historico_Gestiones` (Reestudios, ssReestudios) — 18 Columnas
+
+> **Nota:** Estas dos hojas comparten el mismo esquema. Al asignar un caso, `ModeloReestudios.js` mueve la fila completa de ORIGEN a `Historico_Gestiones`. ORIGEN solo contiene casos sin asignar; `Historico_Gestiones` contiene todos los casos asignados (abiertos y cerrados).
 
 | Col | Índice | Campo | Origen |
 |-----|--------|-------|--------|
@@ -724,19 +820,89 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 
 ---
 
-## 8. 📝 Pendientes y Consideraciones Futuras
+## 8. 🎨 Mejoras UX/UI Implementadas
+
+### 8.1 Remoción Optimista de Filas (`_quitarFilaTabla`)
+
+Cada vista elimina inmediatamente la fila de "Mis Solicitudes Asignadas" al guardar una gestión, sin esperar que `cargarDatos()` recargue la tabla. Esto evita que el analista vuelva a abrir el mismo caso accidentalmente mientras espera la respuesta del servidor.
+
+**Implementación por vista (difieren en el tipo de dato de la tabla):**
+
+| Vista | Archivo | Cómo identifica la fila |
+|-------|---------|------------------------|
+| Estudio Digital | `main.js.html` | DataTable con arrays — compara `d[0]` (índice 0 = solicitudId) |
+| Reestudios | `VistaReestudios.html` | DataTable con objetos — compara `d.solicitud` |
+| Biometría | `VistaBiometria.html` | DataTable inicializado desde HTML — busca por `$(node).find('td:first').text()` |
+
+**Patrón de uso:**
+```javascript
+function _quitarFilaTabla(solicitudId) {
+  if (!$.fn.DataTable.isDataTable('#miTabla')) return;
+  $('#miTabla').DataTable()
+    .rows(function(i, d) { return String(d[0]) === String(solicitudId); })
+    .remove().draw(false);
+}
+// Se llama en el successHandler del google.script.run, antes de cargarDatos()
+```
+
+### 8.2 Modal de Gestión de Reestudio (Vista Digital)
+
+El modal `#modalReestudioDigital` en `index.html` reemplaza el antiguo popup de SweetAlert2. Sigue el mismo diseño que los demás modales del sistema.
+
+**Elementos del modal:**
+- Header con gradiente (`modal-header-inner`), ícono `bi-layers`, badge de solicitud (`#rmd_header_sol`) y badge de tipo coloreado (`#rmd_tipo_badge`)
+- Botón "Ver Anexo" (`#btnDriveRmd`) — aparece solo si hay `linkDrive` disponible
+- 4 tarjetas de información: Solicitud, Origen, Fecha Radicación, Fecha Asignación
+- Formulario: campo Póliza, selector de Estado (APROBADA/APLAZADA/NEGADA), contenedores condicionales de Motivo (MotivoPicker), campo Observaciones
+- Footer: botón Cancelar + botón Guardar
+
+**Datos mostrados (disponibles desde la hoja de reestudios):**
+- `fila[1]` = solicitud, `fila[2]` = linkDrive, `fila[3]` = origen, `fila[17]` = fechaRadicacion, `fila[26]` = fechaAsignacion, `fila[20]` = tipoDeProceso (para colorear badge)
+
+**Colores del badge por tipo:**
+- `NUEVA UAR` → rosa (`#be185d` / `#fce7f3`)
+- `DEUDOR UAR` → rojo (`#b91c1c` / `#fee2e2`)
+- Otros → púrpura (`#7c3aed` / `#ede9fe`)
+
+**Envío al backend:** `guardarCambiosInternos(datos)` con `tipoSolicitudActual: 'reestudio'` para que RUTA A se salte y RUTA B maneje el guardado en ssReestudios.
+
+### 8.3 Ordenamiento Alfabético de Motivos
+
+Todos los `<select>` de Motivo Aplazamiento y Motivo Negación están ordenados alfabéticamente A→Z en las 3 vistas:
+
+| Vista | Selects afectados |
+|-------|-----------------|
+| `index.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#rmd_motivo_aplazamiento`, `#rmd_motivo_negacion` |
+| `VistaReestudios.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#dig_motivo_aplazamiento`, `#dig_motivo_negacion` |
+
+### 8.4 Validación de Fecha Futura
+
+En `VistaReestudios.html`, la función `guardarGestionDigitalDesdeVista()` valida que el campo "Fecha y Hora de Radicación SAI" (`#dig_fecha_radicacion_sai`) no sea una fecha futura al momento de guardar. Si lo es, muestra un Swal warning y detiene el guardado.
+
+---
+
+## 9. 📝 Pendientes y Consideraciones Futuras
 
 | Item | Estado | Descripción |
 |------|--------|-------------|
-| Exclusión exacta de tipos | Pendiente | Definir los valores exactos de `tipoDeProceso` / `claseDeSolicitud` que identifican "Nueva UAR" y "Deudor UAR" para excluirlos del modelo de reestudios |
-| Validación de especialidad | Comentada (testing) | Reactivar la validación `especialidad.includes("REESTUDIOS")` en `RequestLeadReestudios()` (`ModeloReestudios.js`) para producción |
-| Notificaciones Google Chat | Pendiente | Evaluar si se necesita notificación al chat al asignar reestudios |
-| Reasignación desde Admin | ✅ Completado | El admin puede desasignar casos de reestudios desde el panel de monitoreo (botón "Quitar" con `desasignarSolicitudReestudio()`) |
 | Carpetas Drive unificadas | En progreso | Sistema de carpetas por solicitud (`SOL-{nro}`) en unidad compartida para centralizar documentos |
-| Sistema de cupos por equipo | ✅ Completado | Cupos diarios configurables por equipo (Digital, Biometría, Reestudios) con distribución por subcategoría, cupos individuales por analista, histórico de cambios, y validación estricta (suma = total). |
+| Notificaciones Google Chat (reestudios) | Pendiente | Evaluar si se necesita notificación al chat al asignar reestudios |
+| Reasignación desde Admin | ✅ Completado | El admin puede desasignar casos de reestudios desde el panel de monitoreo (botón "Quitar" con `desasignarSolicitudReestudio()`) |
+| Sistema de cupos por equipo | ✅ Completado | Cupos diarios configurables por equipo (Digital, Biometría, Reestudios) con distribución por subcategoría, cupos individuales por analista, histórico de cambios, y validación estricta (suma = total). UAR dividido en `nuevaUar` y `deudorUar`. |
+| Modal reestudio vista digital | ✅ Completado | Modal Bootstrap reemplaza SweetAlert2 en index.html. |
+| Visibilidad de casos asignados en Reestudios | ✅ Completado | `getReestudiosData()` lee de `Historico_Gestiones` de ssReestudios. |
+| Guardado correcto de gestión de reestudio | ✅ Completado | `guardarCambiosInternos()` usa discriminador `tipoSolicitudActual`; `guardarGestionReestudio()` busca por solicitudId + caso abierto. |
+| Remoción inmediata de filas tras gestión | ✅ Completado | `_quitarFilaTabla()` en las 3 vistas elimina la fila del DataTable al instante. |
+| Ordenamiento alfabético de motivos | ✅ Completado | Todos los selects de Motivo Aplazamiento/Negación están ordenados A→Z. |
+| Validación fecha futura en VistaReestudios | ✅ Completado | `guardarGestionDigitalDesdeVista()` bloquea el guardado si la fecha SAI es futura. |
+| Motor de tiempos por turno | ✅ Completado | `MotorTiempos.js` con `calcularTiemposCaso()` reemplaza `calcularMinutosHabilesSLA()`. Calcula cola, gestión y general según horario real del analista (turnos + horas extra). |
+| Sistema de Turnos y Horarios | ✅ Completado | Admin puede crear turnos, asignarlos a analistas con vigencia, registrar horas extra y ver alertas de analistas sin turno. Nueva sección "Turnos" en VistaAdmin. |
+| Sistema de Permisos e Incapacidades | ✅ Completado | Analistas solicitan permisos desde su vista; admin los aprueba/rechaza en Novedades → tab Solicitudes de Permisos. Badge naranja en sidebar indica pendientes. |
+| RequestLead multi-equipo | ✅ Completado | `RequestLead()` detecta automáticamente el equipo del analista (DIGITAL/REESTUDIOS/BIOMETRIA) sin requerir especialidad "ESTUDIO DIGITAL" explícita. |
+| Historico_Gestiones para solicitudes digitales | ✅ Completado | `getTableData()` ahora lee desde `Historico_Gestiones` de la hoja principal (mismo patrón que reestudios). Fallback a hoja `solicitud` para legados. |
 
 ---
 
 > 📅 **Última actualización:** Junio 2026  
-> 🔄 **Versión:** 2.3  
+> 🔄 **Versión:** 2.5  
 > 📝 **Mantenedor:** Equipo de Desarrollo - El Libertador

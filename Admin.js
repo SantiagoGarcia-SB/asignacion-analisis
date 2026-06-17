@@ -724,16 +724,46 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
   const desde = (fechaDesde && fechaDesde.trim() !== '') ? fechaDesde.trim() : hoyStr;
   const hasta = (fechaHasta && fechaHasta.trim() !== '') ? fechaHasta.trim() : desde;
 
+  // Mapa turno nombre por idTurno
+  const mapaTurnoNombre = {};
+  const hojaTurnos = ss.getSheetByName('Turnos');
+  if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+    const dt = hojaTurnos.getDataRange().getValues();
+    for (let i = 1; i < dt.length; i++) {
+      const id = String(dt[i][0]).trim();
+      if (id) mapaTurnoNombre[id] = String(dt[i][1]).trim();
+    }
+  }
+
+  // Mapa email → idTurno vigente
+  const mapaEmailTurno = {};
+  const hojaAT = ss.getSheetByName('Analistas_Turnos');
+  if (hojaAT && hojaAT.getLastRow() > 1) {
+    const dat = hojaAT.getDataRange().getValues();
+    for (let i = 1; i < dat.length; i++) {
+      const email = String(dat[i][0]).toLowerCase().trim();
+      const idT = String(dat[i][1]).trim();
+      const desdeFecha = dat[i][2] instanceof Date ? dat[i][2] : null;
+      const hastaFecha = dat[i][3] instanceof Date ? dat[i][3] : null;
+      if (!email || !idT || !desdeFecha) continue;
+      if (hoy >= desdeFecha && (!hastaFecha || hoy <= hastaFecha)) {
+        mapaEmailTurno[email] = mapaTurnoNombre[idT] || idT;
+      }
+    }
+  }
+
   // Mapa de analistas
   const hojaUsuarios = ss.getSheetByName("Usuarios");
   const datosUsuarios = hojaUsuarios.getDataRange().getValues();
   const mapaAnalistas = {};
   for (let i = 1; i < datosUsuarios.length; i++) {
     const correo = String(datosUsuarios[i][2]).trim().toLowerCase();
+    if (!correo) continue;
     mapaAnalistas[correo] = {
       nombre: String(datosUsuarios[i][1]).trim(),
       especialidad: String(datosUsuarios[i][4]).trim(),
-      estadoActual: String(datosUsuarios[i][5]).trim()
+      estadoActual: String(datosUsuarios[i][5]).trim(),
+      turno: mapaEmailTurno[correo] || ''
     };
   }
 
@@ -835,7 +865,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
   // Construir resultado
   const resultados = [];
   for (const correo in agrupado) {
-    const info = mapaAnalistas[correo] || { nombre: correo, especialidad: '', estadoActual: '' };
+    const info = mapaAnalistas[correo] || { nombre: correo, especialidad: '', estadoActual: '', turno: '' };
     const d = agrupado[correo];
     const horas = horasSolicitudes[correo] || { primeraAsignacion: '', ultimoCierre: '' };
 
@@ -849,6 +879,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
       nombre: info.nombre,
       correo: correo,
       especialidad: info.especialidad,
+      turno: info.turno || '',
       estadoActual: info.estadoActual,
       tiempoEnEstadoActual: tiempoEnEstadoActual,
       estados: d.estados,
@@ -864,6 +895,7 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
         nombre: mapaAnalistas[correo].nombre,
         correo: correo,
         especialidad: mapaAnalistas[correo].especialidad,
+        turno: mapaAnalistas[correo].turno || '',
         estadoActual: mapaAnalistas[correo].estadoActual,
         tiempoEnEstadoActual: 0,
         estados: {},
@@ -873,7 +905,31 @@ function admin_obtenerNovedades(fechaDesde, fechaHasta) {
     }
   }
 
-  return { desde: desde, hasta: hasta, datos: resultados };
+  // Permisos aprobados que cruzan el rango de fechas
+  const permisosAprobados = [];
+  try {
+    const hojaPI = ss.getSheetByName('Permisos_Incapacidades');
+    if (hojaPI && hojaPI.getLastRow() > 1) {
+      const dataPI = hojaPI.getDataRange().getValues();
+      for (let i = 1; i < dataPI.length; i++) {
+        if (String(dataPI[i][8]).toUpperCase() !== 'APROBADO') continue;
+        const fi = _fmtFechaPI_(dataPI[i][5]);
+        const ff = _fmtFechaPI_(dataPI[i][6]);
+        if (fi > hasta || ff < desde) continue;
+        permisosAprobados.push({
+          id: String(dataPI[i][0]).trim(),
+          correo: String(dataPI[i][2]).trim(),
+          nombre: String(dataPI[i][3]).trim(),
+          tipo: String(dataPI[i][4]).trim(),
+          fechaInicio: fi,
+          fechaFin: ff,
+          observacion: String(dataPI[i][7]).trim()
+        });
+      }
+    }
+  } catch(ePI) { Logger.log('Error permisos: ' + ePI.message); }
+
+  return { desde: desde, hasta: hasta, datos: resultados, permisos: permisosAprobados };
 }
 
 function admin_desactivarTodosAsesores() {
@@ -890,42 +946,4 @@ function admin_desactivarTodosAsesores() {
   } catch (e) {
     return { success: false, message: e.message };
   }
-}
-
-/**
- * Obtiene la configuración de horarios de asignación.
- * @returns {Object} Mapa de día -> { activo, inicio, fin }
- */
-function admin_getHorariosAsignacion() {
-  verificarPermisoAdmin();
-  const DEFAULT = {
-    lunes:     { activo: true,  inicio: '08:00', fin: '18:00' },
-    martes:    { activo: true,  inicio: '08:00', fin: '18:00' },
-    miercoles: { activo: true,  inicio: '08:00', fin: '18:00' },
-    jueves:    { activo: true,  inicio: '08:00', fin: '18:00' },
-    viernes:   { activo: true,  inicio: '08:00', fin: '18:00' },
-    sabado:    { activo: false, inicio: '08:00', fin: '12:00' },
-    domingo:   { activo: false, inicio: '08:00', fin: '12:00' }
-  };
-  const raw = PropertiesService.getScriptProperties().getProperty('HORARIOS_ASIGNACION');
-  if (!raw) return DEFAULT;
-  try {
-    return JSON.parse(raw);
-  } catch (e) {
-    return DEFAULT;
-  }
-}
-
-/**
- * Guarda la configuración de horarios de asignación.
- * @param {Object} horarios - Mapa de día -> { activo, inicio, fin }
- * @returns {{ success: boolean, message: string }}
- */
-function admin_setHorariosAsignacion(horarios) {
-  verificarPermisoAdmin();
-  if (!horarios || typeof horarios !== 'object') {
-    return { success: false, message: 'Datos de horarios inválidos.' };
-  }
-  PropertiesService.getScriptProperties().setProperty('HORARIOS_ASIGNACION', JSON.stringify(horarios));
-  return { success: true, message: 'Horarios de asignación guardados correctamente.' };
 }
