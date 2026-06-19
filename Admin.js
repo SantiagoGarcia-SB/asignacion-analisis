@@ -1546,3 +1546,512 @@ function admin_setHorariosAsignacion(horarios) {
     return { success: false, message: e.message };
   }
 }
+
+// ============================================================
+// EQUIPOS — CRUD
+// ============================================================
+
+function _getHojaEquipos() {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Equipos");
+  if (!hoja) {
+    hoja = ss.insertSheet("Equipos");
+    hoja.getRange(1, 1, 1, 12).setValues([[
+      "id", "nombre", "icono", "colorHex", "activo",
+      "usarVipRotacion", "usarScoreCategories", "maxAsignarPorLlamada",
+      "ordenPrioridad", "fuentesDatos", "modalTipo", "funcionGuardar"
+    ]]);
+    hoja.getRange(1, 1, 1, 12).setFontWeight("bold");
+  }
+  return hoja;
+}
+
+function _getEquipos() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('EQUIPOS_CONFIG');
+  if (cached) {
+    try { return JSON.parse(cached); } catch (e) {}
+  }
+
+  var hoja = _getHojaEquipos();
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) return [];
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 12).getValues();
+  var equipos = [];
+  for (var i = 0; i < data.length; i++) {
+    var row = data[i];
+    var id = String(row[0]).trim();
+    if (!id) continue;
+
+    var ordenPrioridad = [];
+    try { ordenPrioridad = JSON.parse(row[8] || '[]'); } catch (e) {}
+    var fuentesDatos = [];
+    try { fuentesDatos = JSON.parse(row[9] || '[]'); } catch (e) {}
+
+    equipos.push({
+      id: id,
+      nombre: String(row[1]).trim(),
+      icono: String(row[2]).trim(),
+      colorHex: String(row[3]).trim(),
+      activo: String(row[4]).toUpperCase() === 'TRUE',
+      usarVipRotacion: String(row[5]).toUpperCase() === 'TRUE',
+      usarScoreCategories: String(row[6]).toUpperCase() === 'TRUE',
+      maxAsignarPorLlamada: parseInt(row[7]) || 1,
+      ordenPrioridad: ordenPrioridad,
+      fuentesDatos: fuentesDatos,
+      modalTipo: String(row[10]).trim(),
+      funcionGuardar: String(row[11]).trim()
+    });
+  }
+
+  try { cache.put('EQUIPOS_CONFIG', JSON.stringify(equipos), 21600); } catch (e) {}
+  return equipos;
+}
+
+function _invalidarCacheEquipos() {
+  try { CacheService.getScriptCache().remove('EQUIPOS_CONFIG'); } catch (e) {}
+}
+
+function admin_getEquipos() {
+  verificarPermisoAdmin();
+  return _getEquipos();
+}
+
+function admin_crearEquipo(datos) {
+  verificarPermisoAdmin();
+  var id = String(datos.id || '').trim().toUpperCase();
+  if (!id) throw new Error("El ID del equipo es obligatorio.");
+  if (!datos.nombre) throw new Error("El nombre del equipo es obligatorio.");
+
+  var equiposExistentes = _getEquipos();
+  if (equiposExistentes.some(function(e) { return e.id === id; })) {
+    throw new Error("Ya existe un equipo con el ID: " + id);
+  }
+
+  var hoja = _getHojaEquipos();
+  hoja.appendRow([
+    id,
+    String(datos.nombre).trim(),
+    String(datos.icono || 'bi-people-fill').trim(),
+    String(datos.colorHex || '#253150').trim(),
+    datos.activo !== false ? 'TRUE' : 'FALSE',
+    datos.usarVipRotacion ? 'TRUE' : 'FALSE',
+    datos.usarScoreCategories ? 'TRUE' : 'FALSE',
+    parseInt(datos.maxAsignarPorLlamada) || 1,
+    JSON.stringify(datos.ordenPrioridad || []),
+    JSON.stringify(datos.fuentesDatos || []),
+    String(datos.modalTipo || 'DIGITAL_FULL').trim(),
+    String(datos.funcionGuardar || 'guardarCambiosInternos').trim()
+  ]);
+  SpreadsheetApp.flush();
+  _invalidarCacheEquipos();
+
+  return { success: true, message: "Equipo '" + datos.nombre + "' creado correctamente." };
+}
+
+function admin_actualizarEquipo(equipoId, datos) {
+  verificarPermisoAdmin();
+  var hoja = _getHojaEquipos();
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) throw new Error("No hay equipos registrados.");
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+  var filaIndex = -1;
+  for (var i = 0; i < data.length; i++) {
+    if (String(data[i][0]).trim().toUpperCase() === equipoId.toUpperCase()) {
+      filaIndex = i + 2;
+      break;
+    }
+  }
+  if (filaIndex === -1) throw new Error("Equipo no encontrado: " + equipoId);
+
+  hoja.getRange(filaIndex, 2, 1, 11).setValues([[
+    String(datos.nombre).trim(),
+    String(datos.icono || 'bi-people-fill').trim(),
+    String(datos.colorHex || '#253150').trim(),
+    datos.activo !== false ? 'TRUE' : 'FALSE',
+    datos.usarVipRotacion ? 'TRUE' : 'FALSE',
+    datos.usarScoreCategories ? 'TRUE' : 'FALSE',
+    parseInt(datos.maxAsignarPorLlamada) || 1,
+    JSON.stringify(datos.ordenPrioridad || []),
+    JSON.stringify(datos.fuentesDatos || []),
+    String(datos.modalTipo || 'DIGITAL_FULL').trim(),
+    String(datos.funcionGuardar || 'guardarCambiosInternos').trim()
+  ]]);
+  SpreadsheetApp.flush();
+  _invalidarCacheEquipos();
+
+  return { success: true, message: "Equipo '" + datos.nombre + "' actualizado correctamente." };
+}
+
+function admin_eliminarEquipo(equipoId) {
+  verificarPermisoAdmin();
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaUsuarios = ss.getSheetByName("Usuarios");
+  if (hojaUsuarios) {
+    var dataU = hojaUsuarios.getDataRange().getValues();
+    var mapeoInverso = { 'DIGITAL': 'ESTUDIO DIGITAL', 'BIOMETRIA': 'PENDIENTE_BIOMETRIA', 'REESTUDIOS': 'REESTUDIOS' };
+    var espBuscada = mapeoInverso[equipoId.toUpperCase()] || equipoId.toUpperCase();
+    for (var i = 1; i < dataU.length; i++) {
+      if (String(dataU[i][4]).toUpperCase().trim() === espBuscada && String(dataU[i][5]).toUpperCase().trim() === 'ACTIVO') {
+        throw new Error("No se puede eliminar: hay analistas activos asignados a este equipo.");
+      }
+    }
+  }
+
+  var hoja = _getHojaEquipos();
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) throw new Error("No hay equipos registrados.");
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var j = 0; j < data.length; j++) {
+    if (String(data[j][0]).trim().toUpperCase() === equipoId.toUpperCase()) {
+      hoja.deleteRow(j + 2);
+      SpreadsheetApp.flush();
+      _invalidarCacheEquipos();
+      return { success: true, message: "Equipo eliminado correctamente." };
+    }
+  }
+  throw new Error("Equipo no encontrado: " + equipoId);
+}
+
+// ============================================================
+// TIPOS DE SOLICITUD — CRUD
+// ============================================================
+
+function _getHojaTiposSolicitud() {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("TiposSolicitud");
+  if (!hoja) {
+    hoja = ss.insertSheet("TiposSolicitud");
+    hoja.getRange(1, 1, 1, 6).setValues([[
+      "id", "label", "icono", "colorBadge", "reglasDeteccion", "activo"
+    ]]);
+    hoja.getRange(1, 1, 1, 6).setFontWeight("bold");
+    var seed = [
+      ["nueva", "Nuevas", "bi-file-earmark-plus", "#253150", '{"campo":"clase","condicion":"includes","valor":"NUEV"}', "TRUE"],
+      ["biometria", "Biometría", "bi-fingerprint", "#8b0a0e", '{"campo":"estadoGeneral","condicion":"includes","valor":"BIOMETRIA"}', "TRUE"],
+      ["induccion", "Inducción", "bi-mortarboard", "#0d6efd", '{"campo":"clase","condicion":"includes","valor":"INDUCCI"}', "TRUE"],
+      ["reestudio", "Reestudios", "bi-arrow-repeat", "#198754", '{"campo":"origen","condicion":"equals","valor":"VICTORIA"}', "TRUE"],
+      ["nuevaUar", "Nueva UAR", "bi-envelope-plus", "#6f42c1", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"tipoProceso","condicion2":"equals","valor2":"NUEVA"}', "TRUE"],
+      ["deudorUar", "Deudor UAR", "bi-person-plus", "#fd7e14", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"tipoProceso","condicion2":"equals","valor2":"ADICIONAL"}', "TRUE"]
+    ];
+    hoja.getRange(2, 1, seed.length, 6).setValues(seed);
+  }
+  return hoja;
+}
+
+function _getTiposSolicitud() {
+  var hoja = _getHojaTiposSolicitud();
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) return [];
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 6).getValues();
+  var tipos = [];
+  for (var i = 0; i < data.length; i++) {
+    var id = String(data[i][0]).trim();
+    if (!id) continue;
+    var reglas = {};
+    try { reglas = JSON.parse(data[i][4] || '{}'); } catch (e) {}
+    tipos.push({
+      id: id,
+      label: String(data[i][1]).trim(),
+      icono: String(data[i][2]).trim(),
+      colorBadge: String(data[i][3]).trim(),
+      reglasDeteccion: reglas,
+      activo: String(data[i][5]).toUpperCase() === 'TRUE'
+    });
+  }
+  return tipos;
+}
+
+function admin_getTiposSolicitud() {
+  verificarPermisoAdmin();
+  return _getTiposSolicitud();
+}
+
+function admin_guardarTipoSolicitud(datos) {
+  verificarPermisoAdmin();
+  var id = String(datos.id || '').trim().toLowerCase();
+  if (!id) throw new Error("El ID del tipo es obligatorio.");
+
+  var hoja = _getHojaTiposSolicitud();
+  var lastRow = hoja.getLastRow();
+  var filaExistente = -1;
+
+  if (lastRow >= 2) {
+    var ids = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) {
+      if (String(ids[i][0]).trim().toLowerCase() === id) {
+        filaExistente = i + 2;
+        break;
+      }
+    }
+  }
+
+  var fila = [
+    id,
+    String(datos.label || id).trim(),
+    String(datos.icono || 'bi-tag').trim(),
+    String(datos.colorBadge || '#6c757d').trim(),
+    JSON.stringify(datos.reglasDeteccion || {}),
+    datos.activo !== false ? 'TRUE' : 'FALSE'
+  ];
+
+  if (filaExistente > 0) {
+    hoja.getRange(filaExistente, 1, 1, 6).setValues([fila]);
+  } else {
+    hoja.appendRow(fila);
+  }
+  SpreadsheetApp.flush();
+  return { success: true, message: "Tipo '" + datos.label + "' guardado correctamente." };
+}
+
+function admin_eliminarTipoSolicitud(id) {
+  verificarPermisoAdmin();
+  var hoja = _getHojaTiposSolicitud();
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) throw new Error("No hay tipos registrados.");
+
+  var ids = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim().toLowerCase() === id.toLowerCase()) {
+      hoja.deleteRow(i + 2);
+      SpreadsheetApp.flush();
+      return { success: true, message: "Tipo eliminado correctamente." };
+    }
+  }
+  throw new Error("Tipo no encontrado: " + id);
+}
+
+// ============================================================
+// MOTIVOS DE APLAZAMIENTO — CRUD
+// ============================================================
+
+function _getHojaMotivos(tipo) {
+  var nombreHoja = tipo === 'negacion' ? 'MotivosNegacion' : 'MotivosAplazamiento';
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName(nombreHoja);
+  if (!hoja) {
+    hoja = ss.insertSheet(nombreHoja);
+    hoja.getRange(1, 1, 1, 4).setValues([["id", "motivo", "activo", "orden"]]);
+    hoja.getRange(1, 1, 1, 4).setFontWeight("bold");
+
+    var semillas = [];
+    if (tipo === 'aplazamiento') {
+      semillas = [
+        "Acta de constitución consorcio", "Acta de junta de socios", "Actualización de resultado",
+        "Cámara de comercio", "Cerrada por intentos fallidos", "Certificado laboral",
+        "Confirmar solicitud simultánea", "Documento de identidad legible", "Dos deudores solidarios",
+        "Error de terceros", "Estados financieros", "Extractos bancarios",
+        "Formulario con firma y huella legible", "Partida presupuestal", "Pendiente aceptación LMI",
+        "Pendiente biometría", "Pendiente confirmar destino", "Pendiente constitución CDT",
+        "Pendiente deudor y documentos", "Pendiente entrevista telefónica", "Pendiente recaudo",
+        "Pendiente respuesta ELI", "Pendiente resultado lote", "Pendiente simasol",
+        "Pendiente validación de datos", "Presentar constituyentes del consorcio", "Un deudor solidario"
+      ];
+    } else {
+      semillas = [
+        "Alerta de suplantación", "Anteriores negadas inconsistencias", "Contrato firmado en traslados",
+        "Cuentas embargadas", "Desistimiento", "Destino no asegurable",
+        "Deudor de profesión", "Empresa recién constituida", "Evidente no aprobado",
+        "Inconsistencias en validación", "Inducción sin garantías", "Ingresos insuficientes",
+        "Modelo rechaza, causal diferente", "Mora libertador", "Patrimonio en negativo/pérdidas",
+        "Póliza no asegurable", "Reportes en centrales de riesgo", "Solicitud duplicada",
+        "Traslado no solicitado"
+      ];
+    }
+
+    var filas = [];
+    for (var i = 0; i < semillas.length; i++) {
+      filas.push([i + 1, semillas[i], "TRUE", i + 1]);
+    }
+    if (filas.length > 0) {
+      hoja.getRange(2, 1, filas.length, 4).setValues(filas);
+    }
+  }
+  return hoja;
+}
+
+function _getMotivos(tipo) {
+  var hoja = _getHojaMotivos(tipo);
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) return [];
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 4).getValues();
+  var motivos = [];
+  for (var i = 0; i < data.length; i++) {
+    var motivo = String(data[i][1]).trim();
+    if (!motivo) continue;
+    motivos.push({
+      id: parseInt(data[i][0]) || (i + 1),
+      motivo: motivo,
+      activo: String(data[i][2]).toUpperCase() === 'TRUE',
+      orden: parseInt(data[i][3]) || (i + 1)
+    });
+  }
+  motivos.sort(function(a, b) { return a.orden - b.orden; });
+  return motivos;
+}
+
+function getMotivosAplazamiento() {
+  return _getMotivos('aplazamiento').filter(function(m) { return m.activo; });
+}
+
+function getMotivosNegacion() {
+  return _getMotivos('negacion').filter(function(m) { return m.activo; });
+}
+
+function admin_getMotivosAplazamiento() {
+  verificarPermisoAdmin();
+  return _getMotivos('aplazamiento');
+}
+
+function admin_getMotivosNegacion() {
+  verificarPermisoAdmin();
+  return _getMotivos('negacion');
+}
+
+function admin_guardarMotivo(tipo, datos) {
+  verificarPermisoAdmin();
+  if (!datos.motivo || !String(datos.motivo).trim()) throw new Error("El texto del motivo es obligatorio.");
+
+  var hoja = _getHojaMotivos(tipo);
+  var lastRow = hoja.getLastRow();
+  var filaExistente = -1;
+  var maxId = 0;
+  var maxOrden = 0;
+
+  if (lastRow >= 2) {
+    var dataExist = hoja.getRange(2, 1, lastRow - 1, 4).getValues();
+    for (var i = 0; i < dataExist.length; i++) {
+      var idActual = parseInt(dataExist[i][0]) || 0;
+      var ordenActual = parseInt(dataExist[i][3]) || 0;
+      if (idActual > maxId) maxId = idActual;
+      if (ordenActual > maxOrden) maxOrden = ordenActual;
+      if (datos.id && idActual === parseInt(datos.id)) {
+        filaExistente = i + 2;
+      }
+    }
+  }
+
+  var id = datos.id ? parseInt(datos.id) : (maxId + 1);
+  var orden = datos.orden ? parseInt(datos.orden) : (maxOrden + 1);
+  var fila = [id, String(datos.motivo).trim(), datos.activo !== false ? 'TRUE' : 'FALSE', orden];
+
+  if (filaExistente > 0) {
+    hoja.getRange(filaExistente, 1, 1, 4).setValues([fila]);
+  } else {
+    hoja.appendRow(fila);
+  }
+  SpreadsheetApp.flush();
+  return { success: true, message: "Motivo guardado correctamente." };
+}
+
+function admin_guardarMotivoAplazamiento(datos) {
+  return admin_guardarMotivo('aplazamiento', datos);
+}
+
+function admin_guardarMotivoNegacion(datos) {
+  return admin_guardarMotivo('negacion', datos);
+}
+
+function admin_eliminarMotivo(tipo, id) {
+  verificarPermisoAdmin();
+  var hoja = _getHojaMotivos(tipo);
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) throw new Error("No hay motivos registrados.");
+
+  var ids = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (parseInt(ids[i][0]) === parseInt(id)) {
+      hoja.deleteRow(i + 2);
+      SpreadsheetApp.flush();
+      return { success: true, message: "Motivo eliminado correctamente." };
+    }
+  }
+  throw new Error("Motivo no encontrado.");
+}
+
+function admin_eliminarMotivoAplazamiento(id) {
+  return admin_eliminarMotivo('aplazamiento', id);
+}
+
+function admin_eliminarMotivoNegacion(id) {
+  return admin_eliminarMotivo('negacion', id);
+}
+
+// ============================================================
+// CATEGORÍAS SCORE — Lectura y gestión
+// ============================================================
+
+function admin_getCategoriasScore() {
+  verificarPermisoAdmin();
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("score");
+  if (!hoja) return { categorias: [], polizas: [] };
+
+  var data = hoja.getDataRange().getDisplayValues();
+  var categoriasMap = {};
+  var polizas = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var poliza = String(data[i][0]).trim();
+    var categoria = String(data[i][1] || data[i][2] || '').trim();
+    if (!poliza) continue;
+
+    if (categoria) {
+      var catKey = categoria.toLowerCase();
+      if (!categoriasMap[catKey]) {
+        categoriasMap[catKey] = { nombre: categoria, cantidad: 0 };
+      }
+      categoriasMap[catKey].cantidad++;
+    }
+    polizas.push({ poliza: poliza, categoria: categoria, fila: i + 1 });
+  }
+
+  var categorias = [];
+  for (var key in categoriasMap) {
+    categorias.push(categoriasMap[key]);
+  }
+  categorias.sort(function(a, b) { return b.cantidad - a.cantidad; });
+
+  return { categorias: categorias, totalPolizas: polizas.length };
+}
+
+function admin_buscarPolizaScore(polizaBuscada) {
+  verificarPermisoAdmin();
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("score");
+  if (!hoja) return [];
+
+  var data = hoja.getDataRange().getDisplayValues();
+  var resultados = [];
+  var busqueda = String(polizaBuscada).trim().toLowerCase();
+
+  for (var i = 1; i < data.length; i++) {
+    var poliza = String(data[i][0]).trim();
+    if (poliza.toLowerCase().includes(busqueda)) {
+      resultados.push({
+        poliza: poliza,
+        categoria: String(data[i][1] || data[i][2] || '').trim(),
+        fila: i + 1
+      });
+    }
+    if (resultados.length >= 20) break;
+  }
+  return resultados;
+}
+
+function admin_actualizarCategoriaPoliza(fila, nuevaCategoria) {
+  verificarPermisoAdmin();
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("score");
+  if (!hoja) throw new Error("Hoja score no encontrada.");
+
+  hoja.getRange(fila, 2).setValue(String(nuevaCategoria).trim());
+  SpreadsheetApp.flush();
+  return { success: true, message: "Categoría actualizada correctamente." };
+}

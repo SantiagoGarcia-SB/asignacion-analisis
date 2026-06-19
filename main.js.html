@@ -8,6 +8,36 @@ let yaSeIntentoAsignar = false;
 let estadoGlobalAsesor = "INACTIVO";
 let tipoSolicitudActual = "";
 let cargaInicialHecha = false;
+var _timerFinTurno = null;
+
+function _programarAutoInactivo() {
+  if (_timerFinTurno) { clearTimeout(_timerFinTurno); _timerFinTurno = null; }
+  google.script.run
+    .withSuccessHandler(function(info) {
+      if (!info || !info.tieneTurno) return;
+      var msRestantes = info.minutosRestantes * 60 * 1000;
+      if (msRestantes <= 0) {
+        _forzarInactivoPorTurno(info);
+        return;
+      }
+      _timerFinTurno = setTimeout(function() {
+        _forzarInactivoPorTurno(info);
+      }, msRestantes);
+    })
+    .obtenerInfoTurnoActual();
+}
+
+function _forzarInactivoPorTurno(info) {
+  if (estadoGlobalAsesor === 'INACTIVO') return;
+  cambiarMiEstado('INACTIVO');
+  Swal.fire({
+    icon: 'info',
+    title: 'Turno finalizado',
+    html: 'Tu turno <b>' + (info.nombreTurno || '') + '</b> terminó a las <b>' + info.horaFinStr + '</b>.<br>Tu estado se cambió a <b>INACTIVO</b> automáticamente.',
+    confirmButtonColor: '#253150',
+    confirmButtonText: 'Entendido'
+  });
+}
 
 function _quitarFilaTabla(solicitudId) {
   if (!$.fn.DataTable.isDataTable('#miTabla')) return;
@@ -37,6 +67,7 @@ $(document).ready(function () {
 
   sincronizarEstadoInicial(true);
   verificarYAplicarPermisoVigente();
+  _programarAutoInactivo();
 
   $('#btnGuardarCambios')
     .off('click')
@@ -44,6 +75,17 @@ $(document).ready(function () {
 
   $('#d_estado_q')
     .on('change', actualizarCamposGestion);
+
+  // Vista Unificada: campos condicionales del modal digital (prefijo dig_)
+  $('#dig_estado_q').on('change', function() {
+    var estado = ($(this).val() || '').toUpperCase();
+    var contAplaz = $('#dig_contenedor_aplazamiento');
+    var contNeg = $('#dig_contenedor_negacion');
+    contAplaz.addClass('d-none');
+    contNeg.addClass('d-none');
+    if (estado.indexOf('APLAZ') !== -1) { contAplaz.removeClass('d-none').hide().fadeIn(200); }
+    else if (estado.indexOf('NEGAD') !== -1) { contNeg.removeClass('d-none').hide().fadeIn(200); }
+  });
 
 });
 function actualizarCamposGestion() {
@@ -247,6 +289,7 @@ function cargarDatos() {
     }
   }).verificarMisCupos();
 
+  var _dataFetchFn = (window.__IS_UNIFIED_VIEW__) ? 'getUnifiedTableData' : 'getTableData';
   google.script.run
     .withSuccessHandler(function (response) {
 
@@ -281,10 +324,20 @@ function cargarDatos() {
       // Count pending from table rows (excluding header)
       const registrosPendientes = response.tabla ? response.tabla.length - 1 : 0;
       
-      if (response.stats) {
-        if (typeof animarNumero === "function") {
-          animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
-        }
+      if (typeof animarNumero === "function") {
+        animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
+      }
+
+      // Cupos restantes (solo vista unificada)
+      if (window.__IS_UNIFIED_VIEW__ && document.getElementById('countCupos')) {
+        google.script.run.withSuccessHandler(function(cuposInfo) {
+          if (cuposInfo && typeof cuposInfo.totalLimite === 'number') {
+            var restantes = cuposInfo.totalLimite - cuposInfo.totalUsado;
+            if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
+            var det = document.getElementById('cuposDetalle');
+            if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
+          }
+        }).verificarMisCupos();
       }
 
       const tablaRealmenteVacia = registrosPendientes <= 0;
@@ -331,7 +384,7 @@ function cargarDatos() {
             console.error("Error en autoAsignarAlEntrar:", err);
             yaSeIntentoAsignar = false; 
           })
-          .autoAsignarAlEntrar();
+          [window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar']();
 
       } else {
         if (!tablaRealmenteVacia) console.log("Asignación omitida: La tabla ya tiene datos.");
@@ -349,7 +402,7 @@ function cargarDatos() {
         confirmButtonColor: '#253150'
       });
     })
-    .getTableData();
+    [_dataFetchFn]();
 }
 
 function renderizarTabla(data) {
@@ -429,6 +482,12 @@ function renderizarTabla(data) {
     const rowIndex = $(this).data('index');
     const fila = datosGlobales[rowIndex + 1];
     if (!fila) return;
+
+    // Vista unificada: usar dispatch de modal
+    if (window.__IS_UNIFIED_VIEW__) {
+      abrirModalUnificado(rowIndex + 1);
+      return;
+    }
 
     const solicitudId = fila[0];
     const container = document.getElementById("accordionResultados");
@@ -744,10 +803,10 @@ function cambiarMiEstado(nuevoEstado) {
     card.css('border-color', '#e2e8f0');
   }
 
+  var estadoAnterior = estadoGlobalAsesor;
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
-        // UX: Use toast instead of SweetAlert for non-blocking feedback
         if (typeof UX !== 'undefined') {
           UX.showToast('Estado actualizado: ' + estadoGlobalAsesor, estadoGlobalAsesor === 'ACTIVO' ? 'success' : 'info');
         } else {
@@ -761,8 +820,19 @@ function cambiarMiEstado(nuevoEstado) {
           });
         }
         if (estadoGlobalAsesor === 'ACTIVO') {
-          cargarDatos(); 
+          cargarDatos();
         }
+      } else if (response && !response.success) {
+        estadoGlobalAsesor = 'INACTIVO';
+        if (statusText.length) statusText.text('INACTIVO');
+        statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+        card.css('border-color', '#e2e8f0');
+        Swal.fire({
+          icon: 'warning',
+          title: 'No permitido',
+          html: response.message,
+          confirmButtonColor: '#253150'
+        });
       }
     })
     .actualizarEstadoPropio(nuevoEstado);
@@ -1009,4 +1079,587 @@ function guardarGestionReestudioDesdeDigital() {
     })
     .guardarCambiosInternos(datos);
 }
+
+// ============================================================
+// VISTA UNIFICADA — Dispatch de modal y guardado
+// ============================================================
+
+var _filaActualUnificada = null;
+
+function detectarTipoCaso(rowData) {
+  if (!rowData) return 'digital';
+  if (window.__EQUIPO_CONFIG__) {
+    var eqId = window.__EQUIPO_CONFIG__.id;
+    if (eqId === 'BIOMETRIA') return 'biometria';
+    if (eqId === 'REESTUDIOS') return 'reestudio';
+  }
+  var estado = String(rowData[16] || '').toUpperCase();
+  var clase = String(rowData[20] || '').toUpperCase();
+  if (estado.indexOf('BIOMETRIA') !== -1 || clase.indexOf('BIOMETRIA') !== -1) return 'biometria';
+  if (rowData.__fuente === 'REESTUDIO' || (rowData[3] && String(rowData[3]).toUpperCase() === 'VICTORIA')) return 'reestudio';
+  return 'digital';
+}
+
+function abrirModalUnificado(index) {
+  if (!datosGlobales || !datosGlobales[index]) return;
+  var fila = datosGlobales[index];
+  _filaActualUnificada = fila;
+  tipoSolicitudActual = detectarTipoCaso(fila);
+
+  switch (tipoSolicitudActual) {
+    case 'biometria':
+      poblarModalBio(fila);
+      new bootstrap.Modal(document.getElementById('modalBiometria')).show();
+      break;
+    case 'reestudio':
+      poblarModalRst(fila);
+      new bootstrap.Modal(document.getElementById('modalReestudio')).show();
+      break;
+    default:
+      poblarModalDig(fila);
+      new bootstrap.Modal(document.getElementById('modalDigital')).show();
+      break;
+  }
+}
+
+function _buildFaroSvg() {
+  if (!document.getElementById('faroAnimCSS')) {
+    var st = document.createElement('style');
+    st.id = 'faroAnimCSS';
+    st.textContent = '@keyframes faroRotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}@keyframes faroPulse{0%,100%{opacity:1}50%{opacity:.7}}.swal-no-border-icon{border:none!important;margin:0 auto!important;overflow:visible!important;}.swal2-icon{overflow:visible!important;}';
+    document.head.appendChild(st);
+  }
+  var d = document.createElement('div');
+  d.style.cssText = 'width:140px;height:140px;overflow:visible;position:relative;z-index:1;';
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 680 520');
+  svg.setAttribute('width', '140');
+  svg.setAttribute('height', '140');
+  svg.style.overflow = 'visible';
+
+  var defs = document.createElementNS(NS, 'defs');
+  function mkGrad(id, stops) {
+    var g = document.createElementNS(NS, 'linearGradient');
+    g.setAttribute('id', id); g.setAttribute('x1','0'); g.setAttribute('y1','0'); g.setAttribute('x2','1'); g.setAttribute('y2','0');
+    stops.forEach(function(s) { var st = document.createElementNS(NS,'stop'); st.setAttribute('offset',s[0]); st.setAttribute('stop-color',s[1]); g.appendChild(st); });
+    return g;
+  }
+  defs.appendChild(mkGrad('fTG',[['0%','#c8c0a8'],['40%','#f5f0e0'],['100%','#9e9880']]));
+  defs.appendChild(mkGrad('fSG',[['0%','#a02020'],['40%','#d43030'],['100%','#7a1515']]));
+  defs.appendChild(mkGrad('fLG',[['0%','#4a5a6a'],['50%','#6a7a8a'],['100%','#3a4a5a']]));
+  defs.appendChild(mkGrad('fDG',[['0%','#3a4a5a'],['50%','#5a6a7a'],['100%','#2a3a4a']]));
+  var rg = document.createElementNS(NS,'radialGradient');
+  rg.setAttribute('id','fBG'); rg.setAttribute('cx','0'); rg.setAttribute('cy','0.5'); rg.setAttribute('r','1'); rg.setAttribute('fx','0'); rg.setAttribute('fy','0.5');
+  [['0%','#fffde0','1'],['20%','#ffd060','0.7'],['60%','#ffb020','0.3'],['100%','#ffb020','0']].forEach(function(s){var st=document.createElementNS(NS,'stop');st.setAttribute('offset',s[0]);st.setAttribute('stop-color',s[1]);st.setAttribute('stop-opacity',s[2]);rg.appendChild(st);});
+  defs.appendChild(rg);
+  var cp = document.createElementNS(NS,'clipPath'); cp.setAttribute('id','fBC');
+  var cpr = document.createElementNS(NS,'rect'); cpr.setAttribute('x','0'); cpr.setAttribute('y','0'); cpr.setAttribute('width','680'); cpr.setAttribute('height','520'); cp.appendChild(cpr);
+  defs.appendChild(cp);
+  svg.appendChild(defs);
+
+  function el(tag, attrs) { var e = document.createElementNS(NS, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+  var filt = document.createElementNS(NS,'filter');
+  filt.setAttribute('id','fEdgeBlur'); filt.setAttribute('x','-50%'); filt.setAttribute('y','-50%'); filt.setAttribute('width','200%'); filt.setAttribute('height','200%');
+  var fb = document.createElementNS(NS,'feGaussianBlur'); fb.setAttribute('stdDeviation','25'); fb.setAttribute('in','SourceGraphic');
+  filt.appendChild(fb); defs.appendChild(filt);
+
+  var beam = el('g', {'style':'transform-origin:340px 161px;animation:faroRotate 4s linear infinite;'});
+  beam.appendChild(el('polygon',{points:'340,161 -200,-100 -200,420',fill:'url(#fBG)',opacity:'0.8'}));
+  beam.appendChild(el('polygon',{points:'340,161 880,-100 880,420',fill:'url(#fBG)',opacity:'0.3'}));
+  var edgeL = el('polygon',{points:'340,161 -200,-100 -200,420',fill:'url(#fBG)',opacity:'0.5','filter':'url(#fEdgeBlur)'});
+  var edgeR = el('polygon',{points:'340,161 880,-100 880,420',fill:'url(#fBG)',opacity:'0.2','filter':'url(#fEdgeBlur)'});
+  beam.appendChild(edgeL);
+  beam.appendChild(edgeR);
+  svg.appendChild(beam);
+
+  svg.appendChild(el('rect',{x:'294',y:'440',width:'92',height:'30',rx:'4',fill:'#7a7060'}));
+  svg.appendChild(el('rect',{x:'298',y:'433',width:'84',height:'12',rx:'3',fill:'#8a8070'}));
+  svg.appendChild(el('path',{d:'M302,433 L298,345 L382,345 L378,433Z',fill:'url(#fTG)'}));
+  svg.appendChild(el('path',{d:'M298,345 L295,295 L385,295 L382,345Z',fill:'url(#fSG)'}));
+  svg.appendChild(el('path',{d:'M295,295 L292,245 L388,245 L385,295Z',fill:'url(#fTG)'}));
+  svg.appendChild(el('path',{d:'M292,245 L290,200 L390,200 L388,245Z',fill:'url(#fSG)'}));
+  svg.appendChild(el('rect',{x:'330',y:'385',width:'20',height:'26',rx:'10',fill:'#1a2540',opacity:'0.9'}));
+  svg.appendChild(el('rect',{x:'330',y:'305',width:'20',height:'26',rx:'10',fill:'#1a2540',opacity:'0.9'}));
+  svg.appendChild(el('rect',{x:'330',y:'222',width:'20',height:'26',rx:'10',fill:'#1a2540',opacity:'0.9'}));
+  svg.appendChild(el('rect',{x:'327',y:'405',width:'26',height:'35',rx:'13',fill:'#2a1a10'}));
+  svg.appendChild(el('circle',{cx:'350',cy:'425',r:'2.5',fill:'#c0a050'}));
+  svg.appendChild(el('rect',{x:'292',y:'344',width:'96',height:'5',rx:'2',fill:'#b0a890'}));
+  svg.appendChild(el('rect',{x:'295',y:'294',width:'90',height:'5',rx:'2',fill:'#b0a890'}));
+  svg.appendChild(el('rect',{x:'290',y:'244',width:'100',height:'5',rx:'2',fill:'#b0a890'}));
+  svg.appendChild(el('rect',{x:'278',y:'191',width:'124',height:'12',rx:'3',fill:'#8a8070'}));
+  svg.appendChild(el('rect',{x:'276',y:'183',width:'128',height:'4',rx:'2',fill:'#9a9080'}));
+  svg.appendChild(el('rect',{x:'300',y:'133',width:'80',height:'56',rx:'4',fill:'url(#fLG)'}));
+  svg.appendChild(el('rect',{x:'302',y:'135',width:'22',height:'52',rx:'2',fill:'#c8e0f8',opacity:'0.25'}));
+  svg.appendChild(el('rect',{x:'326',y:'135',width:'28',height:'52',rx:'2',fill:'#d8eafc',opacity:'0.3'}));
+  svg.appendChild(el('rect',{x:'356',y:'135',width:'22',height:'52',rx:'2',fill:'#c8e0f8',opacity:'0.25'}));
+  svg.appendChild(el('rect',{x:'324',y:'133',width:'3',height:'58',fill:'#4a5a6a'}));
+  svg.appendChild(el('rect',{x:'353',y:'133',width:'3',height:'58',fill:'#4a5a6a'}));
+
+  var core = el('g',{style:'animation:faroPulse 2s ease-in-out infinite;'});
+  core.appendChild(el('circle',{cx:'340',cy:'161',r:'30',fill:'#fbbf24',opacity:'0.12'}));
+  core.appendChild(el('circle',{cx:'340',cy:'161',r:'22',fill:'#ffdd80',opacity:'0.25'}));
+  core.appendChild(el('circle',{cx:'340',cy:'161',r:'15',fill:'#ffee90',opacity:'0.5'}));
+  core.appendChild(el('circle',{cx:'340',cy:'161',r:'9',fill:'#fffde0',opacity:'0.95'}));
+  core.appendChild(el('circle',{cx:'340',cy:'161',r:'4',fill:'#ffffff'}));
+  svg.appendChild(core);
+
+  svg.appendChild(el('rect',{x:'296',y:'127',width:'88',height:'10',rx:'3',fill:'url(#fDG)'}));
+  svg.appendChild(el('path',{d:'M296,127 Q310,105 340,93 Q370,105 384,127 Z',fill:'url(#fDG)'}));
+  svg.appendChild(el('line',{x1:'340',y1:'93',x2:'340',y2:'70',stroke:'#8a9aaa','stroke-width':'2.5','stroke-linecap':'round'}));
+  svg.appendChild(el('circle',{cx:'340',cy:'68',r:'3.5',fill:'#8a9aaa'}));
+  svg.appendChild(el('circle',{cx:'340',cy:'59',r:'2',fill:'#aabaca'}));
+
+  d.appendChild(svg);
+  return d.outerHTML;
+}
+
+function _verificarAlertaScore(fila, polizaElId, polizaText) {
+  var categoriaScore = fila[fila.length - 1] ? String(fila[fila.length - 1]).toUpperCase() : '';
+  var polizaEl = document.getElementById(polizaElId);
+  if (!polizaEl) return;
+
+  if (categoriaScore.includes('NEGAR') || categoriaScore.includes('5.')) {
+    polizaEl.innerHTML = '<span class="badge shadow-sm" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:0.95rem;"><i class="bi bi-exclamation-triangle-fill me-1"></i>' + polizaText + ' — NEGAR</span>';
+    setTimeout(function() {
+      Swal.fire({
+        iconHtml: _buildFaroSvg(),
+        title: 'Póliza marcada para NEGAR',
+        html: '<div style="text-align:left;"><p>La póliza <strong>' + polizaText + '</strong> está calificada como <strong style="color:#b91c1c;">"Negar"</strong></p><p style="margin-top:12px;padding:12px;background:#fef2f2;border-radius:10px;border:1px solid #fecaca;color:#991b1b;"><i class="bi bi-shield-exclamation me-1"></i><strong>Esta solicitud debe ser negada o consultada en comité antes de gestionar.</strong></p></div>',
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#b91c1c',
+        allowOutsideClick: false,
+        customClass: { icon: 'swal-no-border-icon' }
+      });
+    }, 400);
+  } else if (categoriaScore.includes('VIP')) {
+    polizaEl.innerHTML = '<span class="badge shadow-sm" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:6px 12px;border-radius:8px;font-size:0.95rem;"><i class="bi bi-star-fill me-1"></i>' + polizaText + ' (VIP)</span>';
+  } else {
+    polizaEl.textContent = polizaText;
+  }
+}
+
+function poblarModalDig(fila) {
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val || ''; };
+  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+
+  setTxt('dig_solicitud', fila[0]);
+  setTxt('dig_estadoGeneral', fila[16]);
+  setTxt('dig_fechaRadicacion', fila[17]);
+  _verificarAlertaScore(fila, 'dig_poliza', fila[1] || '');
+  setTxt('dig_fechaResultado', fila[18]);
+  setTxt('dig_nombreInquilino', fila[4]);
+  setTxt('dig_tipoIdentificacion', fila[3] ? fila[3] + ' ' : '');
+  setTxt('dig_identificacionInquilino', fila[2]);
+  setTxt('dig_fechaExpedicion', fila[8]);
+  setTxt('dig_correoInquilino', fila[5]);
+  setTxt('dig_telefonoInquilino', fila[6]);
+  setTxt('dig_ingresos', fila[7] ? '$' + Number(fila[7]).toLocaleString('es-CO') : '');
+  setTxt('dig_direccionInmueble', fila[11]);
+  setTxt('dig_ciudadInmueble', fila[13]);
+  setTxt('dig_destinoInmueble', fila[12]);
+  setTxt('dig_canon', fila[9] ? '$' + Number(fila[9]).toLocaleString('es-CO') : '');
+  setTxt('dig_cuota', fila[10] ? '$' + Number(fila[10]).toLocaleString('es-CO') : '');
+  setTxt('dig_nombreAsesor', fila[14]);
+  setTxt('dig_correoAsesor', fila[15]);
+
+  setVal('dig_estado_q', '');
+  setVal('dig_biometria', '');
+  setVal('dig_comentarios_gestion', '');
+  setVal('dig_fecha_radicacion_sai', '');
+  var btnG = document.getElementById('dig_btnGuardar');
+  if (btnG) btnG.setAttribute('data-solicitud-id', fila[0]);
+
+  var aplaz = document.getElementById('dig_contenedor_aplazamiento');
+  var neg = document.getElementById('dig_contenedor_negacion');
+  if (aplaz) aplaz.classList.add('d-none');
+  if (neg) neg.classList.add('d-none');
+
+  var solId = String(fila[0]).trim();
+  if (solId) {
+    var accEl = document.getElementById('dig_accordionResultados');
+    if (accEl) accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Cargando...</p></div>';
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.resultados) {
+        renderResultadosUnificados('dig_accordionResultados', res.resultados);
+      } else {
+        if (accEl) accEl.innerHTML = '<p class="text-muted text-center py-3">Sin resultados disponibles.</p>';
+      }
+    }).getDataUniqueForSolicitud(solId);
+  }
+}
+
+function poblarModalBio(fila) {
+  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+  setVal('bio_solicitudId', fila[6] || fila[0]);
+  var dispEl = document.getElementById('bio_displaySol');
+  if (dispEl) dispEl.textContent = fila[6] || fila[0] || '';
+  setVal('bio_poliza', fila[3] || '');
+  _verificarAlertaScore(fila, 'bio_poliza', fila[3] || '');
+  setVal('bio_inmobiliaria', fila[4] || '');
+  setVal('bio_ciudad', fila[8] || '');
+  setVal('bio_direccion', fila[9] || '');
+  setVal('bio_inquilinoNombre', fila[5] || '');
+  setVal('bio_canon', fila[10] || '');
+  setVal('bio_celular', fila[11] || '');
+  setVal('bio_fechaRadicacionSai', '');
+  setVal('bio_resLlamada', '');
+  setVal('bio_fueAprobada', '');
+  setVal('bio_resFinal', '');
+}
+
+function poblarModalRst(fila) {
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val || ''; };
+  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+
+  setTxt('rst_solicitud', fila[1] || fila[0]);
+  setTxt('rst_solicitud_badge', fila[1] || fila[0]);
+  setTxt('rst_origen', fila[3]);
+  setTxt('rst_fechaRadicacion', fila[0]);
+  setTxt('rst_fechaAsignacion', fila[8]);
+  setTxt('rst_tipoProceso', fila[4]);
+  setTxt('rst_clase', fila[5]);
+  setVal('rst_solicitud_id', fila[1] || fila[0]);
+  setVal('rst_poliza', '');
+  _verificarAlertaScore(fila, 'rst_solicitud_badge', fila[1] || fila[0]);
+  setVal('rst_estado_q', '');
+  setVal('rst_observaciones', '');
+
+  var linkDrive = fila[2] || '';
+  var driveEl = document.getElementById('rst_linkDrive');
+  var driveBtnEl = document.getElementById('rst_btnDrive');
+  if (driveEl) driveEl.textContent = linkDrive || 'No disponible';
+  if (driveBtnEl) {
+    if (linkDrive) { driveBtnEl.href = linkDrive; driveBtnEl.classList.remove('d-none'); }
+    else { driveBtnEl.classList.add('d-none'); }
+  }
+
+  var aplaz = document.getElementById('rst_contenedor_aplazamiento');
+  var neg = document.getElementById('rst_contenedor_negacion');
+  if (aplaz) aplaz.classList.add('d-none');
+  if (neg) neg.classList.add('d-none');
+}
+
+function renderResultadosUnificados(containerId, resultados) {
+  var cont = document.getElementById(containerId);
+  if (!cont) return;
+  if (!resultados || Object.keys(resultados).length === 0) {
+    cont.innerHTML = '<p class="text-muted text-center py-3">Sin resultados de deudores.</p>';
+    return;
+  }
+  var html = '';
+  var idx = 0;
+  for (var tipo in resultados) {
+    var items = resultados[tipo];
+    html += '<div class="accordion-item" style="border:none;margin-bottom:8px;">';
+    html += '<h2 class="accordion-header"><button class="accordion-button ' + (idx > 0 ? 'collapsed' : '') + '" type="button" data-bs-toggle="collapse" data-bs-target="#unif_acc_' + idx + '" style="font-weight:700;font-size:0.9rem;border-radius:12px;">' + tipo + ' (' + items.length + ')</button></h2>';
+    html += '<div id="unif_acc_' + idx + '" class="accordion-collapse collapse ' + (idx === 0 ? 'show' : '') + '">';
+    html += '<div class="accordion-body" style="padding:12px;">';
+    items.forEach(function(item) {
+      html += '<div class="d-flex justify-content-between align-items-center py-2 border-bottom">';
+      html += '<div><strong>' + (item.nombre || '') + '</strong><br><small class="text-muted">' + (item.documento || '') + '</small></div>';
+      html += '<span class="badge ' + (item.estadoEstudio === 'APROBADO' ? 'bg-success' : 'bg-danger') + '">' + (item.estadoEstudio || item.descripcionResultado || '') + '</span>';
+      html += '</div>';
+    });
+    html += '</div></div></div>';
+    idx++;
+  }
+  cont.innerHTML = html;
+}
+
+// Guardado desde vista unificada
+function _getBtnGuardarActivo() {
+  var modal = document.querySelector('.modal.show');
+  if (!modal) return null;
+  return modal.querySelector('[id$="_btnGuardar"]') || document.getElementById('btnGuardarCambios');
+}
+
+function _validarFechaSaiAnteDeGuardar(inputId) {
+  var el = document.getElementById(inputId);
+  if (!el) return true;
+  var val = el.value.trim();
+  if (!val) return true;
+  if (typeof _parseFechaSaiInput !== 'function') return true;
+  var fecha = _parseFechaSaiInput(val);
+  if (!fecha) {
+    Swal.fire({ icon: 'warning', title: 'Fecha inválida', text: 'La fecha de radicación SAI no tiene el formato correcto (DD/MM/AAAA HH:MM). Corrígela o usa el botón "Ahora".' });
+    el.focus();
+    return false;
+  }
+  if (fecha.getTime() > new Date().getTime()) {
+    Swal.fire({ icon: 'warning', title: 'Fecha futura', text: 'La fecha de radicación SAI no puede ser posterior a la hora actual.' });
+    el.focus();
+    return false;
+  }
+  return true;
+}
+
+function manejarGuardarDigital() {
+  var btn = document.getElementById('dig_btnGuardar');
+  var solId = btn.getAttribute('data-solicitud-id');
+  var estado = document.getElementById('dig_estado_q').value;
+  if (!estado) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
+  if (!_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
+
+  UX.setBtnLoading(btn, true);
+
+  var datos = {
+    solicitudId: solId,
+    biometria: document.getElementById('dig_biometria').value || '',
+    estadoGestion: estado,
+    motivoAplazamiento: document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '',
+    motivoNegacion: document.getElementById('dig_motivo_negacion') ? document.getElementById('dig_motivo_negacion').value : '',
+    fechaRadicacionSai: document.getElementById('dig_fecha_radicacion_sai').value || '',
+    observaciones: document.getElementById('dig_comentarios_gestion').value || ''
+  };
+
+  google.script.run
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalDigital'); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .guardarCambiosInternos(datos);
+}
+
+function manejarGuardarBiometria() {
+  var btn = document.getElementById('bio_btnGuardar');
+  var solId = document.getElementById('bio_solicitudId').value;
+  var datosForm = {
+    fechaRadicacionSai: document.getElementById('bio_fechaRadicacionSai').value || '',
+    resLlamada: document.getElementById('bio_resLlamada').value || '',
+    fueAprobada: document.getElementById('bio_fueAprobada').value || '',
+    resFinal: document.getElementById('bio_resFinal').value || ''
+  };
+  if (!datosForm.resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.' }); return; }
+  if (!_validarFechaSaiAnteDeGuardar('bio_fechaRadicacionSai')) return;
+
+  UX.setBtnLoading(btn, true);
+
+  google.script.run
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalBiometria'); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .guardarGestionBiometria(solId, datosForm);
+}
+
+function manejarGuardarReestudio() {
+  var btn = document.getElementById('rst_btnGuardar');
+  var datos = {
+    solicitudId: document.getElementById('rst_solicitud_id').value,
+    poliza: document.getElementById('rst_poliza').value || '',
+    estadoGestion: document.getElementById('rst_estado_q').value || '',
+    motivoAplazamiento: document.getElementById('rst_motivo_aplazamiento') ? document.getElementById('rst_motivo_aplazamiento').value : '',
+    motivoNegacion: document.getElementById('rst_motivo_negacion') ? document.getElementById('rst_motivo_negacion').value : '',
+    observaciones: document.getElementById('rst_observaciones').value || '',
+    fuente: 'REESTUDIO'
+  };
+  if (!datos.estadoGestion) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
+
+  UX.setBtnLoading(btn, true);
+
+  google.script.run
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalReestudio'); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .guardarGestionReestudio(datos);
+}
+
+function onGuardarExitoUnificado(r, modalId) {
+  if (r && (r.success !== false)) {
+    var modalEl = document.getElementById(modalId);
+    var inst = bootstrap.Modal.getInstance(modalEl);
+    if (inst) inst.hide();
+
+    if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
+      UX.showSuccessCheck(function() {
+        if (typeof UX.showToast === 'function') UX.showToast('Gestión guardada correctamente', 'success');
+        yaSeIntentoAsignar = false;
+        cargarDatos();
+      });
+    } else {
+      Swal.fire({ icon: 'success', title: 'Guardado', text: r.message || 'Gestión guardada.', timer: 2000, showConfirmButton: false });
+      yaSeIntentoAsignar = false;
+      cargarDatos();
+    }
+  } else {
+    Swal.fire({ icon: 'error', title: 'Error', text: (r && r.message) || 'Error al guardar.' });
+  }
+}
+
+// ============================================================
+// RESUMEN CUPOS RESTANTES
+// ============================================================
+
+function abrirResumenCupos() {
+  var loadEl = document.getElementById('cr_loading');
+  var contEl = document.getElementById('cr_contenido');
+  if (loadEl) loadEl.classList.remove('d-none');
+  if (contEl) contEl.classList.add('d-none');
+
+  var hoy = new Date();
+  var opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  var fechaStr = hoy.toLocaleDateString('es-CO', opciones);
+  var labelEl = document.getElementById('cr_fecha_label');
+  if (labelEl) labelEl.textContent = fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1);
+
+  new bootstrap.Modal(document.getElementById('modalCuposRestantes')).show();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (loadEl) loadEl.classList.add('d-none');
+      if (contEl) contEl.classList.remove('d-none');
+
+      var totalRestante = res.totalLimite - res.totalUsado;
+      document.getElementById('cr_total_restantes').textContent = totalRestante > 0 ? totalRestante : 0;
+      document.getElementById('cr_total_detalle').textContent = res.totalUsado + ' usados de ' + res.totalLimite + ' asignados';
+
+      var colores = [
+        { bg: '#dbeafe', color: '#1d4ed8', border: '#bfdbfe' },
+        { bg: '#ede9fe', color: '#7c3aed', border: '#ddd6fe' },
+        { bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
+        { bg: '#fce7f3', color: '#be185d', border: '#fbcfe8' },
+        { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0' },
+        { bg: '#e0e7ff', color: '#4338ca', border: '#c7d2fe' }
+      ];
+
+      var tiposRow = document.getElementById('cr_tipos_row');
+      var barrasEl = document.getElementById('cr_barras');
+      tiposRow.innerHTML = '';
+      barrasEl.innerHTML = '';
+
+      var activos = res.resumen.filter(function(r) { return r.limite > 0; });
+      var colSize = activos.length <= 3 ? 'col-md-4' : 'col-md-4';
+
+      activos.forEach(function(item, idx) {
+        var c = colores[idx % colores.length];
+        var restante = item.limite - item.usado;
+        if (restante < 0) restante = 0;
+
+        // Cards
+        tiposRow.innerHTML += '<div class="' + colSize + '">' +
+          '<div class="p-3 rounded-4 text-center border" style="background:' + c.bg + ';border-color:' + c.border + ' !important;">' +
+          '<div style="font-size:0.68rem;font-weight:700;color:' + c.color + ';text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">' + item.tipo + '</div>' +
+          '<div style="font-size:2rem;font-weight:800;color:' + c.color + ';letter-spacing:-1px;line-height:1;">' + restante + '</div>' +
+          '<div style="font-size:0.7rem;color:#6c757d;margin-top:4px;">' + item.usado + ' / ' + item.limite + ' usados</div>' +
+          '</div></div>';
+
+        // Barras de progreso
+        var pct = item.limite > 0 ? Math.min((item.usado / item.limite) * 100, 100) : 0;
+        var barColor = pct >= 100 ? '#22c55e' : c.color;
+        var statusIcon = pct >= 100 ? '<i class="bi bi-check-circle-fill text-success me-1"></i>' : '';
+        barrasEl.innerHTML += '<div class="d-flex align-items-center gap-3 mb-3">' +
+          '<div style="width:100px;font-size:0.8rem;font-weight:600;color:#475569;">' + statusIcon + item.tipo + '</div>' +
+          '<div class="flex-fill"><div class="progress" style="height:8px;border-radius:10px;background:#f1f5f9;"><div class="progress-bar" style="width:' + pct + '%;background:' + barColor + ';border-radius:10px;transition:width 0.6s;"></div></div></div>' +
+          '<div style="font-size:0.78rem;font-weight:700;color:' + (pct >= 100 ? '#16a34a' : '#475569') + ';min-width:55px;text-align:right;">' + item.usado + ' / ' + item.limite + '</div>' +
+          '</div>';
+      });
+
+      if (activos.length === 0) {
+        tiposRow.innerHTML = '<div class="col-12 text-center text-muted py-3">Sin cupos configurados para este equipo.</div>';
+        barrasEl.innerHTML = '';
+      }
+    })
+    .withFailureHandler(function() {
+      if (loadEl) loadEl.classList.add('d-none');
+      if (contEl) contEl.classList.remove('d-none');
+      document.getElementById('cr_tipos_row').innerHTML = '<div class="col-12 text-center text-danger py-3">Error al consultar cupos.</div>';
+    })
+    .verificarMisCupos();
+}
+
+// ============================================================
+// RESUMEN HOY — compatible con ambas vistas
+// ============================================================
+
+function abrirResumenHoy() {
+  // Si existe el modal detallado (index.html), usar IDs originales
+  if (document.getElementById('rh_loading')) {
+    $('#rh_loading').removeClass('d-none');
+    $('#rh_contenido').addClass('d-none');
+    $('#rh_tipos_row').empty();
+    $('#rh_tbody').empty();
+    $('#rh_empty').addClass('d-none');
+    $('#rh_tabla_detalle').hide();
+
+    var hoy = new Date();
+    var opciones = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    var fechaStr = hoy.toLocaleDateString('es-CO', opciones);
+    $('#rh_fecha_label').text(fechaStr.charAt(0).toUpperCase() + fechaStr.slice(1));
+
+    new bootstrap.Modal('#modalResumenHoy').show();
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        $('#rh_loading').addClass('d-none');
+        $('#rh_total_num').text(res.total);
+        var coloresTipo = [
+          { bg: '#e0e7ff', color: '#4338ca', border: '#c7d2fe' },
+          { bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
+          { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0' },
+          { bg: '#fce7f3', color: '#be185d', border: '#fbcfe8' },
+          { bg: 'rgba(37,49,80,0.07)', color: '#253150', border: '#e2e8f0' }
+        ];
+        var tiposRow = $('#rh_tipos_row');
+        res.porTipo.forEach(function(item, idx) {
+          var c = coloresTipo[idx % coloresTipo.length];
+          var col = res.porTipo.length === 1 ? 'col-12' : (res.porTipo.length === 2 ? 'col-6' : 'col-md-4');
+          tiposRow.append(
+            '<div class="' + col + '"><div class="p-3 rounded-4 text-center border" style="background:' + c.bg + ';border-color:' + c.border + ' !important;">' +
+            '<div style="font-size:0.72rem;font-weight:700;color:' + c.color + ';text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">' + item.tipo + '</div>' +
+            '<div style="font-size:2rem;font-weight:800;color:' + c.color + ';letter-spacing:-1px;line-height:1;">' + item.cantidad + '</div>' +
+            '</div></div>'
+          );
+        });
+        if (res.listado.length === 0) { $('#rh_empty').removeClass('d-none'); }
+        else {
+          var tbody = $('#rh_tbody');
+          res.listado.forEach(function(item) {
+            var fBadge = item.fuente === 'DIGITAL'
+              ? '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(29,78,216,0.1);color:#1d4ed8;border:1px solid rgba(29,78,216,0.2);margin-left:6px;">DIG</span>'
+              : '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(67,56,202,0.1);color:#4338ca;border:1px solid #c7d2fe;margin-left:6px;">REST</span>';
+            tbody.append('<tr><td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fBadge + '</td><td style="padding:10px 14px;font-size:0.875rem;">' + item.tipo + '</td><td style="padding:10px 14px;"><span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td></tr>');
+          });
+          $('#rh_tabla_detalle').show();
+        }
+        $('#rh_contenido').removeClass('d-none');
+      })
+      .withFailureHandler(function() { $('#rh_loading').addClass('d-none'); $('#rh_empty').removeClass('d-none'); $('#rh_contenido').removeClass('d-none'); })
+      .obtenerDetalleGestionesHoy();
+    return;
+  }
+
+  // Vista unificada: modal simplificado
+  var body = document.getElementById('resumenHoyBody');
+  if (body) body.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-2 text-muted">Cargando resumen...</p></div>';
+  new bootstrap.Modal(document.getElementById('modalResumenHoy')).show();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var colores = [
+        { bg: '#e0e7ff', color: '#4338ca', border: '#c7d2fe' },
+        { bg: '#fef3c7', color: '#b45309', border: '#fde68a' },
+        { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0' },
+        { bg: '#fce7f3', color: '#be185d', border: '#fbcfe8' },
+        { bg: 'rgba(37,49,80,0.07)', color: '#253150', border: '#e2e8f0' }
+      ];
+      var html = '<div class="text-center mb-4"><div style="font-size:3rem;font-weight:800;color:#253150;">' + res.total + '</div><div class="text-muted" style="font-size:0.85rem;">Gestiones realizadas hoy</div></div>';
+      html += '<div class="row g-3 mb-4">';
+      res.porTipo.forEach(function(item, idx) {
+        var c = colores[idx % colores.length];
+        var col = res.porTipo.length <= 2 ? 'col-6' : 'col-md-4';
+        html += '<div class="' + col + '"><div class="p-3 rounded-4 text-center border" style="background:' + c.bg + ';border-color:' + c.border + ' !important;"><div style="font-size:0.72rem;font-weight:700;color:' + c.color + ';text-transform:uppercase;margin-bottom:4px;">' + item.tipo + '</div><div style="font-size:2rem;font-weight:800;color:' + c.color + ';line-height:1;">' + item.cantidad + '</div></div></div>';
+      });
+      html += '</div>';
+      if (res.listado && res.listado.length > 0) {
+        html += '<table class="table" style="font-size:0.85rem;"><thead><tr><th>Solicitud</th><th>Tipo</th><th>Hora</th></tr></thead><tbody>';
+        res.listado.forEach(function(item) {
+          html += '<tr><td class="fw-bold text-primary">' + item.solicitud + '</td><td>' + item.tipo + '</td><td><span style="font-weight:700;padding:4px 10px;border-radius:8px;background:rgba(37,49,80,0.07);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      body.innerHTML = html;
+    })
+    .withFailureHandler(function() {
+      body.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-inbox" style="font-size:2rem;"></i><p class="mt-2">Sin gestiones hoy.</p></div>';
+    })
+    .obtenerDetalleGestionesHoy();
+}
+
 </script>

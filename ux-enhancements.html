@@ -610,10 +610,12 @@ const UX = (function() {
         document.addEventListener('keydown', function(e) {
             // Enter to save when modal is open
             if (e.key === 'Enter' && e.ctrlKey) {
-                const btn = document.getElementById('btnGuardarCambios');
-                if (btn && !btn.disabled) {
-                    const modal = document.querySelector('.modal.show');
-                    if (modal) {
+                var modal = document.querySelector('.modal.show');
+                if (modal) {
+                    var btn = document.getElementById('btnGuardarCambios')
+                           || modal.querySelector('[id$="_btnGuardar"]')
+                           || modal.querySelector('button[onclick*="Guardar"]');
+                    if (btn && !btn.disabled) {
                         e.preventDefault();
                         btn.click();
                     }

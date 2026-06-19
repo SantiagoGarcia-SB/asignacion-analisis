@@ -848,6 +848,36 @@
     let cacheSolicitudes = [];
     let yaSeIntentoAsignar = false;
     let estadoGlobalAsesor = "INACTIVO";
+    var _timerFinTurno = null;
+
+    function _programarAutoInactivo() {
+      if (_timerFinTurno) { clearTimeout(_timerFinTurno); _timerFinTurno = null; }
+      google.script.run
+        .withSuccessHandler(function(info) {
+          if (!info || !info.tieneTurno) return;
+          var msRestantes = info.minutosRestantes * 60 * 1000;
+          if (msRestantes <= 0) {
+            _forzarInactivoPorTurno(info);
+            return;
+          }
+          _timerFinTurno = setTimeout(function() {
+            _forzarInactivoPorTurno(info);
+          }, msRestantes);
+        })
+        .obtenerInfoTurnoActual();
+    }
+
+    function _forzarInactivoPorTurno(info) {
+      if (estadoGlobalAsesor === 'INACTIVO') return;
+      cambiarMiEstado('INACTIVO');
+      Swal.fire({
+        icon: 'info',
+        title: 'Turno finalizado',
+        html: 'Tu turno <b>' + (info.nombreTurno || '') + '</b> terminó a las <b>' + info.horaFinStr + '</b>.<br>Tu estado se cambió a <b>INACTIVO</b> automáticamente.',
+        confirmButtonColor: '#253150',
+        confirmButtonText: 'Entendido'
+      });
+    }
 
     function _quitarFilaTabla(solicitudId) {
       if (!$.fn.DataTable.isDataTable('#miTabla')) return;
@@ -885,6 +915,7 @@
 
       sincronizarEstadoInicial(true);
       verificarYAplicarPermisoVigente();
+      _programarAutoInactivo();
       $('#btnGuardarCambios').off('click').on('click', manejarGuardarCambios);
       $('#d_estado_q').on('change', actualizarCamposGestion);
 
@@ -1186,6 +1217,11 @@
             Swal.fire({ icon: 'success', title: 'Estado: ' + estadoGlobalAsesor, toast: true, position: 'top-end', timer: 2000, showConfirmButton: false });
           }
           if (estadoGlobalAsesor === 'ACTIVO') cargarDatos();
+        } else if (response && !response.success) {
+          estadoGlobalAsesor = 'INACTIVO';
+          $('#currentStatusText').text('INACTIVO');
+          $('#statusDot').css('background-color', '#f59e0b');
+          Swal.fire({ icon: 'warning', title: 'No permitido', html: response.message, confirmButtonColor: '#253150' });
         }
       }).actualizarEstadoPropio(nuevoEstado);
     }

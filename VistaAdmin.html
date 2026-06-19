@@ -768,6 +768,12 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             <i class="bi bi-calendar2-week-fill"></i><span class="nav-text">Turnos</span>
             <span class="nav-badge" id="badge-turnos-alerta" style="display:none;background:#ef4444;">0</span>
         </a>
+        <a href="#" id="link-equipos" class="nav-link-admin" onclick="mostrarSeccion('equipos', event)">
+            <i class="bi bi-diagram-3-fill"></i><span class="nav-text">Equipos</span>
+        </a>
+        <a href="#" id="link-catalogo" class="nav-link-admin" onclick="mostrarSeccion('catalogo', event)">
+            <i class="bi bi-collection-fill"></i><span class="nav-text">Catálogo</span>
+        </a>
         <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
             <i class="bi bi-bar-chart-line-fill"></i><span class="nav-text">Métricas</span>
         </a>
@@ -945,78 +951,10 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </button>
         </div>
 
-        <!-- MODO GENERAL -->
+        <!-- MODO GENERAL (dinámico desde Equipos) -->
         <div id="cupos-modo-general">
-            <div class="row g-4">
-                <!-- DIGITAL -->
-                <div class="col-lg-4">
-                    <div class="p-4 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;">
-                        <div class="d-flex align-items-center gap-2 mb-3">
-                            <i class="bi bi-laptop" style="font-size:1.2rem;color:#1d4ed8;"></i>
-                            <span class="fw-bold" style="color:#1d4ed8;">Equipo Digital</span>
-                        </div>
-                        <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_digital_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('digital')">
-                        <div class="text-center mb-2">
-                            <span class="badge" id="badge_digital" style="background:#dbeafe;color:#1d4ed8;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
-                        </div>
-                        <div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_digital" style="width:0%;background:#1d4ed8;"></div></div>
-                        <div class="row g-2">
-                            <div class="col-6"><label class="small">Nuevas</label><input type="number" id="cupo_digital_nuevas" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                            <div class="col-6"><label class="small">Reestudios</label><input type="number" id="cupo_digital_reestudios" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                            <div class="col-6"><label class="small">Inducciones</label><input type="number" id="cupo_digital_inducciones" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                            <div class="col-6"><label class="small">Biometría</label><input type="number" id="cupo_digital_biometria" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                            <div class="col-6"><label class="small">Nueva UAR</label><input type="number" id="cupo_digital_nuevaUar" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                            <div class="col-6"><label class="small">Deudor UAR</label><input type="number" id="cupo_digital_deudorUar" class="form-control form-control-sm text-center subcupo" data-equipo="digital" min="0" oninput="validarSubcupos('digital')"></div>
-                        </div>
-                    </div>
-                </div>
-                <!-- BIOMETRÍA -->
-                <div class="col-lg-4">
-                    <div class="p-4 rounded-3" style="background:#eef2ff;border:1px solid #c7d2fe;">
-                        <div class="d-flex align-items-center gap-2 mb-3">
-                            <i class="bi bi-fingerprint" style="font-size:1.2rem;color:#4338ca;"></i>
-                            <span class="fw-bold" style="color:#4338ca;">Equipo Biometría</span>
-                        </div>
-                        <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_biometria_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('biometria')">
-                        <div class="text-center mb-2">
-                            <span class="badge" id="badge_biometria" style="background:#e0e7ff;color:#4338ca;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
-                        </div>
-                        <div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_biometria" style="width:0%;background:#4338ca;"></div></div>
-                        <div class="row g-2">
-                            <div class="col-6"><label class="small">Nuevas</label><input type="number" id="cupo_biometria_nuevas" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                            <div class="col-6"><label class="small">Reestudios</label><input type="number" id="cupo_biometria_reestudios" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                            <div class="col-6"><label class="small">Inducciones</label><input type="number" id="cupo_biometria_inducciones" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                            <div class="col-6"><label class="small">Biometría</label><input type="number" id="cupo_biometria_biometria" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                            <div class="col-6"><label class="small">Nueva UAR</label><input type="number" id="cupo_biometria_nuevaUar" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                            <div class="col-6"><label class="small">Deudor UAR</label><input type="number" id="cupo_biometria_deudorUar" class="form-control form-control-sm text-center subcupo" data-equipo="biometria" min="0" oninput="validarSubcupos('biometria')"></div>
-                        </div>
-                    </div>
-                </div>
-                <!-- REESTUDIOS -->
-                <div class="col-lg-4">
-                    <div class="p-4 rounded-3" style="background:#f5f3ff;border:1px solid #ddd6fe;">
-                        <div class="d-flex align-items-center gap-2 mb-3">
-                            <i class="bi bi-layers" style="font-size:1.2rem;color:#7c3aed;"></i>
-                            <span class="fw-bold" style="color:#7c3aed;">Equipo Reestudios</span>
-                        </div>
-                        <label class="small fw-bold mb-1">Total Cupos</label>
-                        <input type="number" id="cupo_reestudios_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos('reestudios')">
-                        <div class="text-center mb-2">
-                            <span class="badge" id="badge_reestudios" style="background:#ede9fe;color:#7c3aed;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
-                        </div>
-                        <div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_reestudios" style="width:0%;background:#7c3aed;"></div></div>
-                        <div class="row g-2">
-                            <div class="col-6"><label class="small">Nuevas</label><input type="number" id="cupo_reestudios_nuevas" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                            <div class="col-6"><label class="small">Reestudios</label><input type="number" id="cupo_reestudios_reestudios" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                            <div class="col-6"><label class="small">Inducciones</label><input type="number" id="cupo_reestudios_inducciones" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                            <div class="col-6"><label class="small">Biometría</label><input type="number" id="cupo_reestudios_biometria" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                            <div class="col-6"><label class="small">Nueva UAR</label><input type="number" id="cupo_reestudios_nuevaUar" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                            <div class="col-6"><label class="small">Deudor UAR</label><input type="number" id="cupo_reestudios_deudorUar" class="form-control form-control-sm text-center subcupo" data-equipo="reestudios" min="0" oninput="validarSubcupos('reestudios')"></div>
-                        </div>
-                    </div>
-                </div>
+            <div class="row g-4" id="cupos-equipos-grid">
+                <div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando equipos...</div>
             </div>
             <div class="text-end mt-4">
                 <button class="btn-primary-brand" onclick="guardarCuposGenerales()">
@@ -1165,9 +1103,6 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                 <input type="date" id="fechaNovedadesHasta" class="form-control form-control-sm" style="width:auto;">
                 <select id="filtroNovEspecialidad" class="form-select form-select-sm" style="width:auto;">
                     <option value="">Todas las especialidades</option>
-                    <option value="ESTUDIO DIGITAL">Estudio Digital</option>
-                    <option value="PENDIENTE_BIOMETRIA">Biometría</option>
-                    <option value="REESTUDIOS">Reestudios</option>
                 </select>
                 <select id="filtroNovTurno" class="form-select form-select-sm" style="width:auto;">
                     <option value="">Todos los turnos</option>
@@ -1300,6 +1235,329 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 
 
     </div>
+
+    <!-- ===== SECCIÓN EQUIPOS ===== -->
+    <div id="seccion-equipos" class="seccion-admin" style="display:none;">
+        <div class="d-flex justify-content-between align-items-start mb-4">
+            <div>
+                <h1 class="page-title">Configuración de Equipos</h1>
+                <p class="page-sub">Define los equipos de trabajo, sus motores de asignación y tipos de caso permitidos.</p>
+            </div>
+            <button class="btn btn-primary" onclick="abrirModalEquipo(null)" style="border-radius:12px;">
+                <i class="bi bi-plus-lg me-1"></i> Nuevo Equipo
+            </button>
+        </div>
+        <div id="equipos-grid" class="row g-4">
+            <div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando equipos...</div>
+        </div>
+    </div>
+
+    <!-- ===== SECCIÓN CATÁLOGO ===== -->
+    <div id="seccion-catalogo" class="seccion-admin" style="display:none;">
+        <div class="mb-4">
+            <h1 class="page-title">Catálogo de Configuración</h1>
+            <p class="page-sub">Gestiona los tipos de solicitud, motivos de aplazamiento/negación y categorías de score.</p>
+        </div>
+
+        <ul class="nav nav-pills mb-4" id="catalogoTabs" role="tablist" style="gap:8px;">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-tipos" data-bs-toggle="pill" data-bs-target="#panel-tipos" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
+                    <i class="bi bi-tags me-1"></i> Tipos de Solicitud
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-aplazamiento" data-bs-toggle="pill" data-bs-target="#panel-aplazamiento" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
+                    <i class="bi bi-clock-history me-1"></i> Motivos Aplazamiento
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-negacion" data-bs-toggle="pill" data-bs-target="#panel-negacion" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
+                    <i class="bi bi-x-octagon me-1"></i> Motivos Negación
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-score" data-bs-toggle="pill" data-bs-target="#panel-score" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
+                    <i class="bi bi-star me-1"></i> Categorías Score
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="catalogoTabContent">
+            <!-- Tipos de Solicitud -->
+            <div class="tab-pane fade show active" id="panel-tipos" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted" style="font-size:0.85rem;">Tipos de caso que el sistema puede asignar</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="abrirModalTipoSolicitud(null)" style="border-radius:10px;">
+                        <i class="bi bi-plus-lg me-1"></i> Nuevo Tipo
+                    </button>
+                </div>
+                <div id="tipos-lista" class="row g-3">
+                    <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                </div>
+            </div>
+
+            <!-- Motivos Aplazamiento -->
+            <div class="tab-pane fade" id="panel-aplazamiento" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted" style="font-size:0.85rem;">Motivos disponibles cuando se aplaza una solicitud</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('aplazamiento', null)" style="border-radius:10px;">
+                        <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
+                    </button>
+                </div>
+                <div id="motivos-aplazamiento-lista">
+                    <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                </div>
+            </div>
+
+            <!-- Motivos Negación -->
+            <div class="tab-pane fade" id="panel-negacion" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted" style="font-size:0.85rem;">Motivos disponibles cuando se niega una solicitud</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('negacion', null)" style="border-radius:10px;">
+                        <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
+                    </button>
+                </div>
+                <div id="motivos-negacion-lista">
+                    <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                </div>
+            </div>
+
+            <!-- Categorías Score -->
+            <div class="tab-pane fade" id="panel-score" role="tabpanel">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted" style="font-size:0.85rem;">Categorías de pólizas para la rotación VIP</span>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="buscarPolizaScore" class="form-control form-control-sm" placeholder="Buscar póliza..." style="border-radius:10px;width:200px;">
+                        <button class="btn btn-sm btn-outline-primary" onclick="buscarPolizaEnScore()" style="border-radius:10px;">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="score-resumen" class="row g-3 mb-4"></div>
+                <div id="score-resultados" style="display:none;">
+                    <h6 class="mb-3" style="font-weight:600;">Resultados de búsqueda</h6>
+                    <div id="score-resultados-lista"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ===== MODAL EQUIPO ===== -->
+<div class="modal fade" id="modalEquipo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content" style="border:none;border-radius:20px;">
+            <div class="modal-header" style="background:var(--grad-azul);color:white;border-radius:20px 20px 0 0;padding:20px 24px;">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="width:44px;height:44px;background:rgba(255,255,255,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+                        <i class="bi bi-diagram-3-fill" style="font-size:1.3rem;"></i>
+                    </div>
+                    <div>
+                        <div class="modal-title" id="tituloModalEquipo" style="font-weight:700;font-size:1.1rem;">Nuevo Equipo</div>
+                        <div style="font-size:0.8rem;opacity:0.8;">Configura las propiedades del equipo</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:24px;">
+                <input type="hidden" id="eq_editando_id">
+                <div class="row g-3">
+                    <!-- ID -->
+                    <div class="col-md-6">
+                        <label class="form-label eq-label">ID del equipo
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Código único en MAYÚSCULAS sin espacios. Se usa internamente para cupos y configuración. Ej: DIGITAL, VALIDACIONES, COBRANZAS"><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <input type="text" id="eq_id" class="form-control" placeholder="Ej: VALIDACIONES" style="border-radius:10px;text-transform:uppercase;">
+                    </div>
+                    <!-- Nombre -->
+                    <div class="col-md-6">
+                        <label class="form-label eq-label">Nombre
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Nombre visible que verán los analistas en su barra de navegación y el admin en las tablas. Ej: Estudios Digitales"><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <input type="text" id="eq_nombre" class="form-control" placeholder="Ej: Validaciones Especiales" style="border-radius:10px;">
+                    </div>
+                    <!-- Ícono -->
+                    <div class="col-md-8">
+                        <label class="form-label eq-label">Ícono del equipo
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Selecciona un ícono representativo para el equipo. Aparece en la card del equipo, la barra de navegación del analista y los badges."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <input type="hidden" id="eq_icono" value="bi-people-fill">
+                        <div class="eq-icon-picker" id="eqIconPicker">
+                            <div class="eq-icon-selected" id="eqIconSelected" onclick="toggleIconPicker()">
+                                <i class="bi bi-people-fill" id="eqIconPreview"></i>
+                                <span id="eqIconLabel">bi-people-fill</span>
+                                <i class="bi bi-chevron-down ms-auto" style="font-size:0.7rem;color:#94a3b8;"></i>
+                            </div>
+                            <div class="eq-icon-dropdown" id="eqIconDropdown" style="display:none;">
+                                <input type="text" class="form-control form-control-sm mb-2" id="eqIconSearch" placeholder="Buscar ícono..." style="border-radius:8px;font-size:0.8rem;" oninput="filtrarIconos(this.value)">
+                                <div class="eq-icon-grid" id="eqIconGrid"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Color -->
+                    <div class="col-md-4">
+                        <label class="form-label eq-label">Color
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Color representativo del equipo. Se usa en badges, cards y la barra de navegación del analista."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="color" id="eq_color" class="form-control form-control-color" value="#253150" style="border-radius:10px;height:42px;width:60px;">
+                            <div id="eqColorPreview" style="flex:1;height:42px;border-radius:10px;background:#253150;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:0.8rem;letter-spacing:0.5px;">PREVIEW</div>
+                        </div>
+                    </div>
+                    <!-- Máx asignar -->
+                    <div class="col-md-4">
+                        <label class="form-label eq-label">Máx asignar/llamada
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Cuántos casos asigna el motor cada vez que el analista solicita uno. Para la mayoría de equipos es 1."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <input type="number" id="eq_maxAsignar" class="form-control" value="1" min="1" style="border-radius:10px;">
+                    </div>
+                    <!-- Tipo de modal -->
+                    <div class="col-md-4">
+                        <label class="form-label eq-label">Tipo de modal
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Qué formulario ve el analista al gestionar un caso. Digital: 3 tabs con info completa. Biometría: tipificación de llamada. Reestudio: información y gestión simplificada."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <select id="eq_modalTipo" class="form-select" style="border-radius:10px;">
+                            <option value="DIGITAL_FULL">Digital completo (3 tabs)</option>
+                            <option value="BIOMETRIA_TIPIFICACION">Biometría (tipificación)</option>
+                            <option value="REESTUDIO_SIMPLE">Reestudio (2 tabs)</option>
+                        </select>
+                    </div>
+                    <!-- Función de guardado -->
+                    <div class="col-md-4">
+                        <label class="form-label eq-label">Función de guardado
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Qué lógica del backend se ejecuta al guardar. Debe coincidir con el tipo de modal seleccionado."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <select id="eq_funcionGuardar" class="form-select" style="border-radius:10px;">
+                            <option value="guardarCambiosInternos">Digital (guardarCambiosInternos)</option>
+                            <option value="guardarGestionBiometria">Biometría (guardarGestionBiometria)</option>
+                            <option value="guardarGestionReestudio">Reestudio (guardarGestionReestudio)</option>
+                        </select>
+                    </div>
+                    <!-- Opciones del motor -->
+                    <div class="col-12">
+                        <hr style="margin:8px 0;">
+                        <label class="form-label eq-label">Opciones del motor de asignación
+                            <span class="eq-help" tabindex="0" data-bs-toggle="tooltip" data-bs-placement="top" title="Configuraciones avanzadas del motor. VIP: alterna entre pólizas VIP y otras categorías. Score: usa la hoja de score para clasificar pólizas en buckets. Activo: si el equipo está habilitado."><i class="bi bi-question-circle-fill"></i></span>
+                        </label>
+                        <div class="d-flex gap-4 flex-wrap mt-1">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="eq_vipRotacion">
+                                <label class="form-check-label" for="eq_vipRotacion">Rotación VIP
+                                    <span class="eq-help-inline" tabindex="0" data-bs-toggle="tooltip" title="Alterna entre pólizas VIP y otras categorías para distribuir equitativamente. Actívalo si el equipo maneja pólizas categorizadas como VIP."><i class="bi bi-question-circle"></i></span>
+                                </label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="eq_scoreCategories">
+                                <label class="form-check-label" for="eq_scoreCategories">Categorías Score
+                                    <span class="eq-help-inline" tabindex="0" data-bs-toggle="tooltip" title="Usa la hoja 'score' para clasificar pólizas en buckets (VIP, grande, mediana, etc.). Generalmente se activa junto con Rotación VIP."><i class="bi bi-question-circle"></i></span>
+                                </label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="eq_activo" checked>
+                                <label class="form-check-label" for="eq_activo">Equipo activo
+                                    <span class="eq-help-inline" tabindex="0" data-bs-toggle="tooltip" title="Si se desactiva, el equipo no aparece en las opciones de asignación ni en los dropdowns. Los analistas ya asignados no podrán ingresar."><i class="bi bi-question-circle"></i></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #eee;padding:16px 24px;">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:10px;">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarEquipo()" style="border-radius:10px;background:var(--grad-azul);border:none;">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL TIPO SOLICITUD ===== -->
+<div class="modal fade" id="modalTipoSolicitud" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border:none;border-radius:20px;">
+            <div class="modal-header" style="background:var(--grad-azul);color:white;border-radius:20px 20px 0 0;padding:20px 24px;">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="width:44px;height:44px;background:rgba(255,255,255,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+                        <i class="bi bi-tags-fill" style="font-size:1.3rem;"></i>
+                    </div>
+                    <div>
+                        <div class="modal-title" id="tituloModalTipo" style="font-weight:700;font-size:1.1rem;">Tipo de Solicitud</div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:24px;">
+                <input type="hidden" id="ts_editando_id">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">ID</label>
+                        <input type="text" id="ts_id" class="form-control" placeholder="Ej: nueva" style="border-radius:10px;">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">Label</label>
+                        <input type="text" id="ts_label" class="form-control" placeholder="Ej: Nuevas" style="border-radius:10px;">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">Ícono</label>
+                        <input type="text" id="ts_icono" class="form-control" placeholder="bi-tag" style="border-radius:10px;">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">Color badge</label>
+                        <input type="color" id="ts_color" class="form-control form-control-color" value="#253150" style="border-radius:10px;height:38px;">
+                    </div>
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="ts_activo" checked>
+                            <label class="form-check-label" for="ts_activo">Activo</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #eee;padding:16px 24px;">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:10px;">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarTipoSolicitud()" style="border-radius:10px;background:var(--grad-azul);border:none;">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL MOTIVO ===== -->
+<div class="modal fade" id="modalMotivo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border:none;border-radius:20px;">
+            <div class="modal-header" style="background:var(--grad-azul);color:white;border-radius:20px 20px 0 0;padding:20px 24px;">
+                <div class="d-flex align-items-center gap-3">
+                    <div style="width:40px;height:40px;background:rgba(255,255,255,0.15);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+                        <i class="bi bi-pencil-square" style="font-size:1.1rem;"></i>
+                    </div>
+                    <div class="modal-title" id="tituloModalMotivo" style="font-weight:700;font-size:1rem;">Motivo</div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding:24px;">
+                <input type="hidden" id="mot_tipo_actual">
+                <input type="hidden" id="mot_editando_id">
+                <div class="mb-3">
+                    <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">Texto del motivo</label>
+                    <input type="text" id="mot_texto" class="form-control" placeholder="Ej: Pendiente validación" style="border-radius:10px;">
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="mot_activo" checked>
+                    <label class="form-check-label" for="mot_activo">Activo</label>
+                </div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #eee;padding:16px 24px;">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-radius:10px;">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="guardarMotivo()" style="border-radius:10px;background:var(--grad-azul);border:none;">
+                    <i class="bi bi-check-lg me-1"></i> Guardar
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="modalUsuario" tabindex="-1">
@@ -1332,9 +1590,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                         <div class="input-group-icon">
                             <i class="bi bi-briefcase input-icon"></i>
                             <select class="form-select" id="editEspecialidad">
-                                <option value="ESTUDIO DIGITAL">ESTUDIO DIGITAL</option>
-                                <option value="PENDIENTE_BIOMETRIA">DESAPLAZAMIENTO</option>
-                                <option value="TRASLADOS">TRASLADOS</option>
+                                <option value="" disabled>Cargando equipos...</option>
                             </select>
                         </div>
                     </div>
@@ -1465,9 +1721,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                             <div class="input-group-icon">
                                 <i class="bi bi-briefcase input-icon"></i>
                                 <select id="nu_especialidad" class="form-select">
-                                    <option value="ESTUDIO DIGITAL">ESTUDIO DIGITAL</option>
-                                    <option value="PENDIENTE_BIOMETRIA">DESAPLAZAMIENTO</option>
-                                    <option value="TRASLADOS">TRASLADOS</option>
+                                    <option value="" disabled>Cargando equipos...</option>
                                 </select>
                             </div>
                         </div>
@@ -1507,10 +1761,14 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+var _equiposCacheAdmin = [];
 function badgeEspecialidad(v) {
-    if (v === 'ESTUDIO DIGITAL')     return '<span class="badge-pill badge-esp-digital"><i class="bi bi-laptop"></i> ' + v + '</span>';
-    if (v === 'PENDIENTE_BIOMETRIA') return '<span class="badge-pill badge-esp-desplaz"><i class="bi bi-fingerprint"></i> ' + v + '</span>';
-    if (v === 'TRASLADOS')           return '<span class="badge-pill badge-esp-traslado"><i class="bi bi-arrow-left-right"></i> ' + v + '</span>';
+    var mapeoLegacy = { 'ESTUDIO DIGITAL': 'DIGITAL', 'ESTUDIO_DIGITAL': 'DIGITAL', 'PENDIENTE_BIOMETRIA': 'BIOMETRIA', 'REESTUDIOS': 'REESTUDIOS' };
+    var equipoId = mapeoLegacy[v] || v;
+    var eq = _equiposCacheAdmin.find(function(e) { return e.id === equipoId; });
+    if (eq) {
+        return '<span class="badge-pill" style="background:' + eq.colorHex + '20;color:' + eq.colorHex + ';border:1px solid ' + eq.colorHex + '40;"><i class="bi ' + eq.icono + ' me-1"></i>' + eq.nombre + '</span>';
+    }
     return '<span class="badge-pill badge-est-default">' + v + '</span>';
 }
 
@@ -1637,6 +1895,8 @@ function mostrarSeccion(id, e) {
     if (id === 'cupos') cargarCuposGenerales();
     if (id === 'novedades') { cargarNovedades(); actualizarBadgePermisos(); }
     if (id === 'turnos') cargarTurnos();
+    if (id === 'equipos') cargarEquipos();
+    if (id === 'catalogo') cargarCatalogo();
 }
 
 // ─── SIDEBAR (hover-expand, no JS needed for transitions) ─────────────────────
@@ -2906,90 +3166,110 @@ function cambiarModoCupos(modo) {
     }
 }
 
+var _cuposEquiposActivos = [];
+var SUBCATS_CUPOS = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
+var SUBCATS_LABELS = { nuevas: 'Nuevas', reestudios: 'Reestudios', inducciones: 'Inducciones', biometria: 'Biometría', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR' };
+
 function cargarCuposGenerales() {
-    google.script.run.withSuccessHandler(function(res) {
-        var equipos = ['digital', 'biometria', 'reestudios'];
-        var campos = ['total', 'nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
-        for (var e = 0; e < equipos.length; e++) {
-            var eq = equipos[e];
-            for (var c = 0; c < campos.length; c++) {
-                var campo = campos[c];
-                var el = document.getElementById('cupo_' + eq + '_' + campo);
-                if (el && res[eq]) el.value = res[eq][campo] || 0;
-            }
-            validarSubcupos(eq);
+    var grid = document.getElementById('cupos-equipos-grid');
+    grid.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>';
+
+    google.script.run.withSuccessHandler(function(equipos) {
+        _cuposEquiposActivos = equipos || [];
+        if (_cuposEquiposActivos.length === 0) {
+            grid.innerHTML = '<div class="col-12 text-center text-muted py-5">No hay equipos configurados. Crea uno en la sección Equipos.</div>';
+            return;
         }
-    }).admin_getCuotasGlobales();
+        renderCuposCards(equipos);
+        google.script.run.withSuccessHandler(function(res) {
+            for (var e = 0; e < _cuposEquiposActivos.length; e++) {
+                var eqId = _cuposEquiposActivos[e].id.toLowerCase();
+                var campos = ['total'].concat(SUBCATS_CUPOS);
+                for (var c = 0; c < campos.length; c++) {
+                    var el = document.getElementById('cupo_' + eqId + '_' + campos[c]);
+                    if (el && res[eqId]) el.value = res[eqId][campos[c]] || 0;
+                }
+                validarSubcupos(eqId);
+            }
+        }).admin_getCuotasGlobales();
+    }).admin_getEquipos();
 }
 
-var RATIOS_DEFAULT = {
-    digital: { nuevas: 0.75, reestudios: 0.10, inducciones: 0.08, biometria: 0, nuevaUar: 0.04, deudorUar: 0.03 },
-    biometria: { nuevas: 0, reestudios: 0, inducciones: 0, biometria: 0.80, nuevaUar: 0.10, deudorUar: 0.10 },
-    reestudios: { nuevas: 0, reestudios: 0.60, inducciones: 0.10, biometria: 0, nuevaUar: 0.17, deudorUar: 0.13 }
-};
-
-function sugerirDistribucion(equipo) {
-    var total = parseInt(document.getElementById('cupo_' + equipo + '_total').value) || 0;
-    var ratios = RATIOS_DEFAULT[equipo];
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
-    var asignado = 0;
-    for (var i = 0; i < subcats.length; i++) {
-        var val = Math.floor(total * ratios[subcats[i]]);
-        asignado += val;
-        document.getElementById('cupo_' + equipo + '_' + subcats[i]).value = val;
-    }
-    var residuo = total - asignado;
-    if (residuo > 0) {
-        var principal = equipo === 'digital' ? 'nuevas' : equipo === 'biometria' ? 'biometria' : 'reestudios';
-        var elP = document.getElementById('cupo_' + equipo + '_' + principal);
-        elP.value = parseInt(elP.value) + residuo;
-    }
-    validarSubcupos(equipo);
+function renderCuposCards(equipos) {
+    var grid = document.getElementById('cupos-equipos-grid');
+    var colSize = equipos.length <= 3 ? 'col-lg-4' : 'col-lg-3';
+    var html = '';
+    equipos.forEach(function(eq) {
+        var eqId = eq.id.toLowerCase();
+        var color = eq.colorHex || '#253150';
+        var bgLight = color + '12';
+        var borderLight = color + '40';
+        html += '<div class="' + colSize + '">';
+        html += '<div class="p-4 rounded-3" style="background:' + bgLight + ';border:1px solid ' + borderLight + ';">';
+        html += '<div class="d-flex align-items-center gap-2 mb-3">';
+        html += '<i class="bi ' + (eq.icono || 'bi-people-fill') + '" style="font-size:1.2rem;color:' + color + ';"></i>';
+        html += '<span class="fw-bold" style="color:' + color + ';">' + eq.nombre + '</span>';
+        html += '</div>';
+        html += '<label class="small fw-bold mb-1">Total Cupos</label>';
+        html += '<input type="number" id="cupo_' + eqId + '_total" class="form-control fw-bold fs-5 text-center mb-2" min="0" oninput="validarSubcupos(\'' + eqId + '\')">';
+        html += '<div class="text-center mb-2"><span class="badge" id="badge_' + eqId + '" style="background:' + borderLight + ';color:' + color + ';font-size:0.75rem;padding:5px 10px;">0 / 0</span></div>';
+        html += '<div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_' + eqId + '" style="width:0%;background:' + color + ';"></div></div>';
+        html += '<div class="row g-2">';
+        SUBCATS_CUPOS.forEach(function(sub) {
+            html += '<div class="col-6"><label class="small">' + SUBCATS_LABELS[sub] + '</label>';
+            html += '<input type="number" id="cupo_' + eqId + '_' + sub + '" class="form-control form-control-sm text-center subcupo" data-equipo="' + eqId + '" min="0" oninput="validarSubcupos(\'' + eqId + '\')"></div>';
+        });
+        html += '</div></div></div>';
+    });
+    grid.innerHTML = html;
 }
 
 function validarSubcupos(equipo) {
-    var total = parseInt(document.getElementById('cupo_' + equipo + '_total').value) || 0;
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
+    var totalEl = document.getElementById('cupo_' + equipo + '_total');
+    if (!totalEl) return;
+    var total = parseInt(totalEl.value) || 0;
     var suma = 0;
-    for (var i = 0; i < subcats.length; i++) {
-        suma += parseInt(document.getElementById('cupo_' + equipo + '_' + subcats[i]).value) || 0;
-    }
+    SUBCATS_CUPOS.forEach(function(sub) {
+        suma += parseInt(document.getElementById('cupo_' + equipo + '_' + sub).value) || 0;
+    });
     var badge = document.getElementById('badge_' + equipo);
     var bar = document.getElementById('bar_' + equipo);
+    if (!badge || !bar) return;
     var pct = total > 0 ? Math.min((suma / total) * 100, 100) : 0;
     bar.style.width = pct + '%';
-    var colores = { digital: '#1d4ed8', biometria: '#4338ca', reestudios: '#7c3aed' };
-    if (suma > total) { bar.style.background = '#ef4444'; badge.style.color = '#ef4444'; badge.textContent = '?? Sobran ' + (suma - total) + ' ? ' + suma + ' / ' + total; }
-    else if (suma === total) { bar.style.background = '#22c55e'; badge.style.color = '#16a34a'; badge.textContent = '? ' + suma + ' / ' + total; }
-    else { bar.style.background = colores[equipo]; badge.style.color = colores[equipo]; badge.textContent = 'Faltan ' + (total - suma) + ' ? ' + suma + ' / ' + total; }
+    var eq = _cuposEquiposActivos.find(function(e) { return e.id.toLowerCase() === equipo; });
+    var color = (eq && eq.colorHex) || '#253150';
+    if (suma > total) { bar.style.background = '#ef4444'; badge.style.color = '#ef4444'; badge.textContent = 'Sobran ' + (suma - total) + ' | ' + suma + ' / ' + total; }
+    else if (suma === total) { bar.style.background = '#22c55e'; badge.style.color = '#16a34a'; badge.textContent = suma + ' / ' + total; }
+    else { bar.style.background = color; badge.style.color = color; badge.textContent = 'Faltan ' + (total - suma) + ' | ' + suma + ' / ' + total; }
 }
 
 function guardarCuposGenerales() {
-    var equipos = ['digital', 'biometria', 'reestudios'];
-    var nombresEquipos = { digital: 'Digital', biometria: 'Biometría', reestudios: 'Reestudios' };
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
     var cupos = {};
-    for (var e = 0; e < equipos.length; e++) {
-        var eq = equipos[e];
-        var total = parseInt(document.getElementById('cupo_' + eq + '_total').value) || 0;
-        var suma = 0; var data = { total: total };
-        for (var c = 0; c < subcats.length; c++) {
-            var val = parseInt(document.getElementById('cupo_' + eq + '_' + subcats[c]).value) || 0;
-            data[subcats[c]] = val; suma += val;
-        }
+    for (var e = 0; e < _cuposEquiposActivos.length; e++) {
+        var eq = _cuposEquiposActivos[e];
+        var eqId = eq.id.toLowerCase();
+        var total = parseInt(document.getElementById('cupo_' + eqId + '_total').value) || 0;
+        var suma = 0;
+        var data = { total: total };
+        SUBCATS_CUPOS.forEach(function(sub) {
+            var val = parseInt(document.getElementById('cupo_' + eqId + '_' + sub).value) || 0;
+            data[sub] = val;
+            suma += val;
+        });
         if (suma > total) {
-            Swal.fire({ title: 'Cupos excedidos', html: '<strong>' + nombresEquipos[eq] + ':</strong> La suma (' + suma + ') supera el total (' + total + ').<br>Sobran <strong>' + (suma - total) + '</strong> cupos.', icon: 'error', confirmButtonColor: '#253150' });
+            Swal.fire({ title: 'Cupos excedidos', html: '<strong>' + eq.nombre + ':</strong> La suma (' + suma + ') supera el total (' + total + ').<br>Sobran <strong>' + (suma - total) + '</strong> cupos.', icon: 'error', confirmButtonColor: '#253150' });
             return;
         }
         if (suma < total) {
-            Swal.fire({ title: 'Cupos sin distribuir', html: '<strong>' + nombresEquipos[eq] + ':</strong> La suma (' + suma + ') no alcanza el total (' + total + ').<br>Faltan <strong>' + (total - suma) + '</strong> cupos por asignar.', icon: 'warning', confirmButtonColor: '#253150' });
+            Swal.fire({ title: 'Cupos sin distribuir', html: '<strong>' + eq.nombre + ':</strong> La suma (' + suma + ') no alcanza el total (' + total + ').<br>Faltan <strong>' + (total - suma) + '</strong> cupos por asignar.', icon: 'warning', confirmButtonColor: '#253150' });
             return;
         }
-        cupos[eq] = data;
+        cupos[eqId] = data;
     }
     Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
     google.script.run.withSuccessHandler(function(res) {
-        if (res.success) Swal.fire({ icon: 'success', title: '¡Cupos Actualizados!', text: res.message, confirmButtonColor: '#253150' });
+        if (res.success) Swal.fire({ icon: 'success', title: 'Cupos Actualizados', text: res.message, confirmButtonColor: '#253150' });
         else Swal.fire('Error', res.message, 'error');
     }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); }).admin_setCuotasGlobales(cupos);
 }
@@ -3216,6 +3496,26 @@ function resetearCuposIndividual() {
 .turno-col.drag-over { border-color:#6366f1; background:#eef2ff; box-shadow:0 0 0 3px #c7d2fe; }
 .turno-col-warn.drag-over { border-color:#f59e0b; background:#fffbeb; box-shadow:0 0 0 3px #fde68a; }
 .turno-count { font-size:0.72rem; background:#e2e8f0; border-radius:20px; padding:1px 7px; color:#475569; font-weight:600; margin-left:6px; vertical-align:middle; }
+
+/* Equipo modal styles */
+.eq-label { font-weight:600; font-size:0.8rem; text-transform:uppercase; color:#6c757d; display:flex; align-items:center; gap:6px; }
+.eq-help { color:#94a3b8; cursor:help; font-size:0.85rem; transition:color 0.2s; }
+.eq-help:hover { color:#3b82f6; }
+.eq-help-inline { color:#bdc3cb; cursor:help; font-size:0.78rem; margin-left:4px; }
+.eq-help-inline:hover { color:#3b82f6; }
+
+.eq-icon-picker { position:relative; }
+.eq-icon-selected { display:flex; align-items:center; gap:10px; padding:8px 14px; border:1.5px solid #dee2e6; border-radius:10px; cursor:pointer; transition:all 0.2s; background:white; }
+.eq-icon-selected:hover { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,0.1); }
+.eq-icon-selected i:first-child { font-size:1.3rem; color:#253150; }
+.eq-icon-selected span { font-size:0.82rem; color:#475569; }
+.eq-icon-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; background:white; border:1.5px solid #e2e8f0; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.12); padding:12px; z-index:1060; max-height:320px; overflow:hidden; display:flex; flex-direction:column; }
+.eq-icon-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:4px; overflow-y:auto; max-height:240px; padding-right:4px; }
+.eq-icon-grid::-webkit-scrollbar { width:5px; }
+.eq-icon-grid::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:10px; }
+.eq-icon-btn { width:100%; aspect-ratio:1; border:none; background:none; border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:1.2rem; color:#475569; transition:all 0.15s; }
+.eq-icon-btn:hover { background:#eff6ff; color:#2563eb; transform:scale(1.1); }
+.eq-icon-btn.active { background:#253150; color:white; box-shadow:0 2px 8px rgba(37,49,80,0.3); }
 </style>
 
 <!-- Modal lista sin turno -->
@@ -3345,6 +3645,541 @@ function resetearCuposIndividual() {
 </div>
 
 <!-- Modal Horas extra del día -->
+
+<script>
+// ============================================================
+// EQUIPOS — CRUD
+// ============================================================
+
+// Poblar todos los selects de especialidad desde equipos registrados
+function cargarSelectsEspecialidad() {
+    google.script.run.withSuccessHandler(function(equipos) {
+        if (!equipos || equipos.length === 0) return;
+        _equiposCacheAdmin = equipos;
+        var selectIds = ['editEspecialidad', 'nu_especialidad', 'filtroNovEspecialidad'];
+        selectIds.forEach(function(selId) {
+            var sel = document.getElementById(selId);
+            if (!sel) return;
+            var currentVal = sel.value;
+            sel.innerHTML = '';
+            if (selId === 'filtroNovEspecialidad') {
+                var optTodos = document.createElement('option');
+                optTodos.value = '';
+                optTodos.textContent = 'Todas las especialidades';
+                sel.appendChild(optTodos);
+            }
+            equipos.forEach(function(eq) {
+                var opt = document.createElement('option');
+                opt.value = eq.id;
+                opt.textContent = eq.nombre;
+                sel.appendChild(opt);
+            });
+            if (currentVal) sel.value = currentVal;
+        });
+    }).admin_getEquipos();
+}
+
+// Ejecutar al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(cargarSelectsEspecialidad, 300);
+});
+
+// ============================================================
+// ICON PICKER
+// ============================================================
+var EQ_ICONOS = [
+    'bi-people-fill','bi-person-fill','bi-person-badge-fill','bi-person-workspace',
+    'bi-shield-check','bi-shield-fill-check','bi-shield-lock-fill','bi-shield-fill-exclamation',
+    'bi-fingerprint','bi-key-fill','bi-lock-fill','bi-unlock-fill',
+    'bi-laptop','bi-pc-display','bi-phone-fill','bi-tablet-fill',
+    'bi-file-earmark-text-fill','bi-file-earmark-check-fill','bi-file-earmark-ruled','bi-files',
+    'bi-folder-fill','bi-folder2-open','bi-folder-check','bi-archive-fill',
+    'bi-house-door-fill','bi-building','bi-buildings','bi-bank',
+    'bi-graph-up-arrow','bi-bar-chart-line-fill','bi-pie-chart-fill','bi-speedometer2',
+    'bi-gear-fill','bi-sliders','bi-tools','bi-wrench-adjustable',
+    'bi-lightning-charge-fill','bi-rocket-takeoff-fill','bi-bullseye','bi-trophy-fill',
+    'bi-clipboard-check-fill','bi-clipboard-data-fill','bi-journal-check','bi-card-checklist',
+    'bi-search','bi-zoom-in','bi-binoculars-fill','bi-eye-fill',
+    'bi-chat-dots-fill','bi-envelope-fill','bi-telephone-fill','bi-headset',
+    'bi-arrow-repeat','bi-arrow-left-right','bi-arrow-clockwise','bi-recycle',
+    'bi-star-fill','bi-heart-fill','bi-bookmark-fill','bi-flag-fill',
+    'bi-bell-fill','bi-megaphone-fill','bi-exclamation-triangle-fill','bi-info-circle-fill',
+    'bi-check-circle-fill','bi-x-circle-fill','bi-plus-circle-fill','bi-dash-circle-fill',
+    'bi-cash-coin','bi-currency-dollar','bi-credit-card-fill','bi-wallet-fill',
+    'bi-calendar-check-fill','bi-calendar-event-fill','bi-clock-fill','bi-stopwatch-fill',
+    'bi-globe','bi-geo-alt-fill','bi-map-fill','bi-compass-fill',
+    'bi-diagram-3-fill','bi-diagram-2-fill','bi-grid-fill','bi-kanban-fill',
+    'bi-box-fill','bi-boxes','bi-truck','bi-send-fill',
+    'bi-mortarboard-fill','bi-book-fill','bi-journal-text','bi-pen-fill'
+];
+
+function initIconPicker() {
+    var grid = document.getElementById('eqIconGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    EQ_ICONOS.forEach(function(ico) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eq-icon-btn';
+        btn.title = ico;
+        btn.innerHTML = '<i class="bi ' + ico + '"></i>';
+        btn.onclick = function() { seleccionarIcono(ico); };
+        grid.appendChild(btn);
+    });
+}
+
+function toggleIconPicker() {
+    var dd = document.getElementById('eqIconDropdown');
+    var visible = dd.style.display !== 'none';
+    dd.style.display = visible ? 'none' : 'block';
+    if (!visible) {
+        initIconPicker();
+        var current = document.getElementById('eq_icono').value;
+        marcarIconoActivo(current);
+        document.getElementById('eqIconSearch').value = '';
+        document.getElementById('eqIconSearch').focus();
+    }
+}
+
+function seleccionarIcono(ico) {
+    document.getElementById('eq_icono').value = ico;
+    document.getElementById('eqIconPreview').className = 'bi ' + ico;
+    document.getElementById('eqIconLabel').textContent = ico;
+    document.getElementById('eqIconDropdown').style.display = 'none';
+    marcarIconoActivo(ico);
+}
+
+function marcarIconoActivo(ico) {
+    var btns = document.querySelectorAll('.eq-icon-btn');
+    btns.forEach(function(b) {
+        b.classList.toggle('active', b.title === ico);
+    });
+}
+
+function filtrarIconos(busqueda) {
+    var term = busqueda.toLowerCase().trim();
+    var btns = document.querySelectorAll('.eq-icon-btn');
+    btns.forEach(function(b) {
+        b.style.display = (!term || b.title.toLowerCase().indexOf(term) !== -1) ? '' : 'none';
+    });
+}
+
+// Color preview
+document.addEventListener('DOMContentLoaded', function() {
+    var colorInput = document.getElementById('eq_color');
+    if (colorInput) {
+        colorInput.addEventListener('input', function() {
+            var prev = document.getElementById('eqColorPreview');
+            if (prev) { prev.style.background = this.value; }
+        });
+    }
+    // Cerrar icon picker al clic fuera
+    document.addEventListener('click', function(e) {
+        var picker = document.getElementById('eqIconPicker');
+        var dd = document.getElementById('eqIconDropdown');
+        if (picker && dd && !picker.contains(e.target)) {
+            dd.style.display = 'none';
+        }
+    });
+    // Tooltips de Bootstrap
+    var tooltipEls = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltipEls.forEach(function(el) {
+        new bootstrap.Tooltip(el, { trigger: 'hover focus' });
+    });
+});
+
+function cargarEquipos() {
+    document.getElementById('equipos-grid').innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando equipos...</div>';
+    google.script.run.withSuccessHandler(renderEquiposCards).withFailureHandler(function(e) {
+        document.getElementById('equipos-grid').innerHTML = '<div class="text-center text-danger py-4">Error: ' + e.message + '</div>';
+    }).admin_getEquipos();
+}
+
+function renderEquiposCards(equipos) {
+    var grid = document.getElementById('equipos-grid');
+    if (!equipos || equipos.length === 0) {
+        grid.innerHTML = '<div class="col-12 text-center text-muted py-5">No hay equipos configurados. Crea uno con el botón de arriba.</div>';
+        return;
+    }
+    var html = '';
+    equipos.forEach(function(eq) {
+        var badgeActivo = eq.activo
+            ? '<span class="badge" style="background:#dcfce7;color:#166534;font-size:0.72rem;">Activo</span>'
+            : '<span class="badge" style="background:#fee2e2;color:#991b1b;font-size:0.72rem;">Inactivo</span>';
+        var badgeVip = eq.usarVipRotacion ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;font-size:0.7rem;">VIP</span>' : '';
+        var badgeScore = eq.usarScoreCategories ? '<span class="badge" style="background:#fef3c7;color:#92400e;font-size:0.7rem;">Score</span>' : '';
+        html += '<div class="col-md-4"><div class="card" style="border:none;border-radius:16px;box-shadow:var(--shadow);overflow:hidden;">';
+        html += '<div style="height:6px;background:' + (eq.colorHex || '#253150') + ';"></div>';
+        html += '<div class="card-body" style="padding:20px;">';
+        html += '<div class="d-flex align-items-center gap-3 mb-3">';
+        html += '<div style="width:48px;height:48px;background:' + (eq.colorHex || '#253150') + ';border-radius:14px;display:flex;align-items:center;justify-content:center;color:white;font-size:1.3rem;"><i class="bi ' + (eq.icono || 'bi-people-fill') + '"></i></div>';
+        html += '<div><div style="font-weight:700;font-size:1rem;">' + eq.nombre + '</div>';
+        html += '<div class="d-flex gap-1 mt-1">' + badgeActivo + badgeVip + badgeScore + '</div></div></div>';
+        html += '<div style="font-size:0.8rem;color:#6c757d;margin-bottom:8px;"><strong>ID:</strong> ' + eq.id + ' &middot; <strong>Modal:</strong> ' + eq.modalTipo + '</div>';
+        html += '<div style="font-size:0.8rem;color:#6c757d;margin-bottom:12px;"><strong>Max/llamada:</strong> ' + eq.maxAsignarPorLlamada + '</div>';
+        html += '<div class="d-flex gap-2">';
+        html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalEquipo(\'' + eq.id + '\')" style="border-radius:8px;flex:1;"><i class="bi bi-pencil me-1"></i>Editar</button>';
+        html += '<button class="btn btn-sm btn-outline-danger" onclick="eliminarEquipo(\'' + eq.id + '\')" style="border-radius:8px;"><i class="bi bi-trash"></i></button>';
+        html += '</div></div></div></div>';
+    });
+    grid.innerHTML = html;
+}
+
+function _resetIconPicker(ico) {
+    document.getElementById('eq_icono').value = ico;
+    document.getElementById('eqIconPreview').className = 'bi ' + ico;
+    document.getElementById('eqIconLabel').textContent = ico;
+    document.getElementById('eqIconDropdown').style.display = 'none';
+}
+
+function _resetColorPreview(color) {
+    document.getElementById('eq_color').value = color;
+    var prev = document.getElementById('eqColorPreview');
+    if (prev) prev.style.background = color;
+}
+
+function abrirModalEquipo(equipoId) {
+    document.getElementById('eq_editando_id').value = '';
+    document.getElementById('eq_id').value = '';
+    document.getElementById('eq_id').disabled = false;
+    document.getElementById('eq_nombre').value = '';
+    _resetIconPicker('bi-people-fill');
+    _resetColorPreview('#253150');
+    document.getElementById('eq_maxAsignar').value = '1';
+    document.getElementById('eq_modalTipo').value = 'DIGITAL_FULL';
+    document.getElementById('eq_funcionGuardar').value = 'guardarCambiosInternos';
+    document.getElementById('eq_vipRotacion').checked = false;
+    document.getElementById('eq_scoreCategories').checked = false;
+    document.getElementById('eq_activo').checked = true;
+    document.getElementById('tituloModalEquipo').textContent = 'Nuevo Equipo';
+
+    if (equipoId) {
+        document.getElementById('tituloModalEquipo').textContent = 'Editar Equipo';
+        document.getElementById('eq_editando_id').value = equipoId;
+        document.getElementById('eq_id').disabled = true;
+        google.script.run.withSuccessHandler(function(equipos) {
+            var eq = equipos.find(function(e) { return e.id === equipoId; });
+            if (eq) {
+                document.getElementById('eq_id').value = eq.id;
+                document.getElementById('eq_nombre').value = eq.nombre;
+                _resetIconPicker(eq.icono || 'bi-people-fill');
+                _resetColorPreview(eq.colorHex || '#253150');
+                document.getElementById('eq_maxAsignar').value = eq.maxAsignarPorLlamada;
+                document.getElementById('eq_modalTipo').value = eq.modalTipo;
+                document.getElementById('eq_funcionGuardar').value = eq.funcionGuardar;
+                document.getElementById('eq_vipRotacion').checked = eq.usarVipRotacion;
+                document.getElementById('eq_scoreCategories').checked = eq.usarScoreCategories;
+                document.getElementById('eq_activo').checked = eq.activo;
+            }
+        }).admin_getEquipos();
+    }
+    new bootstrap.Modal(document.getElementById('modalEquipo')).show();
+}
+
+function guardarEquipo() {
+    var editandoId = document.getElementById('eq_editando_id').value;
+    var datos = {
+        id: document.getElementById('eq_id').value.trim().toUpperCase(),
+        nombre: document.getElementById('eq_nombre').value.trim(),
+        icono: document.getElementById('eq_icono').value.trim(),
+        colorHex: document.getElementById('eq_color').value,
+        maxAsignarPorLlamada: parseInt(document.getElementById('eq_maxAsignar').value) || 1,
+        modalTipo: document.getElementById('eq_modalTipo').value,
+        funcionGuardar: document.getElementById('eq_funcionGuardar').value,
+        usarVipRotacion: document.getElementById('eq_vipRotacion').checked,
+        usarScoreCategories: document.getElementById('eq_scoreCategories').checked,
+        activo: document.getElementById('eq_activo').checked,
+        ordenPrioridad: [],
+        fuentesDatos: []
+    };
+
+    if (!datos.id || !datos.nombre) {
+        Swal.fire({ icon: 'warning', title: 'Campos obligatorios', text: 'El ID y nombre del equipo son obligatorios.' });
+        return;
+    }
+
+    var fn = editandoId
+        ? google.script.run.withSuccessHandler(onEquipoGuardado).withFailureHandler(onEquipoError).admin_actualizarEquipo(editandoId, datos)
+        : google.script.run.withSuccessHandler(onEquipoGuardado).withFailureHandler(onEquipoError).admin_crearEquipo(datos);
+}
+
+function onEquipoGuardado(r) {
+    bootstrap.Modal.getInstance(document.getElementById('modalEquipo')).hide();
+    Swal.fire({ icon: 'success', title: r.message, timer: 1800, showConfirmButton: false });
+    cargarEquipos();
+}
+
+function onEquipoError(e) {
+    Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+}
+
+function eliminarEquipo(equipoId) {
+    Swal.fire({
+        title: 'Eliminar equipo',
+        text: 'Se eliminará el equipo "' + equipoId + '". Esta acción no se puede deshacer.',
+        icon: 'warning', showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#BD0F14'
+    }).then(function(result) {
+        if (result.isConfirmed) {
+            google.script.run.withSuccessHandler(function(r) {
+                Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
+                cargarEquipos();
+            }).withFailureHandler(function(e) {
+                Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+            }).admin_eliminarEquipo(equipoId);
+        }
+    });
+}
+
+// ============================================================
+// CATÁLOGO — Tipos de solicitud, motivos, score
+// ============================================================
+
+function cargarCatalogo() {
+    cargarTiposSolicitud();
+    cargarMotivosAplazamiento();
+    cargarMotivosNegacion();
+    cargarScoreResumen();
+}
+
+// --- Tipos de solicitud ---
+function cargarTiposSolicitud() {
+    google.script.run.withSuccessHandler(renderTiposSolicitud).admin_getTiposSolicitud();
+}
+
+function renderTiposSolicitud(tipos) {
+    var cont = document.getElementById('tipos-lista');
+    if (!tipos || tipos.length === 0) {
+        cont.innerHTML = '<div class="col-12 text-center text-muted py-4">No hay tipos configurados.</div>';
+        return;
+    }
+    var html = '';
+    tipos.forEach(function(t) {
+        var badge = '<span class="badge" style="background:' + (t.colorBadge || '#6c757d') + ';color:white;font-size:0.75rem;"><i class="bi ' + (t.icono || 'bi-tag') + ' me-1"></i>' + t.label + '</span>';
+        var activo = t.activo ? '<span style="color:#22c55e;font-size:0.75rem;">Activo</span>' : '<span style="color:#ef4444;font-size:0.75rem;">Inactivo</span>';
+        html += '<div class="col-md-4"><div class="card" style="border:none;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.06);padding:16px;">';
+        html += '<div class="d-flex justify-content-between align-items-center mb-2">' + badge + activo + '</div>';
+        html += '<div style="font-size:0.78rem;color:#6c757d;">ID: <code>' + t.id + '</code></div>';
+        html += '<div class="d-flex gap-2 mt-2">';
+        html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalTipoSolicitud(\'' + t.id + '\')" style="border-radius:8px;flex:1;font-size:0.78rem;"><i class="bi bi-pencil"></i> Editar</button>';
+        html += '<button class="btn btn-sm btn-outline-danger" onclick="eliminarTipoSolicitud(\'' + t.id + '\')" style="border-radius:8px;font-size:0.78rem;"><i class="bi bi-trash"></i></button>';
+        html += '</div></div></div>';
+    });
+    cont.innerHTML = html;
+}
+
+var _tiposCache = [];
+function abrirModalTipoSolicitud(tipoId) {
+    document.getElementById('ts_editando_id').value = '';
+    document.getElementById('ts_id').value = '';
+    document.getElementById('ts_id').disabled = false;
+    document.getElementById('ts_label').value = '';
+    document.getElementById('ts_icono').value = 'bi-tag';
+    document.getElementById('ts_color').value = '#6c757d';
+    document.getElementById('ts_activo').checked = true;
+    document.getElementById('tituloModalTipo').textContent = 'Nuevo Tipo';
+
+    if (tipoId) {
+        document.getElementById('tituloModalTipo').textContent = 'Editar Tipo';
+        document.getElementById('ts_editando_id').value = tipoId;
+        document.getElementById('ts_id').disabled = true;
+        google.script.run.withSuccessHandler(function(tipos) {
+            var t = tipos.find(function(x) { return x.id === tipoId; });
+            if (t) {
+                document.getElementById('ts_id').value = t.id;
+                document.getElementById('ts_label').value = t.label;
+                document.getElementById('ts_icono').value = t.icono;
+                document.getElementById('ts_color').value = t.colorBadge;
+                document.getElementById('ts_activo').checked = t.activo;
+            }
+        }).admin_getTiposSolicitud();
+    }
+    new bootstrap.Modal(document.getElementById('modalTipoSolicitud')).show();
+}
+
+function guardarTipoSolicitud() {
+    var datos = {
+        id: document.getElementById('ts_id').value.trim().toLowerCase(),
+        label: document.getElementById('ts_label').value.trim(),
+        icono: document.getElementById('ts_icono').value.trim(),
+        colorBadge: document.getElementById('ts_color').value,
+        activo: document.getElementById('ts_activo').checked,
+        reglasDeteccion: {}
+    };
+    if (!datos.id || !datos.label) {
+        Swal.fire({ icon: 'warning', title: 'Campos obligatorios', text: 'ID y Label son obligatorios.' });
+        return;
+    }
+    google.script.run.withSuccessHandler(function(r) {
+        bootstrap.Modal.getInstance(document.getElementById('modalTipoSolicitud')).hide();
+        Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
+        cargarTiposSolicitud();
+    }).withFailureHandler(function(e) {
+        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+    }).admin_guardarTipoSolicitud(datos);
+}
+
+function eliminarTipoSolicitud(id) {
+    Swal.fire({
+        title: 'Eliminar tipo', text: 'Se eliminará el tipo "' + id + '".', icon: 'warning',
+        showCancelButton: true, confirmButtonText: 'Eliminar', confirmButtonColor: '#BD0F14'
+    }).then(function(r) {
+        if (r.isConfirmed) {
+            google.script.run.withSuccessHandler(function(res) {
+                Swal.fire({ icon: 'success', title: res.message, timer: 1500, showConfirmButton: false });
+                cargarTiposSolicitud();
+            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: e.message }); }).admin_eliminarTipoSolicitud(id);
+        }
+    });
+}
+
+// --- Motivos ---
+function cargarMotivosAplazamiento() {
+    google.script.run.withSuccessHandler(function(m) { renderMotivos('aplazamiento', m); }).admin_getMotivosAplazamiento();
+}
+
+function cargarMotivosNegacion() {
+    google.script.run.withSuccessHandler(function(m) { renderMotivos('negacion', m); }).admin_getMotivosNegacion();
+}
+
+function renderMotivos(tipo, motivos) {
+    var cont = document.getElementById('motivos-' + tipo + '-lista');
+    if (!motivos || motivos.length === 0) {
+        cont.innerHTML = '<div class="text-center text-muted py-4">No hay motivos configurados.</div>';
+        return;
+    }
+    var html = '<div class="list-group" style="gap:4px;">';
+    motivos.forEach(function(m) {
+        var actClass = m.activo ? 'border-start border-3 border-success' : 'border-start border-3 border-danger opacity-50';
+        html += '<div class="list-group-item d-flex justify-content-between align-items-center ' + actClass + '" style="border-radius:10px;padding:10px 16px;font-size:0.85rem;">';
+        html += '<span>' + m.motivo + '</span>';
+        html += '<div class="d-flex gap-1">';
+        html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo(\'' + tipo + '\', ' + m.id + ')" style="border-radius:6px;padding:2px 8px;font-size:0.75rem;"><i class="bi bi-pencil"></i></button>';
+        html += '<button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo(\'' + tipo + '\', ' + m.id + ')" style="border-radius:6px;padding:2px 8px;font-size:0.75rem;"><i class="bi bi-trash"></i></button>';
+        html += '</div></div>';
+    });
+    html += '</div>';
+    cont.innerHTML = html;
+}
+
+function abrirModalMotivo(tipo, motivoId) {
+    document.getElementById('mot_tipo_actual').value = tipo;
+    document.getElementById('mot_editando_id').value = '';
+    document.getElementById('mot_texto').value = '';
+    document.getElementById('mot_activo').checked = true;
+    document.getElementById('tituloModalMotivo').textContent = 'Nuevo motivo de ' + tipo;
+
+    if (motivoId) {
+        document.getElementById('tituloModalMotivo').textContent = 'Editar motivo';
+        document.getElementById('mot_editando_id').value = motivoId;
+        var fn = tipo === 'aplazamiento' ? 'admin_getMotivosAplazamiento' : 'admin_getMotivosNegacion';
+        google.script.run.withSuccessHandler(function(motivos) {
+            var m = motivos.find(function(x) { return x.id === motivoId; });
+            if (m) {
+                document.getElementById('mot_texto').value = m.motivo;
+                document.getElementById('mot_activo').checked = m.activo;
+            }
+        })[fn]();
+    }
+    new bootstrap.Modal(document.getElementById('modalMotivo')).show();
+}
+
+function guardarMotivo() {
+    var tipo = document.getElementById('mot_tipo_actual').value;
+    var editId = document.getElementById('mot_editando_id').value;
+    var datos = {
+        motivo: document.getElementById('mot_texto').value.trim(),
+        activo: document.getElementById('mot_activo').checked
+    };
+    if (editId) datos.id = parseInt(editId);
+    if (!datos.motivo) {
+        Swal.fire({ icon: 'warning', title: 'Campo obligatorio', text: 'El texto del motivo es obligatorio.' });
+        return;
+    }
+    var fnName = tipo === 'aplazamiento' ? 'admin_guardarMotivoAplazamiento' : 'admin_guardarMotivoNegacion';
+    google.script.run.withSuccessHandler(function(r) {
+        bootstrap.Modal.getInstance(document.getElementById('modalMotivo')).hide();
+        Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
+        if (tipo === 'aplazamiento') cargarMotivosAplazamiento(); else cargarMotivosNegacion();
+    }).withFailureHandler(function(e) {
+        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+    })[fnName](datos);
+}
+
+function eliminarMotivo(tipo, id) {
+    Swal.fire({
+        title: 'Eliminar motivo', text: 'Se eliminará este motivo.', icon: 'warning',
+        showCancelButton: true, confirmButtonText: 'Eliminar', confirmButtonColor: '#BD0F14'
+    }).then(function(r) {
+        if (r.isConfirmed) {
+            var fnName = tipo === 'aplazamiento' ? 'admin_eliminarMotivoAplazamiento' : 'admin_eliminarMotivoNegacion';
+            google.script.run.withSuccessHandler(function(res) {
+                Swal.fire({ icon: 'success', title: res.message, timer: 1500, showConfirmButton: false });
+                if (tipo === 'aplazamiento') cargarMotivosAplazamiento(); else cargarMotivosNegacion();
+            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: e.message }); })[fnName](id);
+        }
+    });
+}
+
+// --- Score ---
+function cargarScoreResumen() {
+    google.script.run.withSuccessHandler(renderScoreResumen).admin_getCategoriasScore();
+}
+
+function renderScoreResumen(data) {
+    var cont = document.getElementById('score-resumen');
+    if (!data || !data.categorias || data.categorias.length === 0) {
+        cont.innerHTML = '<div class="col-12 text-center text-muted py-4">Sin categorías de score.</div>';
+        return;
+    }
+    var colores = { vip: '#8b5cf6', grande: '#3b82f6', mediana: '#22c55e', 'pequeña': '#f59e0b', 'genérica': '#6b7280', 'en desarrollo': '#06b6d4', revisar: '#ef4444' };
+    var html = '';
+    data.categorias.forEach(function(c) {
+        var color = colores[c.nombre.toLowerCase()] || '#6c757d';
+        html += '<div class="col-md-3"><div class="card" style="border:none;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,0.06);padding:16px;text-align:center;">';
+        html += '<div style="font-size:1.8rem;font-weight:800;color:' + color + ';">' + c.cantidad + '</div>';
+        html += '<div style="font-size:0.8rem;color:#6c757d;text-transform:capitalize;">' + c.nombre + '</div>';
+        html += '</div></div>';
+    });
+    html += '<div class="col-md-3"><div class="card" style="border:none;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,0.06);padding:16px;text-align:center;">';
+    html += '<div style="font-size:1.8rem;font-weight:800;color:#253150;">' + data.totalPolizas + '</div>';
+    html += '<div style="font-size:0.8rem;color:#6c757d;">Total pólizas</div>';
+    html += '</div></div>';
+    cont.innerHTML = html;
+}
+
+function buscarPolizaEnScore() {
+    var busqueda = document.getElementById('buscarPolizaScore').value.trim();
+    if (!busqueda) return;
+    document.getElementById('score-resultados').style.display = 'block';
+    document.getElementById('score-resultados-lista').innerHTML = '<div class="text-muted py-2"><i class="bi bi-arrow-clockwise spin"></i> Buscando...</div>';
+    google.script.run.withSuccessHandler(function(resultados) {
+        var cont = document.getElementById('score-resultados-lista');
+        if (!resultados || resultados.length === 0) {
+            cont.innerHTML = '<div class="text-muted py-2">Sin resultados para "' + busqueda + '".</div>';
+            return;
+        }
+        var html = '<table class="table table-sm" style="font-size:0.85rem;"><thead><tr><th>Póliza</th><th>Categoría</th><th>Acciones</th></tr></thead><tbody>';
+        resultados.forEach(function(r) {
+            html += '<tr><td><code>' + r.poliza + '</code></td>';
+            html += '<td><input type="text" class="form-control form-control-sm" value="' + (r.categoria || '') + '" id="score-cat-' + r.fila + '" style="border-radius:8px;width:160px;"></td>';
+            html += '<td><button class="btn btn-sm btn-outline-primary" onclick="actualizarCategoriaScore(' + r.fila + ')" style="border-radius:6px;"><i class="bi bi-check-lg"></i></button></td></tr>';
+        });
+        html += '</tbody></table>';
+        cont.innerHTML = html;
+    }).admin_buscarPolizaScore(busqueda);
+}
+
+function actualizarCategoriaScore(fila) {
+    var nuevaCat = document.getElementById('score-cat-' + fila).value.trim();
+    google.script.run.withSuccessHandler(function(r) {
+        Swal.fire({ icon: 'success', title: r.message, timer: 1200, showConfirmButton: false });
+        cargarScoreResumen();
+    }).withFailureHandler(function(e) {
+        Swal.fire({ icon: 'error', text: e.message });
+    }).admin_actualizarCategoriaPoliza(fila, nuevaCat);
+}
+</script>
 
 </body>
 </html>

@@ -105,9 +105,23 @@ function doGet() {
 
   if (info.rol === "ADMIN") {
     return HtmlService.createTemplateFromFile('VistaAdmin').evaluate().setTitle('Panel Admin');
-  } 
+  }
 
   if (info.rol === "ASESOR") {
+    const useUnified = props.getProperty('USE_UNIFIED_VIEW') !== 'FALSE';
+
+    if (useUnified) {
+      const equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
+      if (!equipo) return HtmlService.createHtmlOutput("<h2>Equipo no configurado para tu especialidad.</h2>");
+      const template = HtmlService.createTemplateFromFile('VistaUnificada');
+      template.equipoConfig = JSON.stringify(equipo);
+      template.userEmail = userEmail;
+      return template.evaluate()
+        .setTitle('Gestión - ' + equipo.nombre)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    }
+
+    // Fallback: routing por especialidad (se activa con USE_UNIFIED_VIEW=FALSE)
     if (info.especialidad === "PENDIENTE_BIOMETRIA") {
       return HtmlService.createTemplateFromFile('VistaBiometria')
           .evaluate()
@@ -152,6 +166,104 @@ function getRolUsuario(email) {
 
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+// ============================================================
+// RESOLUCIÓN DE EQUIPO Y FUNCIONES UNIFICADAS
+// ============================================================
+
+function resolverEquipoDesdeEspecialidad(especialidad) {
+  var equipos = _getEquipos();
+  var esp = String(especialidad).toUpperCase().trim();
+  var mapeo = {
+    'ESTUDIO DIGITAL': 'DIGITAL',
+    'ESTUDIO_DIGITAL': 'DIGITAL',
+    'PENDIENTE_BIOMETRIA': 'BIOMETRIA',
+    'REESTUDIOS': 'REESTUDIOS'
+  };
+  var equipoId = mapeo[esp] || esp;
+  var encontrado = equipos.find(function(e) { return e.id === equipoId; });
+
+  if (!encontrado) {
+    // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún
+    var defaults = {
+      'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [] },
+      'BIOMETRIA': { id: 'BIOMETRIA', nombre: 'Biometría', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [] },
+      'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [] }
+    };
+    return defaults[equipoId] || defaults['DIGITAL'];
+  }
+  return encontrado;
+}
+
+function getUnifiedTableData() {
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var info = getRolUsuario(userEmail);
+  if (!info) return { tabla: [], stats: { hoy: 0, pendientes: 0 }, equipoId: '', equipoNombre: '' };
+
+  var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
+
+  switch (equipo.id) {
+    case 'BIOMETRIA':
+      var dataBio = getDatosBiometria();
+      return {
+        tabla: dataBio.solicitudes || [],
+        stats: dataBio.stats || { hoy: 0, pendientes: 0 },
+        equipoId: equipo.id,
+        equipoNombre: equipo.nombre,
+        tipoVista: 'BIOMETRIA'
+      };
+
+    case 'REESTUDIOS':
+      var dataRest = getReestudiosData();
+      return {
+        tabla: dataRest.solicitudes || [],
+        stats: dataRest.stats || { hoy: 0, pendientes: 0 },
+        equipoId: equipo.id,
+        equipoNombre: equipo.nombre,
+        tipoVista: 'REESTUDIOS'
+      };
+
+    default:
+      var dataDigital = getTableData();
+      return {
+        tabla: dataDigital.tabla || [],
+        stats: dataDigital.stats || { hoy: 0, pendientes: 0 },
+        reasignaciones: dataDigital.reasignaciones || [],
+        equipoId: equipo.id,
+        equipoNombre: equipo.nombre,
+        tipoVista: 'DIGITAL'
+      };
+  }
+}
+
+function autoAsignarDesdeEquipo() {
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var info = getRolUsuario(userEmail);
+  if (!info) return { success: false, message: "Usuario no registrado." };
+
+  var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
+
+  switch (equipo.id) {
+    case 'BIOMETRIA':
+      return autoAsignarBiometria();
+    case 'REESTUDIOS':
+      return RequestLeadReestudios();
+    default:
+      var result = RequestLead();
+      if (typeof result === 'string') {
+        var isSuccess = result.indexOf('✅') !== -1;
+        return { success: isSuccess, nueva: isSuccess, message: result };
+      }
+      return result || { success: false, message: "Sin resultado." };
+  }
+}
+
+function getEquipoDelUsuario() {
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var info = getRolUsuario(userEmail);
+  if (!info) return null;
+  return resolverEquipoDesdeEspecialidad(info.especialidad);
 }
 
 function getTableData() {
@@ -1185,6 +1297,14 @@ function actualizarEstadoPropio(nuevoEstado) {
 
     if (filaEncontrada !== -1) {
       const estadoTextoPlano = nuevoEstado.toUpperCase();
+
+      if (estadoTextoPlano === 'ACTIVO') {
+        const turnoCheck = verificarTurnoActivo(correoAnalista.toLowerCase().trim(), ss);
+        if (!turnoCheck.ok) {
+          return { success: false, message: turnoCheck.message };
+        }
+      }
+
       const ahora = new Date();
       const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
       const fechaHoraActual = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
@@ -1419,6 +1539,82 @@ function obtenerMiEstadoActual() {
     return "INACTIVO";
   } catch (e) {
     return "ERROR";
+  }
+}
+
+/**
+ * Devuelve la hora de fin del turno del analista actual (para auto-INACTIVO en frontend).
+ * @returns {{ tieneTurno: boolean, horaFinStr?: string, minutosRestantes?: number, nombreTurno?: string }}
+ */
+function obtenerInfoTurnoActual() {
+  try {
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const now = new Date();
+    const nowStr = Utilities.formatDate(now, TIMEZONE, 'HH:mm');
+    const [hNow, mNow] = nowStr.split(':').map(Number);
+    const minActual = hNow * 60 + mNow;
+
+    function parseMin(v) {
+      if (!v && v !== 0) return null;
+      if (v instanceof Date) return v.getUTCHours() * 60 + v.getUTCMinutes();
+      if (typeof v === 'number') return Math.round(v * 1440);
+      const s = String(v).trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      if (!s.includes(':')) return null;
+      const [h, m] = s.split(':').map(Number);
+      return h * 60 + m;
+    }
+
+    const hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (!hojaAT || hojaAT.getLastRow() <= 1) return { tieneTurno: false };
+
+    const dataAT = hojaAT.getDataRange().getValues();
+    let idTurnoActivo = null;
+    for (let i = 1; i < dataAT.length; i++) {
+      const r = dataAT[i];
+      const email = String(r[0]).toLowerCase().trim();
+      if (email !== userEmail) continue;
+      const idT = String(r[1]).trim();
+      const desde = r[2] instanceof Date ? r[2] : null;
+      const hasta = r[3] instanceof Date ? r[3] : null;
+      if (!idT || !desde) continue;
+      if (now >= desde && (!hasta || now <= hasta)) {
+        idTurnoActivo = idT;
+        break;
+      }
+    }
+    if (!idTurnoActivo) return { tieneTurno: false };
+
+    const hojaTurnos = ss.getSheetByName('Turnos');
+    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { tieneTurno: false };
+
+    const dataTurnos = hojaTurnos.getDataRange().getValues();
+    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
+    const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
+    const dIdx = diaISO - 1;
+    const boolCol = 3 + dIdx;
+    const finCol  = 11 + dIdx * 2;
+
+    for (let i = 1; i < dataTurnos.length; i++) {
+      if (String(dataTurnos[i][0]).trim() !== idTurnoActivo) continue;
+      if (!dataTurnos[i][boolCol]) return { tieneTurno: false };
+      const horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      const nombreTurno = String(dataTurnos[i][1] || '').trim();
+      const minFin = parseMin(horaFinStr);
+      if (minFin === null) return { tieneTurno: false };
+
+      const minutosRestantes = minFin - minActual;
+      return {
+        tieneTurno: true,
+        horaFinStr: horaFinStr,
+        minutosRestantes: minutosRestantes,
+        nombreTurno: nombreTurno
+      };
+    }
+    return { tieneTurno: false };
+  } catch (e) {
+    Logger.log('obtenerInfoTurnoActual error: ' + e.message);
+    return { tieneTurno: false };
   }
 }
 
