@@ -640,79 +640,77 @@ function admin_setPrioridadGlobal(nuevaPrioridad) {
   return { success: true, message: "Prioridad actualizada a: " + nuevaPrioridad };
 }
 
+function _getTiposParaCupos() {
+  var tipos = _getTiposSolicitud();
+  return tipos.filter(function(t) { return t.activo; }).map(function(t) { return { id: t.id, label: t.label }; });
+}
+
+function _propKeyCupo(equipoId, tipoId) {
+  var legacy = { nueva: 'NUEVAS', biometria: 'BIOMETRIA', induccion: 'INDUCCIONES', reestudio: 'REESTUDIOS', nuevaUar: 'NUEVA_UAR', deudorUar: 'DEUDOR_UAR' };
+  var suffix = legacy[tipoId] || tipoId.toUpperCase();
+  return 'CUPOS_' + equipoId.toUpperCase() + '_' + suffix;
+}
+
 function admin_getCuotasGlobales() {
   verificarPermisoAdmin();
-  const props = PropertiesService.getScriptProperties();
+  var props = PropertiesService.getScriptProperties();
+  var tipos = _getTiposParaCupos();
 
   function getVal(key, def) {
-    const v = props.getProperty(key);
+    var v = props.getProperty(key);
     if (v === null || v === '') return def;
-    const p = parseInt(v, 10);
+    var p = parseInt(v, 10);
     return isNaN(p) ? def : p;
   }
 
-  return {
-    digital: {
-      total: getVal('CUPOS_DIGITAL_TOTAL', 90),
-      nuevas: getVal('CUPOS_DIGITAL_NUEVAS', 70),
-      reestudios: getVal('CUPOS_DIGITAL_REESTUDIOS', 10),
-      inducciones: getVal('CUPOS_DIGITAL_INDUCCIONES', 8),
-      biometria: getVal('CUPOS_DIGITAL_BIOMETRIA', 0),
-      nuevaUar: getVal('CUPOS_DIGITAL_NUEVA_UAR', 2),
-      deudorUar: getVal('CUPOS_DIGITAL_DEUDOR_UAR', 2)
-    },
-    biometria: {
-      total: getVal('CUPOS_BIOMETRIA_TOTAL', 10),
-      nuevas: getVal('CUPOS_BIOMETRIA_NUEVAS', 0),
-      reestudios: getVal('CUPOS_BIOMETRIA_REESTUDIOS', 0),
-      inducciones: getVal('CUPOS_BIOMETRIA_INDUCCIONES', 0),
-      biometria: getVal('CUPOS_BIOMETRIA_BIOMETRIA', 8),
-      nuevaUar: getVal('CUPOS_BIOMETRIA_NUEVA_UAR', 0),
-      deudorUar: getVal('CUPOS_BIOMETRIA_DEUDOR_UAR', 0)
-    },
-    reestudios: {
-      total: getVal('CUPOS_REESTUDIOS_TOTAL', 15),
-      nuevas: getVal('CUPOS_REESTUDIOS_NUEVAS', 0),
-      reestudios: getVal('CUPOS_REESTUDIOS_REESTUDIOS', 10),
-      inducciones: getVal('CUPOS_REESTUDIOS_INDUCCIONES', 2),
-      biometria: getVal('CUPOS_REESTUDIOS_BIOMETRIA', 0),
-      nuevaUar: getVal('CUPOS_REESTUDIOS_NUEVA_UAR', 3),
-      deudorUar: getVal('CUPOS_REESTUDIOS_DEUDOR_UAR', 2)
+  var equipos = _getEquipos();
+  if (!equipos || equipos.length === 0) equipos = [
+    { id: 'DIGITAL' }, { id: 'BIOMETRIA' }, { id: 'REESTUDIOS' }
+  ];
+
+  var result = {};
+  for (var e = 0; e < equipos.length; e++) {
+    var eqId = equipos[e].id.toLowerCase();
+    var data = { total: getVal('CUPOS_' + eqId.toUpperCase() + '_TOTAL', 0) };
+    for (var t = 0; t < tipos.length; t++) {
+      data[tipos[t].id] = getVal(_propKeyCupo(eqId, tipos[t].id), 0);
     }
-  };
+    result[eqId] = data;
+  }
+  return result;
 }
 
 function admin_setCuotasGlobales(cupos) {
   verificarPermisoAdmin();
-  const props = PropertiesService.getScriptProperties();
-  const equipos = ['digital', 'biometria', 'reestudios'];
-  const campos = ['total', 'nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
+  var props = PropertiesService.getScriptProperties();
+  var tipos = _getTiposParaCupos();
+  var equipoKeys = Object.keys(cupos);
 
-  for (const equipo of equipos) {
-    if (!cupos[equipo]) return { success: false, message: "Datos incompletos para equipo: " + equipo };
-    const data = cupos[equipo];
-    const suma = (parseInt(data.nuevas) || 0) + (parseInt(data.reestudios) || 0) +
-                 (parseInt(data.inducciones) || 0) + (parseInt(data.biometria) || 0) +
-                 (parseInt(data.nuevaUar) || 0) + (parseInt(data.deudorUar) || 0);
+  for (var e = 0; e < equipoKeys.length; e++) {
+    var equipo = equipoKeys[e];
+    var data = cupos[equipo];
+    if (!data) return { success: false, message: "Datos incompletos para equipo: " + equipo };
+    var suma = 0;
+    for (var t = 0; t < tipos.length; t++) {
+      suma += parseInt(data[tipos[t].id]) || 0;
+    }
     if (suma > (parseInt(data.total) || 0)) {
-      return { success: false, message: "La suma de subcategorías excede el total en equipo: " + equipo + " (" + suma + " > " + data.total + ")" };
+      return { success: false, message: "La suma de subcategorias excede el total en equipo: " + equipo + " (" + suma + " > " + data.total + ")" };
     }
-    const keyMap = { total: 'TOTAL', nuevas: 'NUEVAS', reestudios: 'REESTUDIOS', inducciones: 'INDUCCIONES', biometria: 'BIOMETRIA', nuevaUar: 'NUEVA_UAR', deudorUar: 'DEUDOR_UAR' };
-    for (const campo of campos) {
-      const key = 'CUPOS_' + equipo.toUpperCase() + '_' + keyMap[campo];
-      props.setProperty(key, String(parseInt(data[campo]) || 0));
+    props.setProperty('CUPOS_' + equipo.toUpperCase() + '_TOTAL', String(parseInt(data.total) || 0));
+    for (var t2 = 0; t2 < tipos.length; t2++) {
+      var key = _propKeyCupo(equipo, tipos[t2].id);
+      props.setProperty(key, String(parseInt(data[tipos[t2].id]) || 0));
     }
   }
 
-  // Registrar en histórico
-  const adminEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-  const ahora = new Date();
-  for (const equipo of equipos) {
-    const d = cupos[equipo];
-    registrarHistoricoCupos_('GENERAL', equipo.toUpperCase(), '', '', d, adminEmail, ahora);
+  var adminEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var ahora = new Date();
+  for (var e2 = 0; e2 < equipoKeys.length; e2++) {
+    registrarHistoricoCupos_('GENERAL', equipoKeys[e2].toUpperCase(), '', '', cupos[equipoKeys[e2]], adminEmail, ahora);
   }
 
-  return { success: true, message: "Cupos actualizados correctamente para los 3 equipos." };
+  return { success: true, message: "Cupos actualizados correctamente." };
 }
 
 /**

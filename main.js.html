@@ -41,8 +41,9 @@ function _forzarInactivoPorTurno(info) {
 
 function _quitarFilaTabla(solicitudId) {
   if (!$.fn.DataTable.isDataTable('#miTabla')) return;
+  var sid = String(solicitudId);
   $('#miTabla').DataTable()
-    .rows(function(i, d) { return String(d[0]) === String(solicitudId); })
+    .rows(function(i, d) { return String(d[0]) === sid || String(d[6]) === sid; })
     .remove().draw(false);
 }
 
@@ -293,7 +294,17 @@ function cargarDatos() {
   google.script.run
     .withSuccessHandler(function (response) {
 
-      renderizarTabla(response.tabla);
+      if (response.error) {
+        console.error("getUnifiedTableData error:", response.error);
+        Swal.fire({ icon: "warning", title: "Error al cargar datos", text: response.error, confirmButtonColor: "#253150" });
+      }
+
+      var tipoVista = response.tipoVista || 'DIGITAL';
+      if (tipoVista === 'BIOMETRIA') {
+        renderizarTablaBiometria(response.tabla);
+      } else {
+        renderizarTabla(response.tabla);
+      }
 
       // Notificar reasignaciones recientes por admin (solo una vez por solicitud)
       if (response.reasignaciones && response.reasignaciones.length > 0) {
@@ -320,9 +331,14 @@ function cargarDatos() {
 
       // UX: Update sync time
       if (typeof UX !== 'undefined') UX.updateSyncTime();
-      
-      // Count pending from table rows (excluding header)
-      const registrosPendientes = response.tabla ? response.tabla.length - 1 : 0;
+
+      // Count pending: biometria/reestudios no tienen header row
+      var registrosPendientes = 0;
+      if (tipoVista === 'DIGITAL') {
+        registrosPendientes = response.tabla ? response.tabla.length - 1 : 0;
+      } else {
+        registrosPendientes = response.tabla ? response.tabla.length : 0;
+      }
       
       if (typeof animarNumero === "function") {
         animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
@@ -483,7 +499,6 @@ function renderizarTabla(data) {
     const fila = datosGlobales[rowIndex + 1];
     if (!fila) return;
 
-    // Vista unificada: usar dispatch de modal
     if (window.__IS_UNIFIED_VIEW__) {
       abrirModalUnificado(rowIndex + 1);
       return;
@@ -588,6 +603,51 @@ function renderizarTabla(data) {
       .getDataUniqueForSolicitud(solicitudId);
   });
 }
+
+function renderizarTablaBiometria(data) {
+  if (!Array.isArray(data)) data = [];
+  datosGlobales = [["_header_bio"]].concat(data);
+  if ($.fn.DataTable.isDataTable("#miTabla")) {
+    $("#miTabla").DataTable().destroy();
+    $("#miTabla").empty();
+  }
+  var cols = [
+    { title: "Fecha", data: 0 },
+    { title: "Solicitud", data: 6 },
+    { title: "Inmobiliaria", data: 4 },
+    { title: "Inquilino", data: 5 },
+    { title: "Estado", data: 15 },
+    { title: "Acciones", data: null, orderable: false, className: "text-center",
+      render: function(d, t, r, meta) {
+        return "<button class=\"btn-action btn-detalle\" data-index=\"" + meta.row + "\" title=\"Tipificar\"><i class=\"bi bi-pencil-square\"></i></button>";
+      }
+    }
+  ];
+  $("#miTabla").DataTable({
+    data: data,
+    columns: cols,
+    language: { url: "https://cdn.datatables.net/plug-ins/1.13.7/i18n/es-ES.json" },
+    pageLength: 10,
+    order: [[0, "desc"]],
+    responsive: true,
+    initComplete: function() {
+      var loader = document.getElementById("loader-container");
+      if (loader) { loader.classList.add("loader-hidden"); setTimeout(function() { loader.style.display = "none"; }, 800); }
+      cargaInicialHecha = true;
+      _miniLoader(false);
+    }
+  });
+  $("#miTabla tbody").off("click", ".btn-detalle").on("click", ".btn-detalle", function() {
+    var rowIndex = $(this).data("index");
+    var fila = datosGlobales[rowIndex + 1];
+    if (!fila) return;
+    if (window.__IS_UNIFIED_VIEW__) {
+      abrirModalUnificado(rowIndex + 1);
+      return;
+    }
+  });
+}
+
 function renderResultadosPorTipo(resultados) {
   const container = document.getElementById("accordionResultados");
   if (!container || !resultados) return;
@@ -1264,10 +1324,14 @@ function poblarModalDig(fila) {
   setTxt('dig_nombreAsesor', fila[14]);
   setTxt('dig_correoAsesor', fila[15]);
 
-  setVal('dig_estado_q', '');
-  setVal('dig_biometria', '');
-  setVal('dig_comentarios_gestion', '');
+  setVal('dig_biometria', fila[23] || '');
+  setVal('dig_comentarios_gestion', fila[24] || '');
+  setVal('dig_estado_q', fila[16] || '');
   setVal('dig_fecha_radicacion_sai', '');
+  if (typeof MotivoPicker !== 'undefined') {
+    MotivoPicker.setValue('dig_motivo_aplazamiento', fila[28] || '');
+    MotivoPicker.setValue('dig_motivo_negacion', fila[29] || '');
+  }
   var btnG = document.getElementById('dig_btnGuardar');
   if (btnG) btnG.setAttribute('data-solicitud-id', fila[0]);
 
@@ -1275,6 +1339,24 @@ function poblarModalDig(fila) {
   var neg = document.getElementById('dig_contenedor_negacion');
   if (aplaz) aplaz.classList.add('d-none');
   if (neg) neg.classList.add('d-none');
+  var estadoPrecargado = (fila[16] || '').toUpperCase();
+  if (estadoPrecargado.indexOf('APLAZ') !== -1 && aplaz) aplaz.classList.remove('d-none');
+  else if (estadoPrecargado.indexOf('NEGAD') !== -1 && neg) neg.classList.remove('d-none');
+
+  var claseNorm = String(fila[20] || '').toUpperCase();
+  var selectEstadoDig = document.getElementById('dig_estado_q');
+  var contBioDig = document.getElementById('dig_contenedor_biometria');
+  if (claseNorm.indexOf('INDUCCI') !== -1 || claseNorm === 'IND') {
+    if (contBioDig) contBioDig.classList.add('d-none');
+    setVal('dig_biometria', 'No');
+    if (selectEstadoDig) {
+      selectEstadoDig.innerHTML = '<option value="" selected disabled>Seleccione una opción</option><option value="APLAZADA">APLAZADA</option>';
+      selectEstadoDig.value = '';
+    }
+    if (aplaz) aplaz.classList.remove('d-none');
+  } else {
+    if (contBioDig) contBioDig.classList.remove('d-none');
+  }
 
   var solId = String(fila[0]).trim();
   if (solId) {
@@ -1298,15 +1380,28 @@ function poblarModalBio(fila) {
   setVal('bio_poliza', fila[3] || '');
   _verificarAlertaScore(fila, 'bio_poliza', fila[3] || '');
   setVal('bio_inmobiliaria', fila[4] || '');
-  setVal('bio_ciudad', fila[8] || '');
-  setVal('bio_direccion', fila[9] || '');
-  setVal('bio_inquilinoNombre', fila[5] || '');
-  setVal('bio_canon', fila[10] || '');
-  setVal('bio_celular', fila[11] || '');
+  setVal('bio_ciudad', fila[5] || '');
+  setVal('bio_direccion', fila[10] || '');
+  setVal('bio_inquilinoNombre', fila[11] || '');
+  setVal('bio_canon', fila[7] || '');
+  setVal('bio_celular', fila[8] || '');
   setVal('bio_fechaRadicacionSai', '');
   setVal('bio_resLlamada', '');
   setVal('bio_fueAprobada', '');
   setVal('bio_resFinal', '');
+
+  var solId = fila[6] || fila[0];
+  var accEl = document.getElementById('bio_accordionResultados');
+  if (accEl && solId) {
+    accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Consultando deudores...</p></div>';
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.resultados) {
+        renderResultadosUnificados('bio_accordionResultados', res.resultados);
+      } else {
+        accEl.innerHTML = '<p class="text-muted text-center py-3">Sin resultados disponibles.</p>';
+      }
+    }).getDataUniqueForSolicitud(solId);
+  }
 }
 
 function poblarModalRst(fila) {
@@ -1407,11 +1502,11 @@ function manejarGuardarDigital() {
   var datos = {
     solicitudId: solId,
     biometria: document.getElementById('dig_biometria').value || '',
-    estadoGestion: estado,
-    motivoAplazamiento: document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '',
-    motivoNegacion: document.getElementById('dig_motivo_negacion') ? document.getElementById('dig_motivo_negacion').value : '',
-    fechaRadicacionSai: document.getElementById('dig_fecha_radicacion_sai').value || '',
-    observaciones: document.getElementById('dig_comentarios_gestion').value || ''
+    estado_q: estado,
+    motivo_aplazamiento: document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '',
+    motivo_negacion: document.getElementById('dig_motivo_negacion') ? document.getElementById('dig_motivo_negacion').value : '',
+    fecha_radicacion_sai: document.getElementById('dig_fecha_radicacion_sai').value || '',
+    comentarios_gestion: document.getElementById('dig_comentarios_gestion').value || ''
   };
 
   google.script.run
@@ -1429,6 +1524,8 @@ function manejarGuardarBiometria() {
     fueAprobada: document.getElementById('bio_fueAprobada').value || '',
     resFinal: document.getElementById('bio_resFinal').value || ''
   };
+  if (!datosForm.resLlamada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Selecciona el resultado de la llamada.' }); return; }
+  if (!datosForm.fueAprobada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Indica si la solicitud fue aprobada.' }); return; }
   if (!datosForm.resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.' }); return; }
   if (!_validarFechaSaiAnteDeGuardar('bio_fechaRadicacionSai')) return;
 

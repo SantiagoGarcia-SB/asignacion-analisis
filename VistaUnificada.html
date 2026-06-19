@@ -651,6 +651,55 @@
   </div>
 </div>
 
+<!-- ============================================================ -->
+<!-- MODAL SOLICITUDES PENDIENTES                                 -->
+<!-- ============================================================ -->
+<div class="modal fade" id="modalPendientes" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content" style="border-radius:20px;border:none;background:var(--bg-page);box-shadow:0 30px 80px rgba(0,0,0,0.15);">
+      <div class="modal-header-inner">
+        <div class="d-flex align-items-center w-100" style="position:relative;z-index:1;">
+          <div class="p-2 rounded-3 me-3" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);"><i class="bi bi-hourglass-split fs-4 text-white"></i></div>
+          <div><h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Solicitudes Pendientes</h5><p class="small mb-0" style="color:rgba(255,255,255,0.6);" id="sp_fecha_label">-</p></div>
+          <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+        </div>
+      </div>
+      <div class="modal-body p-4">
+        <div id="sp_contenido">
+          <div class="row g-3 mb-4">
+            <div class="col-12">
+              <div class="d-flex align-items-center gap-4 p-4 rounded-4 text-white" style="background:linear-gradient(135deg,#6366f1,#818cf8);">
+                <div class="icon-circle-modern flex-shrink-0" style="background:rgba(255,255,255,0.2);"><i class="bi bi-hourglass-split"></i></div>
+                <div>
+                  <div style="font-size:0.72rem;font-weight:700;opacity:0.85;text-transform:uppercase;letter-spacing:0.5px;">Total Solicitudes Pendientes</div>
+                  <div style="font-size:2.8rem;font-weight:800;letter-spacing:-2px;line-height:1;" id="sp_total_num">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white border rounded-4 p-4">
+            <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-list-ul me-2"></i>Listado Detallado</h6>
+            <p id="sp_empty" class="text-center text-muted py-3 d-none"><i class="bi bi-check-all d-block mb-2" style="font-size:2.5rem;color:#22c55e;"></i><span class="fw-bold d-block" style="color:#111827;">Todo al dia!</span><span class="small">No tienes solicitudes pendientes por gestionar.</span></p>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0" id="sp_tabla_detalle" style="display:none;">
+                <thead>
+                  <tr>
+                    <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">#</th>
+                    <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Solicitud</th>
+                    <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Tipo</th>
+                    <th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="sp_tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- INCLUDES (main.js carga jQuery, DataTables y Bootstrap internamente) -->
 <?!= include('main.js'); ?>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

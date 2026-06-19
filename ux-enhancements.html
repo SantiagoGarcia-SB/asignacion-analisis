@@ -389,6 +389,192 @@
 .motivo-picker-option:hover { background: rgba(37,49,80,0.06); }
 .motivo-picker-option.mp-selected { background: rgba(37,49,80,0.1); font-weight: 700; color: var(--color-secundario); }
 .motivo-picker-empty { padding: 14px; text-align: center; font-size: 0.8rem; color: var(--text-muted); }
+
+/* 14. SweetAlert2 Custom Theme — Modern & Commercial */
+.swal2-popup.swal-ux {
+    border-radius: 20px !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.04) !important;
+    font-family: 'Manrope', system-ui, sans-serif !important;
+    max-width: 400px;
+}
+.swal2-popup.swal-ux .swal2-icon { display: none !important; }
+.swal2-popup.swal-ux .swal-ux-header {
+    padding: 28px 28px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.swal2-popup.swal-ux .swal-ux-icon-wrap {
+    width: 72px; height: 72px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+    position: relative;
+    overflow: hidden;
+}
+.swal-ux-icon-wrap::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 20px;
+    opacity: 0.12;
+}
+.swal-ux-icon-wrap.swal-ux-warning {
+    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    color: #d97706;
+    box-shadow: 0 8px 24px rgba(245,158,11,0.2);
+}
+.swal-ux-icon-wrap.swal-ux-warning::before { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.swal-ux-icon-wrap.swal-ux-error {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #dc2626;
+    box-shadow: 0 8px 24px rgba(239,68,68,0.2);
+}
+.swal-ux-icon-wrap.swal-ux-error::before { background: linear-gradient(135deg, #ef4444, #dc2626); }
+.swal-ux-icon-wrap.swal-ux-success {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #16a34a;
+    box-shadow: 0 8px 24px rgba(34,197,94,0.2);
+}
+.swal-ux-icon-wrap.swal-ux-success::before { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.swal-ux-icon-wrap.swal-ux-info {
+    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    color: #2563eb;
+    box-shadow: 0 8px 24px rgba(59,130,246,0.2);
+}
+.swal-ux-icon-wrap.swal-ux-info::before { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.swal-ux-icon-wrap i {
+    position: relative;
+    z-index: 1;
+    animation: swalIconPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
+}
+@keyframes swalIconPop {
+    from { transform: scale(0) rotate(-15deg); }
+    to   { transform: scale(1) rotate(0deg); }
+}
+.swal2-popup.swal-ux .swal2-title {
+    font-size: 1.15rem !important;
+    font-weight: 800 !important;
+    color: #111827 !important;
+    padding: 10px 28px 0 !important;
+    margin: 0 !important;
+}
+.swal2-popup.swal-ux .swal2-html-container {
+    font-size: 0.88rem !important;
+    color: #64748b !important;
+    line-height: 1.6 !important;
+    padding: 8px 28px 24px !important;
+    margin: 0 !important;
+    font-weight: 500 !important;
+}
+.swal2-popup.swal-ux .swal2-actions {
+    padding: 0 28px 24px !important;
+    margin: 0 !important;
+    gap: 10px;
+}
+.swal2-popup.swal-ux .swal2-confirm {
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    font-size: 0.88rem !important;
+    padding: 11px 28px !important;
+    box-shadow: 0 4px 14px rgba(37,49,80,0.25) !important;
+    transition: all 0.2s ease !important;
+    letter-spacing: 0.01em;
+    border: none !important;
+}
+.swal2-popup.swal-ux .swal2-confirm:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(37,49,80,0.3) !important;
+}
+.swal2-popup.swal-ux .swal2-confirm:active {
+    transform: translateY(0);
+}
+.swal2-popup.swal-ux .swal2-cancel {
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    font-size: 0.88rem !important;
+    padding: 11px 28px !important;
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    border: none !important;
+    transition: all 0.2s ease !important;
+}
+.swal2-popup.swal-ux .swal2-cancel:hover {
+    background: #e2e8f0 !important;
+}
+.swal2-popup.swal-ux .swal2-timer-progress-bar {
+    height: 4px !important;
+    border-radius: 0 0 20px 20px;
+}
+.swal2-popup.swal-ux .swal2-close {
+    color: #94a3b8 !important;
+    font-size: 1.4rem !important;
+    top: 14px !important;
+    right: 14px !important;
+    transition: color 0.2s !important;
+}
+.swal2-popup.swal-ux .swal2-close:hover {
+    color: #475569 !important;
+}
+
+/* Loading variant */
+.swal2-popup.swal-ux-loading {
+    border-radius: 20px !important;
+    padding: 32px 28px !important;
+    border: none !important;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.04) !important;
+    font-family: 'Manrope', system-ui, sans-serif !important;
+    max-width: 360px;
+}
+.swal-ux-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+.swal-ux-spinner {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    border: 3px solid #e2e8f0;
+    border-top-color: #253150;
+    animation: swalSpin 0.7s linear infinite;
+}
+@keyframes swalSpin { to { transform: rotate(360deg); } }
+.swal-ux-loader-text {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #111827;
+}
+.swal-ux-loader-sub {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+/* Toast variant */
+.swal2-popup.swal-ux-toast {
+    border-radius: 14px !important;
+    padding: 14px 20px !important;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04) !important;
+    font-family: 'Manrope', system-ui, sans-serif !important;
+}
+.swal2-popup.swal-ux-toast .swal2-title {
+    font-size: 0.85rem !important;
+    font-weight: 700 !important;
+}
+
+/* Backdrop */
+.swal-ux-backdrop {
+    background: rgba(15, 23, 42, 0.4) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+}
 </style>
 
 <div class="toast-ux" id="toastContainer"></div>
@@ -720,6 +906,64 @@ const UX = (function() {
         });
     }
 
+    // -- Modern Alert System --
+    var _alertIcons = {
+        warning: { bi: 'bi-exclamation-triangle-fill', cls: 'swal-ux-warning' },
+        error:   { bi: 'bi-x-circle-fill',             cls: 'swal-ux-error' },
+        success: { bi: 'bi-check-circle-fill',          cls: 'swal-ux-success' },
+        info:    { bi: 'bi-info-circle-fill',            cls: 'swal-ux-info' }
+    };
+
+    function _buildIconHTML(type) {
+        var cfg = _alertIcons[type] || _alertIcons.info;
+        return '<div class="swal-ux-header"><div class="swal-ux-icon-wrap ' + cfg.cls + '"><i class="bi ' + cfg.bi + '"></i></div></div>';
+    }
+
+    function alert(opts) {
+        var type = opts.icon || 'info';
+        var iconHtml = _buildIconHTML(type);
+        var bodyText = opts.html || opts.text || '';
+
+        return Swal.fire({
+            html: iconHtml + (bodyText ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#64748b;line-height:1.6;font-weight:500;">' + bodyText + '</div>' : ''),
+            title: opts.title || '',
+            showConfirmButton: opts.showConfirmButton !== false,
+            confirmButtonText: opts.confirmButtonText || 'Entendido',
+            confirmButtonColor: opts.confirmButtonColor || '#253150',
+            showCancelButton: opts.showCancelButton || false,
+            cancelButtonText: opts.cancelButtonText || 'Cancelar',
+            timer: opts.timer || undefined,
+            timerProgressBar: opts.timerProgressBar || false,
+            allowOutsideClick: opts.allowOutsideClick !== false,
+            width: opts.width || 400,
+            customClass: { popup: 'swal-ux', backdrop: 'swal-ux-backdrop' }
+        });
+    }
+
+    function alertLoading(title, subtitle) {
+        return Swal.fire({
+            html: '<div class="swal-ux-loader"><div class="swal-ux-spinner"></div><div class="swal-ux-loader-text">' + (title || 'Procesando...') + '</div>' + (subtitle ? '<div class="swal-ux-loader-sub">' + subtitle + '</div>' : '') + '</div>',
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            width: 360,
+            customClass: { popup: 'swal-ux-loading', backdrop: 'swal-ux-backdrop' }
+        });
+    }
+
+    function alertToast(title, type) {
+        type = type || 'info';
+        return Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: type,
+            title: title,
+            showConfirmButton: false,
+            timer: type === 'warning' ? 5000 : 3000,
+            timerProgressBar: true,
+            customClass: { popup: 'swal-ux-toast' }
+        });
+    }
+
     // Public API
     return {
         init: init,
@@ -732,7 +976,10 @@ const UX = (function() {
         logActivity: logActivity,
         showActivityModal: showActivityModal,
         showPendingModal: showPendingModal,
-        updateSyncTime: updateSyncTime
+        updateSyncTime: updateSyncTime,
+        alert: alert,
+        alertLoading: alertLoading,
+        alertToast: alertToast
     };
 })();
 
@@ -740,6 +987,129 @@ const UX = (function() {
 document.addEventListener('DOMContentLoaded', function() {
     UX.init();
 });
+
+// ===== Notification Sound System (Web Audio API) =====
+const NotifSound = (function() {
+    var _ctx = null;
+
+    function getCtx() {
+        if (!_ctx) {
+            try { _ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+            catch(e) { return null; }
+        }
+        if (_ctx.state === 'suspended') _ctx.resume();
+        return _ctx;
+    }
+
+    function playTone(frequencies, durations, volume) {
+        var ctx = getCtx();
+        if (!ctx) return;
+        var masterGain = ctx.createGain();
+        masterGain.gain.value = volume || 0.15;
+        masterGain.connect(ctx.destination);
+        var t = ctx.currentTime;
+
+        frequencies.forEach(function(freq, i) {
+            var dur = durations[i] || 0.12;
+            var osc = ctx.createOscillator();
+            var env = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            env.gain.setValueAtTime(0.001, t);
+            env.gain.exponentialRampToValueAtTime(1, t + 0.015);
+            env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+            osc.connect(env);
+            env.connect(masterGain);
+            osc.start(t);
+            osc.stop(t + dur + 0.01);
+            t += dur * 0.65;
+        });
+    }
+
+    return {
+        success: function() { playTone([880, 1174.66, 1396.91], [0.1, 0.1, 0.18], 0.12); },
+        info:    function() { playTone([783.99, 1046.50], [0.1, 0.14], 0.1); },
+        warning: function() { playTone([659.25, 523.25], [0.12, 0.16], 0.13); },
+        error:   function() { playTone([415.30, 349.23, 293.66], [0.12, 0.12, 0.2], 0.13); },
+        play: function(type) {
+            var fn = this[type];
+            if (fn) fn();
+            else this.info();
+        }
+    };
+})();
+
+// ===== Global Swal Override — applies modern theme to ALL Swal.fire calls =====
+(function() {
+    if (typeof Swal === 'undefined') return;
+    var _origFire = Swal.fire.bind(Swal);
+
+    var _iconMap = {
+        warning: { bi: 'bi-exclamation-triangle-fill', cls: 'swal-ux-warning' },
+        error:   { bi: 'bi-x-circle-fill',             cls: 'swal-ux-error' },
+        success: { bi: 'bi-check-circle-fill',          cls: 'swal-ux-success' },
+        info:    { bi: 'bi-info-circle-fill',            cls: 'swal-ux-info' }
+    };
+
+    function cloneOpts(src) {
+        var o = {};
+        for (var k in src) { if (src.hasOwnProperty(k)) o[k] = src[k]; }
+        return o;
+    }
+
+    Swal.fire = function() {
+        var raw, opts;
+        if (arguments.length >= 2 && typeof arguments[0] === 'string') {
+            raw = { title: arguments[0], html: arguments[1], icon: arguments[2] || 'info' };
+        } else {
+            raw = arguments[0] || {};
+        }
+        opts = cloneOpts(raw);
+
+        if (opts.toast) {
+            opts.customClass = Object.assign({}, opts.customClass, {
+                popup: ((opts.customClass && opts.customClass.popup || '') + ' swal-ux-toast').trim()
+            });
+            try { NotifSound.play(opts.icon || 'info'); } catch(e) {}
+            return _origFire(opts);
+        }
+
+        if (opts.didOpen && !opts.icon) {
+            opts.customClass = Object.assign({}, opts.customClass, {
+                popup: ((opts.customClass && opts.customClass.popup || '') + ' swal-ux-loading').trim(),
+                backdrop: 'swal-ux-backdrop'
+            });
+            if (!opts.html || !opts.html.includes('swal-ux-loader')) {
+                var loadTitle = opts.title || 'Procesando...';
+                var loadSub = opts.html || '';
+                opts.title = '';
+                opts.html = '<div class="swal-ux-loader"><div class="swal-ux-spinner"></div><div class="swal-ux-loader-text">' + loadTitle + '</div>' + (loadSub ? '<div class="swal-ux-loader-sub">' + loadSub + '</div>' : '') + '</div>';
+            }
+            return _origFire(opts);
+        }
+
+        var type = opts.icon;
+        if (type) { try { NotifSound.play(type); } catch(e) {} }
+        if (type && _iconMap[type]) {
+            var cfg = _iconMap[type];
+            var iconBlock = '<div class="swal-ux-header"><div class="swal-ux-icon-wrap ' + cfg.cls + '"><i class="bi ' + cfg.bi + '"></i></div></div>';
+            var body = opts.html || opts.text || '';
+            if (opts.text) { body = '<span>' + body + '</span>'; delete opts.text; }
+
+            opts.html = iconBlock + (body ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#64748b;line-height:1.6;font-weight:500;">' + body + '</div>' : '');
+            delete opts.icon;
+            opts.confirmButtonColor = opts.confirmButtonColor || '#253150';
+            opts.confirmButtonText = opts.confirmButtonText || 'Entendido';
+            opts.customClass = Object.assign({}, opts.customClass, {
+                popup: ((opts.customClass && opts.customClass.popup || '') + ' swal-ux').trim(),
+                backdrop: 'swal-ux-backdrop'
+            });
+            opts.width = opts.width || 400;
+        }
+
+        return _origFire(opts);
+    };
+})();
 
 // ===== MotivoPicker — searchable select component =====
 const MotivoPicker = (function() {

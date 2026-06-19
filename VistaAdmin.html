@@ -1005,14 +1005,7 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                                 <span class="badge" id="badge_individual" style="background:#f1f5f9;color:#475569;font-size:0.75rem;padding:5px 10px;">0 / 0</span>
                             </div>
                             <div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_individual" style="width:0%;background:#253150;"></div></div>
-                            <div class="row g-2">
-                                <div class="col-6"><label class="small">Nuevas</label><input type="number" id="ind_cupo_nuevas" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                                <div class="col-6"><label class="small">Reestudios</label><input type="number" id="ind_cupo_reestudios" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                                <div class="col-6"><label class="small">Inducciones</label><input type="number" id="ind_cupo_inducciones" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                                <div class="col-6"><label class="small">Biometría</label><input type="number" id="ind_cupo_biometria" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                                <div class="col-6"><label class="small">Nueva UAR</label><input type="number" id="ind_cupo_nuevaUar" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                                <div class="col-6"><label class="small">Deudor UAR</label><input type="number" id="ind_cupo_deudorUar" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>
-                            </div>
+                            <div class="row g-2" id="ind_subcupos_grid"></div>
                             <div class="d-flex gap-2 mt-3">
                                 <button class="btn btn-sm btn-outline-danger flex-fill" onclick="resetearCuposIndividual()">
                                     <i class="bi bi-trash me-1"></i>Eliminar
@@ -1046,20 +1039,15 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                         </div>
                         <div class="table-responsive">
                             <table id="tablaCuposPersonalizados" class="table w-100" style="font-size:0.82rem;">
-                                <thead>
+                                <thead id="headCuposPersonalizados">
                                     <tr>
                                         <th>Analista</th>
                                         <th class="text-center">Total</th>
-                                        <th class="text-center">Nue</th>
-                                        <th class="text-center">Ree</th>
-                                        <th class="text-center">Ind</th>
-                                        <th class="text-center">Bio</th>
-                                        <th class="text-center">UAR</th>
                                         <th class="text-center">Fijo</th>
                                     </tr>
                                 </thead>
                                 <tbody id="cuerpoCuposPersonalizados">
-                                    <tr><td colspan="8" class="text-center text-muted py-4">Cargando...</td></tr>
+                                    <tr><td colspan="3" class="text-center text-muted py-4">Cargando...</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -3167,32 +3155,35 @@ function cambiarModoCupos(modo) {
 }
 
 var _cuposEquiposActivos = [];
-var SUBCATS_CUPOS = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
-var SUBCATS_LABELS = { nuevas: 'Nuevas', reestudios: 'Reestudios', inducciones: 'Inducciones', biometria: 'Biometría', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR' };
+var _tiposCupos = [];
 
 function cargarCuposGenerales() {
     var grid = document.getElementById('cupos-equipos-grid');
     grid.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>';
 
-    google.script.run.withSuccessHandler(function(equipos) {
-        _cuposEquiposActivos = equipos || [];
-        if (_cuposEquiposActivos.length === 0) {
-            grid.innerHTML = '<div class="col-12 text-center text-muted py-5">No hay equipos configurados. Crea uno en la sección Equipos.</div>';
-            return;
-        }
-        renderCuposCards(equipos);
-        google.script.run.withSuccessHandler(function(res) {
-            for (var e = 0; e < _cuposEquiposActivos.length; e++) {
-                var eqId = _cuposEquiposActivos[e].id.toLowerCase();
-                var campos = ['total'].concat(SUBCATS_CUPOS);
-                for (var c = 0; c < campos.length; c++) {
-                    var el = document.getElementById('cupo_' + eqId + '_' + campos[c]);
-                    if (el && res[eqId]) el.value = res[eqId][campos[c]] || 0;
-                }
-                validarSubcupos(eqId);
+    google.script.run.withSuccessHandler(function(tipos) {
+        _tiposCupos = tipos || [];
+        google.script.run.withSuccessHandler(function(equipos) {
+            _cuposEquiposActivos = equipos || [];
+            if (_cuposEquiposActivos.length === 0) {
+                grid.innerHTML = '<div class="col-12 text-center text-muted py-5">No hay equipos configurados.</div>';
+                return;
             }
-        }).admin_getCuotasGlobales();
-    }).admin_getEquipos();
+            renderCuposCards(equipos);
+            google.script.run.withSuccessHandler(function(res) {
+                for (var e = 0; e < _cuposEquiposActivos.length; e++) {
+                    var eqId = _cuposEquiposActivos[e].id.toLowerCase();
+                    var totalEl = document.getElementById('cupo_' + eqId + '_total');
+                    if (totalEl && res[eqId]) totalEl.value = res[eqId].total || 0;
+                    for (var t = 0; t < _tiposCupos.length; t++) {
+                        var el = document.getElementById('cupo_' + eqId + '_' + _tiposCupos[t].id);
+                        if (el && res[eqId]) el.value = res[eqId][_tiposCupos[t].id] || 0;
+                    }
+                    validarSubcupos(eqId);
+                }
+            }).admin_getCuotasGlobales();
+        }).admin_getEquipos();
+    }).admin_getTiposSolicitud();
 }
 
 function renderCuposCards(equipos) {
@@ -3215,9 +3206,9 @@ function renderCuposCards(equipos) {
         html += '<div class="text-center mb-2"><span class="badge" id="badge_' + eqId + '" style="background:' + borderLight + ';color:' + color + ';font-size:0.75rem;padding:5px 10px;">0 / 0</span></div>';
         html += '<div class="progress mb-3" style="height:5px;"><div class="progress-bar" id="bar_' + eqId + '" style="width:0%;background:' + color + ';"></div></div>';
         html += '<div class="row g-2">';
-        SUBCATS_CUPOS.forEach(function(sub) {
-            html += '<div class="col-6"><label class="small">' + SUBCATS_LABELS[sub] + '</label>';
-            html += '<input type="number" id="cupo_' + eqId + '_' + sub + '" class="form-control form-control-sm text-center subcupo" data-equipo="' + eqId + '" min="0" oninput="validarSubcupos(\'' + eqId + '\')"></div>';
+        _tiposCupos.forEach(function(tipo) {
+            html += '<div class="col-6"><label class="small">' + tipo.label + '</label>';
+            html += '<input type="number" id="cupo_' + eqId + '_' + tipo.id + '" class="form-control form-control-sm text-center subcupo" data-equipo="' + eqId + '" min="0" oninput="validarSubcupos(\'' + eqId + '\')"></div>';
         });
         html += '</div></div></div>';
     });
@@ -3229,8 +3220,9 @@ function validarSubcupos(equipo) {
     if (!totalEl) return;
     var total = parseInt(totalEl.value) || 0;
     var suma = 0;
-    SUBCATS_CUPOS.forEach(function(sub) {
-        suma += parseInt(document.getElementById('cupo_' + equipo + '_' + sub).value) || 0;
+    _tiposCupos.forEach(function(tipo) {
+        var el = document.getElementById('cupo_' + equipo + '_' + tipo.id);
+        if (el) suma += parseInt(el.value) || 0;
     });
     var badge = document.getElementById('badge_' + equipo);
     var bar = document.getElementById('bar_' + equipo);
@@ -3252,9 +3244,9 @@ function guardarCuposGenerales() {
         var total = parseInt(document.getElementById('cupo_' + eqId + '_total').value) || 0;
         var suma = 0;
         var data = { total: total };
-        SUBCATS_CUPOS.forEach(function(sub) {
-            var val = parseInt(document.getElementById('cupo_' + eqId + '_' + sub).value) || 0;
-            data[sub] = val;
+        _tiposCupos.forEach(function(tipo) {
+            var val = parseInt(document.getElementById('cupo_' + eqId + '_' + tipo.id).value) || 0;
+            data[tipo.id] = val;
             suma += val;
         });
         if (suma > total) {
@@ -3300,6 +3292,17 @@ function buscarAnalistaCupos(termino) {
     }, 300);
 }
 
+function _renderIndSubcuposGrid() {
+    var grid = document.getElementById('ind_subcupos_grid');
+    if (!grid) return;
+    var html = '';
+    _tiposCupos.forEach(function(tipo) {
+        html += '<div class="col-6"><label class="small">' + tipo.label + '</label>';
+        html += '<input type="number" id="ind_cupo_' + tipo.id + '" class="form-control form-control-sm text-center" min="0" oninput="validarSubcuposIndividual()"></div>';
+    });
+    grid.innerHTML = html;
+}
+
 function seleccionarAnalista(correo, nombre, especialidad) {
     _analistaSeleccionado = correo;
     document.getElementById('ind_nombre_analista').textContent = nombre;
@@ -3314,6 +3317,19 @@ function seleccionarAnalista(correo, nombre, especialidad) {
     document.getElementById('resultados-busqueda-analista').style.display = 'none';
     document.getElementById('input-buscar-analista').value = nombre;
 
+    if (_tiposCupos.length === 0) {
+        google.script.run.withSuccessHandler(function(tipos) {
+            _tiposCupos = tipos || [];
+            _renderIndSubcuposGrid();
+            _cargarCuposDelAnalista(correo);
+        }).admin_getTiposSolicitud();
+    } else {
+        _renderIndSubcuposGrid();
+        _cargarCuposDelAnalista(correo);
+    }
+}
+
+function _cargarCuposDelAnalista(correo) {
     google.script.run.withSuccessHandler(function(res) {
         var toggle = document.getElementById('toggle-personalizado');
         var toggleFijo = document.getElementById('toggle-fijo');
@@ -3322,12 +3338,10 @@ function seleccionarAnalista(correo, nombre, especialidad) {
             toggleFijo.checked = res.cupos.fijo === true;
             mostrarCamposIndividual(true);
             document.getElementById('ind_cupo_total').value = res.cupos.total || 0;
-            document.getElementById('ind_cupo_nuevas').value = res.cupos.nuevas || 0;
-            document.getElementById('ind_cupo_reestudios').value = res.cupos.reestudios || 0;
-            document.getElementById('ind_cupo_inducciones').value = res.cupos.inducciones || 0;
-            document.getElementById('ind_cupo_biometria').value = res.cupos.biometria || 0;
-            document.getElementById('ind_cupo_nuevaUar').value = res.cupos.nuevaUar || 0;
-            document.getElementById('ind_cupo_deudorUar').value = res.cupos.deudorUar || 0;
+            _tiposCupos.forEach(function(tipo) {
+                var el = document.getElementById('ind_cupo_' + tipo.id);
+                if (el) el.value = res.cupos[tipo.id] || 0;
+            });
             validarSubcuposIndividual();
         } else {
             toggle.checked = false;
@@ -3339,24 +3353,32 @@ function seleccionarAnalista(correo, nombre, especialidad) {
 
 function cargarTablaCuposPersonalizados() {
     var tbody = document.getElementById('cuerpoCuposPersonalizados');
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-2"></div>Cargando...</td></tr>';
+    var totalCols = 3 + _tiposCupos.length;
+    tbody.innerHTML = '<tr><td colspan="' + totalCols + '" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-2"></div>Cargando...</td></tr>';
+
+    var thead = document.getElementById('headCuposPersonalizados');
+    var thHtml = '<tr><th>Analista</th><th class="text-center">Total</th>';
+    _tiposCupos.forEach(function(tipo) {
+        var short = tipo.label.length > 5 ? tipo.label.substring(0, 4) + '.' : tipo.label;
+        thHtml += '<th class="text-center" title="' + tipo.label + '">' + short + '</th>';
+    });
+    thHtml += '<th class="text-center">Fijo</th></tr>';
+    thead.innerHTML = thHtml;
+
     google.script.run.withSuccessHandler(function(lista) {
         if (!lista || lista.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-inbox me-2"></i>Ningún analista tiene cupos personalizados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + totalCols + '" class="text-center text-muted py-4"><i class="bi bi-inbox me-2"></i>Ningun analista tiene cupos personalizados</td></tr>';
             return;
         }
         var html = '';
         lista.forEach(function(a) {
             var c = a.cupos;
-            var uarTotal = (c.nuevaUar || 0) + (c.deudorUar || 0);
             html += '<tr style="cursor:pointer;" onclick="seleccionarAnalista(\'' + a.correo.replace(/'/g, "\\'") + '\',\'' + a.nombre.replace(/'/g, "\\'") + '\',\'' + a.especialidad.replace(/'/g, "\\'") + '\')" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'white\'">';
-            html += '<td><div class="fw-bold" style="font-size:0.82rem;">' + a.nombre + '</div><div class="text-muted" style="font-size:0.68rem;">' + a.correo.split('@')[0] + ' · ' + a.especialidad + '</div></td>';
+            html += '<td><div class="fw-bold" style="font-size:0.82rem;">' + a.nombre + '</div><div class="text-muted" style="font-size:0.68rem;">' + a.correo.split('@')[0] + ' - ' + a.especialidad + '</div></td>';
             html += '<td class="text-center fw-bold">' + (c.total || 0) + '</td>';
-            html += '<td class="text-center">' + (c.nuevas || 0) + '</td>';
-            html += '<td class="text-center">' + (c.reestudios || 0) + '</td>';
-            html += '<td class="text-center">' + (c.inducciones || 0) + '</td>';
-            html += '<td class="text-center">' + (c.biometria || 0) + '</td>';
-            html += '<td class="text-center">' + uarTotal + '</td>';
+            _tiposCupos.forEach(function(tipo) {
+                html += '<td class="text-center">' + (c[tipo.id] || 0) + '</td>';
+            });
             html += '<td class="text-center">';
             if (a.fijo) html += '<span style="background:#fef3c7;color:#b45309;padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:700;"><i class="bi bi-pin-angle-fill me-1"></i>Fijo</span>';
             else html += '<span style="background:#f1f5f9;color:#94a3b8;padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:600;">Temporal</span>';
@@ -3364,7 +3386,7 @@ function cargarTablaCuposPersonalizados() {
         });
         tbody.innerHTML = html;
     }).withFailureHandler(function(err) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-3">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + totalCols + '" class="text-center text-danger py-3">Error: ' + err.message + '</td></tr>';
     }).admin_getAnalistasConCuposPersonalizados();
 }
 
@@ -3405,47 +3427,33 @@ function mostrarCamposIndividual(mostrar) {
     document.getElementById('msg-usa-globales').style.display = mostrar ? 'none' : '';
 }
 
-function sugerirDistribucionIndividual() {
-    var total = parseInt(document.getElementById('ind_cupo_total').value) || 0;
-    var ratio = { nuevas: 0.50, reestudios: 0.20, inducciones: 0.10, biometria: 0.05, nuevaUar: 0.08, deudorUar: 0.07 };
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
-    var asignado = 0;
-    for (var i = 0; i < subcats.length; i++) {
-        var val = Math.floor(total * ratio[subcats[i]]);
-        asignado += val;
-        document.getElementById('ind_cupo_' + subcats[i]).value = val;
-    }
-    if (total - asignado > 0) {
-        var el = document.getElementById('ind_cupo_nuevas');
-        el.value = parseInt(el.value) + (total - asignado);
-    }
-    validarSubcuposIndividual();
-}
-
 function validarSubcuposIndividual() {
     var total = parseInt(document.getElementById('ind_cupo_total').value) || 0;
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
     var suma = 0;
-    for (var i = 0; i < subcats.length; i++) { suma += parseInt(document.getElementById('ind_cupo_' + subcats[i]).value) || 0; }
+    _tiposCupos.forEach(function(tipo) {
+        var el = document.getElementById('ind_cupo_' + tipo.id);
+        if (el) suma += parseInt(el.value) || 0;
+    });
     var badge = document.getElementById('badge_individual');
     var bar = document.getElementById('bar_individual');
     var pct = total > 0 ? Math.min((suma / total) * 100, 100) : 0;
     bar.style.width = pct + '%';
-    if (suma > total) { bar.style.background = '#ef4444'; badge.style.color = '#ef4444'; badge.textContent = '?? Sobran ' + (suma - total) + ' ? ' + suma + ' / ' + total; }
-    else if (suma === total) { bar.style.background = '#22c55e'; badge.style.color = '#16a34a'; badge.textContent = '? ' + suma + ' / ' + total; }
-    else { bar.style.background = '#253150'; badge.style.color = '#253150'; badge.textContent = 'Faltan ' + (total - suma) + ' ? ' + suma + ' / ' + total; }
+    if (suma > total) { bar.style.background = '#ef4444'; badge.style.color = '#ef4444'; badge.textContent = 'Sobran ' + (suma - total) + ' | ' + suma + ' / ' + total; }
+    else if (suma === total) { bar.style.background = '#22c55e'; badge.style.color = '#16a34a'; badge.textContent = suma + ' / ' + total; }
+    else { bar.style.background = '#253150'; badge.style.color = '#253150'; badge.textContent = 'Faltan ' + (total - suma) + ' | ' + suma + ' / ' + total; }
 }
 
 function guardarCuposIndividual() {
     if (!_analistaSeleccionado) return;
     var total = parseInt(document.getElementById('ind_cupo_total').value) || 0;
-    var subcats = ['nuevas', 'reestudios', 'inducciones', 'biometria', 'nuevaUar', 'deudorUar'];
     var cupos = { total: total, fijo: document.getElementById('toggle-fijo').checked };
     var suma = 0;
-    for (var i = 0; i < subcats.length; i++) {
-        var val = parseInt(document.getElementById('ind_cupo_' + subcats[i]).value) || 0;
-        cupos[subcats[i]] = val; suma += val;
-    }
+    _tiposCupos.forEach(function(tipo) {
+        var el = document.getElementById('ind_cupo_' + tipo.id);
+        var val = el ? (parseInt(el.value) || 0) : 0;
+        cupos[tipo.id] = val;
+        suma += val;
+    });
     if (suma > total) { Swal.fire({ title: 'Cupos excedidos', html: 'La suma (' + suma + ') supera el total (' + total + ').<br>Sobran <strong>' + (suma - total) + '</strong>.', icon: 'error', confirmButtonColor: '#253150' }); return; }
     if (suma < total) { Swal.fire({ title: 'Cupos sin distribuir', html: 'La suma (' + suma + ') no alcanza el total (' + total + ').<br>Faltan <strong>' + (total - suma) + '</strong> por asignar.', icon: 'warning', confirmButtonColor: '#253150' }); return; }
     Swal.fire({ title: 'Guardando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });

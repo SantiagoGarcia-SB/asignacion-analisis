@@ -1,5 +1,7 @@
-const ID_SHEET_ORIGEN = '1tmXIxNB65eAUQah8dxvSJSJVKmR25ZiuM59SLX0NYME';
-const ID_SHEET_GESTION = '1lT9BxWAKgo9xed9xaAbbFqna304TWNbzL3v2302ZvOQ';
+// OBSOLETA: biometrías ahora se toman de la hoja "solicitud" en ID_WAREHOUSE_USUARIOS
+// const ID_SHEET_ORIGEN = '1tmXIxNB65eAUQah8dxvSJSJVKmR25ZiuM59SLX0NYME';
+// OBSOLETA: biometría ahora usa Historico_Gestiones en ID_WAREHOUSE_USUARIOS
+// const ID_SHEET_GESTION = '1lT9BxWAKgo9xed9xaAbbFqna304TWNbzL3v2302ZvOQ';
 const ID_WAREHOUSE_USUARIOS = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0';
 
 function getEndPointNewApiDate() { return PropertiesService.getScriptProperties().getProperty('endPointSaiNewApiDate'); }
@@ -13,132 +15,10 @@ function formatDateCustom(date) {
   return `${year}${month}${day}`;
 }
 
+// SUSPENDIDA: biometrías ahora se toman de la hoja "solicitud" (APROBADO_PENDIENTE_BIOMETRIA)
 function descargarBiometriasAPI() {
-  const startTime = new Date().getTime();
-  const TIEMPO_LIMITE_MS = 300000; 
-  
-  Logger.log("INICIANDO EJECUCIÓN - Descarga de Biometrías");
-
-  const endpointBase = getEndPointNewApiDate();
-  const keyFull = getKeyFull();
-  
-  if (!endpointBase || !keyFull) {
-    Logger.log("❌ Faltan configuraciones técnicas (API Key o Endpoint)");
-    return;
-  }
-
-  const ssOrigen = SpreadsheetApp.openById(ID_SHEET_ORIGEN);
-  let hojaOrigen = ssOrigen.getSheetByName("Hoja 2") || ssOrigen.insertSheet("Hoja 2");
-
-  const lastRow = hojaOrigen.getLastRow();
-  const idsExistentes = new Set();
-  if (lastRow > 1) {
-    hojaOrigen.getRange(2, 1, lastRow - 1, 1).getValues().flat().forEach(id => {
-      if (id) idsExistentes.add(String(id).trim());
-    });
-  }
-
-  const hoy = new Date();
-  const fechaInicio = new Date();
-  fechaInicio.setDate(hoy.getDate() - 8); 
-  const sIni = formatDateCustom(fechaInicio);
-  const sFin = formatDateCustom(hoy);
-
-  let paginaActual = 1;
-  let totalPaginas = 1;
-  let nuevasFilas = [];
-
-  try {
-    do {
-      if (new Date().getTime() - startTime > TIEMPO_LIMITE_MS) {
-        Logger.log("⏳ Tiempo de ejecución acercándose al límite de Google. Deteniendo para guardar...");
-        break;
-      }
-
-      const url = `${endpointBase}?startDate=${sIni}&endDate=${sFin}&page=${paginaActual}&size=200`;
-      Logger.log("📡 Consultando página: " + paginaActual + " / " + totalPaginas);
-
-      const response = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
-        muteHttpExceptions: true
-      });
-
-      if (response.getResponseCode() === 200) {
-        const json = JSON.parse(response.getContentText());
-        totalPaginas = json.totalPages || 1;
-        const contenido = json.content || [];
-        
-        let biometriasEncontradas = 0;
-
-        contenido.forEach(item => {
-          const rc = String(item.resultCode).trim();
-          const consecutivo = String(item.consecutive).trim();
-
-          if ((rc === "500" || rc === "503") && !idsExistentes.has(consecutivo)) {
-            let personasContactar = [];
-            personasContactar.push({
-              rol: "INQUILINO PRINCIPAL",
-              nombre: item.tenantName || "Sin Nombre",
-              documento: item.evaluatedDocument || "",
-              telefono: item.tenantPhone || "Sin Teléfono",
-              correo: item.tenantEmail || "Sin Correo",
-              resultCode: rc,
-              descripcion: item.resultDescription || item.studyStatus || ""
-            });
-
-            if (item.codebtors && Array.isArray(item.codebtors)) {
-              item.codebtors.forEach(c => {
-                personasContactar.push({
-                  rol: c.profileType || "CODEUDOR",
-                  nombre: c.name || "Sin Nombre",
-                  documento: c.document || "",
-                  telefono: c.phone || "Sin Teléfono",
-                  correo: c.email || "Sin Correo",
-                  resultCode: c.resultCode || "",
-                  descripcion: c.resultDescription || c.studyStatus || ""
-                });
-              });
-            }
-
-            nuevasFilas.push([
-              consecutivo, item.policyNumber, item.evaluatedDocument, item.tenantName,
-              item.tenantPhone, item.tenantEmail, item.cityName, item.address,
-              item.monthlyRent, JSON.stringify(personasContactar), item.studyStatus
-            ]);
-            idsExistentes.add(consecutivo);
-            biometriasEncontradas++;
-          }
-        });
-        
-        Logger.log(`✅ Biometrías nuevas extraídas en Pág ${paginaActual}: ${biometriasEncontradas}`);
-        
-      } else {
-        Logger.log("⚠️ Error API Pág " + paginaActual + ": " + response.getResponseCode());
-        break;
-      }
-
-      paginaActual++;
-      
-      if (paginaActual <= totalPaginas) {
-        Logger.log("⏳ Pausa de 2 segundos (Anti-Datadog)...");
-        Utilities.sleep(2000); 
-      }
-
-    } while (paginaActual <= totalPaginas);
-
-    Logger.log("Barrido de API completado exitosamente.");
-
-  } catch (e) {
-    Logger.log("ERROR DURANTE LA CONSULTA: " + e.toString());
-  }
-
-  if (nuevasFilas.length > 0) {
-    hojaOrigen.getRange(hojaOrigen.getLastRow() + 1, 1, nuevasFilas.length, nuevasFilas[0].length).setValues(nuevasFilas);
-    Logger.log("Datos guardados en Hoja 2: " + nuevasFilas.length);
-  } else {
-    Logger.log("No se encontraron biometrías nuevas pendientes.");
-  }
+  Logger.log("descargarBiometriasAPI SUSPENDIDA — biometrías se toman de hoja solicitud");
+  return;
 }
 
 function eliminarTriggersBio() {
@@ -239,7 +119,7 @@ function autoAsignarBiometria() {
 
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    
+
     const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
     const hojaUsuarios = ssWarehouse.getSheetByName("Usuarios");
     const dataUsuarios = hojaUsuarios.getDataRange().getValues();
@@ -252,28 +132,34 @@ function autoAsignarBiometria() {
     const nombreAnalista = String(usuario[1]).trim();
     if (capTotal <= 0) return { success: false, message: "Capacidad inválida o en 0" };
 
-    const mapaInmobiliarias = obtenerMapaInmobiliarias(ssWarehouse);
-
-    const ssGestion = SpreadsheetApp.openById(ID_SHEET_GESTION);
-    const hojaGestion = ssGestion.getSheetByName("Hoja 1");
-    const lastRowGestion = hojaGestion.getLastRow();
+    let hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
+    if (!hojaHist) hojaHist = ssWarehouse.insertSheet("Historico_Gestiones");
+    const lastRowHist = hojaHist.getLastRow();
 
     let cargaActual = 0;
     let idsEnGestion = new Set();
+    let conteoHoyBio = 0;
+    const hoy = new Date();
 
-    if (lastRowGestion > 1) {
-      const dataGestion = hojaGestion.getRange(2, 1, lastRowGestion - 1, 18).getValues();
-      dataGestion.forEach(f => {
-        let idSol = String(f[6]).trim(); 
-        if (idSol) idsEnGestion.add(idSol);
+    if (lastRowHist > 1) {
+      const dataHist = hojaHist.getRange(2, 1, lastRowHist - 1, 27).getValues();
+      dataHist.forEach(f => {
+        const estadoH = String(f[16]).toUpperCase().trim();
+        if (!estadoH.includes("BIOMETRIA")) return;
 
-        let analistaColR = f.length > 17 ? String(f[17]).trim().toLowerCase() : "";
-        let analistaColB = String(f[1]).trim().toLowerCase();
-        let analistaFila = analistaColR ? analistaColR : analistaColB;
-        let estadoFila = String(f[15]).toUpperCase().trim();
+        const solId = String(f[0]).trim();
+        if (solId) idsEnGestion.add(solId);
 
-        if (analistaFila === userEmail && estadoFila === "PENDIENTE GESTION") {
-          cargaActual++;
+        const emailH = String(f[25]).trim().toLowerCase();
+        if (emailH !== userEmail) return;
+
+        const fechaFin = f[26];
+        const tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
+        if (!tieneFin) cargaActual++;
+
+        const fechaAsig = f[24];
+        if (fechaAsig instanceof Date && fechaAsig.getDate() === hoy.getDate() && fechaAsig.getMonth() === hoy.getMonth() && fechaAsig.getFullYear() === hoy.getFullYear()) {
+          conteoHoyBio++;
         }
       });
     }
@@ -281,110 +167,74 @@ function autoAsignarBiometria() {
     let cupoDisponible = capTotal - cargaActual;
     if (cupoDisponible <= 0) return { success: false, message: "Capacidad llena" };
 
-    // Validar cupo diario del equipo Biometría (individual o global)
     const cuposBio = obtenerCuposEfectivos(userEmail, 'BIOMETRIA', dataUsuarios);
     const cupoBioDiario = cuposBio.biometria;
-    
-    // Contar biometrías asignadas hoy a este analista
-    const hoy = new Date();
-    let conteoHoyBio = 0;
-    if (lastRowGestion > 1) {
-      const dataGestionFull = hojaGestion.getRange(2, 1, lastRowGestion - 1, 18).getValues();
-      dataGestionFull.forEach(f => {
-        let analistaColR = f.length > 17 ? String(f[17]).trim().toLowerCase() : "";
-        let analistaColB = String(f[1]).trim().toLowerCase();
-        let analistaFila = analistaColR ? analistaColR : analistaColB;
-        if (analistaFila === userEmail) {
-          const fechaFila = f[0];
-          if (fechaFila instanceof Date && fechaFila.getDate() === hoy.getDate() && fechaFila.getMonth() === hoy.getMonth() && fechaFila.getFullYear() === hoy.getFullYear()) {
-            conteoHoyBio++;
-          }
-        }
-      });
-    }
+
     if (conteoHoyBio >= cupoBioDiario) return { success: false, message: "Cupo diario de biometría alcanzado (" + cupoBioDiario + ")." };
-    // Limitar asignación al cupo restante
     const cupoRestanteBio = cupoBioDiario - conteoHoyBio;
     if (cupoDisponible > cupoRestanteBio) cupoDisponible = cupoRestanteBio;
 
-    const ssOrigen = SpreadsheetApp.openById(ID_SHEET_ORIGEN);
-    const hojaOrigen = ssOrigen.getSheetByName("Hoja 2");
-    const lastRowOrigen = hojaOrigen.getLastRow();
+    const hojaSolicitud = ssWarehouse.getSheetByName("solicitud");
+    if (!hojaSolicitud || hojaSolicitud.getLastRow() < 2) return { success: false, message: "No hay biometrías pendientes en la base." };
 
-    if (lastRowOrigen < 2) return { success: false, message: "No hay biometrías pendientes en la base." };
+    const lastRowSol = hojaSolicitud.getLastRow();
+    const datosSol = hojaSolicitud.getRange(2, 1, lastRowSol - 1, 38).getValues();
 
-    const datosBio = hojaOrigen.getRange(2, 1, lastRowOrigen - 1, 11).getValues();
     let candidatosParaAsignar = [];
-    let filasAEliminar = [];
 
-    for (let i = 0; i < datosBio.length; i++) {
+    for (let i = 0; i < datosSol.length; i++) {
       if (cupoDisponible <= 0) break;
 
-      let id = String(datosBio[i][0]).trim();
+      const row = datosSol[i];
+      const id = String(row[0]).trim();
       if (!id) continue;
 
-      let statusResult = verificarEstadoBiometria(id);
+      const estado = String(row[16]).toUpperCase().trim();
+      const asignado = String(row[27]).trim();
 
-      if (statusResult === "PENDIENTE" && !idsEnGestion.has(id)) {
-        candidatosParaAsignar.push(datosBio[i]);
-        filasAEliminar.push(i + 2);
-        idsEnGestion.add(id);
-        cupoDisponible--;
-      } else if (statusResult === "YA_NO_PENDIENTE") {
-        filasAEliminar.push(i + 2);
-      }
+      if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+      if (asignado !== "") continue;
+      if (idsEnGestion.has(id)) continue;
+
+      candidatosParaAsignar.push({ row: row, sheetRowIndex: i + 2 });
+      idsEnGestion.add(id);
+      cupoDisponible--;
     }
 
     if (candidatosParaAsignar.length === 0) {
-      if (filasAEliminar.length > 0) {
-        filasAEliminar.sort((a, b) => b - a).forEach(fila => {
-          hojaOrigen.deleteRow(fila);
-        });
-      }
       return { success: false, message: "No hay biometrías pendientes validadas." };
     }
 
-    const nuevasFilas = [];
     const fechaAsignacion = new Date();
+    const filasAEliminar = [];
+    const filasHist = [];
 
     candidatosParaAsignar.forEach(candidato => {
-      let polizaVal = String(candidato[1] || "").trim();
-      let polNorm = polizaVal.split(/[.,]/)[0].replace(/\D/g, '').replace(/^0+/, '');
-      let inmoVal = mapaInmobiliarias.get(polizaVal) || mapaInmobiliarias.get(polNorm) || "Sin registro en score";
-      
-      let jsonContactos = String(candidato[9] || "[]");
+      const row = candidato.row;
 
-      nuevasFilas.push([
-        fechaAsignacion,
-        nombreAnalista, 
-        String(usuario[3]),
-        polizaVal, 
-        inmoVal, 
-        String(candidato[6] || ""),
-        String(candidato[0] || ""),
-        candidato[8] || 0,
-        String(candidato[4] || ""),
-        "",
-        String(candidato[7] || ""),
-        String(candidato[3] || ""),
-        "",
-        String(candidato[10] || ""),
-        "",
-        "PENDIENTE GESTION",
-        jsonContactos, 
-        userEmail 
-      ]);
+      const histRow = new Array(37).fill("");
+      for (let c = 0; c < 22; c++) histRow[c] = row[c] !== undefined ? row[c] : "";
+      histRow[24] = fechaAsignacion;
+      histRow[25] = userEmail;
+      histRow[27] = nombreAnalista;
+      histRow[32] = row[36] || "";
+      histRow[34] = 0;
+      histRow[35] = 0;
+      histRow[36] = 0;
+
+      filasHist.push(histRow);
+      filasAEliminar.push(candidato.sheetRowIndex);
     });
 
-    hojaGestion.getRange(lastRowGestion + 1, 1, nuevasFilas.length, nuevasFilas[0].length).setValues(nuevasFilas);
+    hojaHist.getRange(lastRowHist + 1, 1, filasHist.length, 37).setValues(filasHist);
 
     filasAEliminar.sort((a, b) => b - a).forEach(fila => {
-      hojaOrigen.deleteRow(fila);
+      hojaSolicitud.deleteRow(fila);
     });
 
     SpreadsheetApp.flush();
 
-    return { success: true, message: `Se te asignaron ${nuevasFilas.length} nuevas solicitudes.`, nueva: true };
+    return { success: true, message: `Se te asignaron ${filasHist.length} nuevas solicitudes.`, nueva: true };
 
   } catch (error) {
     return { success: false, message: "Error interno: " + error.toString() };
@@ -402,45 +252,34 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
   }
 
   try {
-    const ssGestion = SpreadsheetApp.openById(ID_SHEET_GESTION);
-    const hoja = ssGestion.getSheets()[0];
-    const matrizDatos = hoja.getDataRange().getValues();
+    const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+    const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+    const hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
+    if (!hojaHist) return { success: false, error: "Hoja Historico_Gestiones no encontrada." };
+
+    const matrizDatos = hojaHist.getDataRange().getValues();
 
     for (let i = 1; i < matrizDatos.length; i++) {
-      if (String(matrizDatos[i][6]).trim() === String(idSolicitud).trim()) {
+      const hist = matrizDatos[i];
+      const solId = String(hist[0]).trim();
+      const emailH = String(hist[25]).trim().toLowerCase();
+      const estadoH = String(hist[16]).toUpperCase().trim();
+      const fechaFin = hist[26];
+      const tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
+
+      if (solId === String(idSolicitud).trim() && emailH === userEmail && estadoH.includes("BIOMETRIA") && !tieneFin) {
         const filaReal = i + 1;
         const fechaParaLooker = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
 
-        hoja.getRange(filaReal, 10).setValue(datosFormulario.resLlamada);
-        hoja.getRange(filaReal, 13).setValue(datosFormulario.resFinal);
-        hoja.getRange(filaReal, 15).setValue(fechaParaLooker);
-        hoja.getRange(filaReal, 16).setValue("GESTIONADO");
+        hojaHist.getRange(filaReal, 23).setValue(datosFormulario.resLlamada);
+        hojaHist.getRange(filaReal, 24).setValue(datosFormulario.resFinal);
+        hojaHist.getRange(filaReal, 27).setValue(fechaParaLooker);
 
-        // Fecha y hora radicación SAI (ingresada manualmente por el analista)
         if (datosFormulario.fechaRadicacionSai) {
-          hoja.getRange(filaReal, 17).setValue(datosFormulario.fechaRadicacionSai);
+          hojaHist.getRange(filaReal, 34).setValue(datosFormulario.fechaRadicacionSai);
         }
 
         SpreadsheetApp.flush();
-
-        // Guardar fechaRadicacionSai en Historico_Gestiones del warehouse (columna AL = 38)
-        if (datosFormulario.fechaRadicacionSai) {
-          try {
-            const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
-            const sheetSolicitud = ssWarehouse.getSheetByName("solicitud");
-            const ids = sheetSolicitud.getRange('A:A').getValues();
-            for (let j = 1; j < ids.length; j++) {
-              if (String(ids[j][0]).trim() === String(idSolicitud).trim()) {
-                sheetSolicitud.getRange(j + 1, 38).setValue(datosFormulario.fechaRadicacionSai);
-                SpreadsheetApp.flush();
-                break;
-              }
-            }
-          } catch (e) {
-            // No bloquear la gestión si falla la escritura en warehouse
-          }
-        }
-
         lock.releaseLock();
 
         let mensaje = "Gestión guardada correctamente.";
@@ -454,7 +293,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         return { success: true, message: mensaje };
       }
     }
-    return { success: false, error: "ID no encontrado" };
+    return { success: false, error: "ID no encontrado o ya gestionado." };
   } catch (error) {
     return { success: false, error: error.toString() };
   } finally {
@@ -464,40 +303,68 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
 
 function getDatosBiometria() {
   const correoUsuario = Session.getActiveUser().getEmail().toLowerCase().trim();
-  const ssGestion = SpreadsheetApp.openById(ID_SHEET_GESTION);
-  const hoja = ssGestion.getSheets()[0];
-  const matrizDatos = hoja.getDataRange().getValues();
 
-  if (matrizDatos.length <= 1) return { solicitudes: [], stats: { hoy: 0, pendientes: 0 } };
+  const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+  const hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
+
+  if (!hojaHist || hojaHist.getLastRow() <= 1) {
+    return { solicitudes: [], stats: { hoy: 0, pendientes: 0 } };
+  }
+
+  const lastRow = hojaHist.getLastRow();
+  const matrizDatos = hojaHist.getRange(2, 1, lastRow - 1, 28).getValues();
+
+  const mapaInmobiliarias = obtenerMapaInmobiliarias(ssWarehouse);
 
   let conteoHoy = 0;
   let listaPendientes = [];
   const hoySinHora = new Date().setHours(0, 0, 0, 0);
 
-  for (let i = 1; i < matrizDatos.length; i++) {
-    const filaActual = matrizDatos[i];
+  for (let i = 0; i < matrizDatos.length; i++) {
+    const hist = matrizDatos[i];
+    const estadoH = String(hist[16]).toUpperCase().trim();
+    if (!estadoH.includes("BIOMETRIA")) continue;
 
-    let analistaColR = filaActual.length > 17 ? String(filaActual[17]).trim().toLowerCase() : "";
-    let analistaColB = String(filaActual[1]).trim().toLowerCase();
-    let analistaFila = analistaColR ? analistaColR : analistaColB;
-    const estadoFila = String(filaActual[15]).trim().toUpperCase();
+    const emailH = String(hist[25]).trim().toLowerCase();
+    if (emailH !== correoUsuario) continue;
 
-    if (analistaFila === correoUsuario) {
-      if (estadoFila === "PENDIENTE GESTION") {
-        let filaCopia = filaActual.map(celda => {
-          if (celda instanceof Date) {
-            return Utilities.formatDate(celda, "GMT-5", "dd/MM/yyyy HH:mm");
-          }
-          return celda;
-        });
+    const fechaFin = hist[26];
+    const tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
 
-        listaPendientes.push(filaCopia);
+    if (!tieneFin) {
+      let polizaVal = String(hist[1] || "").trim();
+      let polNorm = polizaVal.split(/[.,]/)[0].replace(/\D/g, '').replace(/^0+/, '');
+      let inmoVal = mapaInmobiliarias.get(polizaVal) || mapaInmobiliarias.get(polNorm) || "";
+
+      let fechaAsigStr = hist[24];
+      if (fechaAsigStr instanceof Date) {
+        fechaAsigStr = Utilities.formatDate(fechaAsigStr, "GMT-5", "dd/MM/yyyy HH:mm");
       }
-      else if (estadoFila === "GESTIONADO") {
-        const fechaGestion = new Date(filaActual[14]);
-        if (!isNaN(fechaGestion.getTime()) && fechaGestion.getTime() >= hoySinHora) {
-          conteoHoy++;
-        }
+
+      listaPendientes.push([
+        fechaAsigStr,
+        String(hist[27] || ""),
+        "",
+        polizaVal,
+        inmoVal,
+        String(hist[13] || ""),
+        String(hist[0] || ""),
+        hist[9] || 0,
+        String(hist[6] || ""),
+        "",
+        String(hist[11] || ""),
+        String(hist[4] || ""),
+        "",
+        String(hist[16] || ""),
+        "",
+        "PENDIENTE GESTION",
+        "[]",
+        String(hist[25] || "")
+      ]);
+    } else {
+      let fechaFinDate = fechaFin instanceof Date ? fechaFin : new Date(fechaFin);
+      if (!isNaN(fechaFinDate.getTime()) && fechaFinDate.getTime() >= hoySinHora) {
+        conteoHoy++;
       }
     }
   }

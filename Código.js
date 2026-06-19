@@ -179,6 +179,7 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
     'ESTUDIO DIGITAL': 'DIGITAL',
     'ESTUDIO_DIGITAL': 'DIGITAL',
     'PENDIENTE_BIOMETRIA': 'BIOMETRIA',
+    'BIOMETRIA': 'BIOMETRIA',
     'REESTUDIOS': 'REESTUDIOS'
   };
   var equipoId = mapeo[esp] || esp;
@@ -202,10 +203,12 @@ function getUnifiedTableData() {
   if (!info) return { tabla: [], stats: { hoy: 0, pendientes: 0 }, equipoId: '', equipoNombre: '' };
 
   var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
+  Logger.log('getUnifiedTableData: email=' + userEmail + ' especialidad=' + info.especialidad + ' equipo=' + equipo.id);
 
   switch (equipo.id) {
     case 'BIOMETRIA':
       var dataBio = getDatosBiometria();
+      Logger.log('getDatosBiometria: pendientes=' + (dataBio.solicitudes || []).length + ' hoy=' + (dataBio.stats || {}).hoy);
       return {
         tabla: dataBio.solicitudes || [],
         stats: dataBio.stats || { hoy: 0, pendientes: 0 },
@@ -553,6 +556,7 @@ function actualizarSolicitudesNuevasAPI() {
   Logger.log(`Rango de consulta: Desde ${sIni} hasta ${sFin}`);
   
   const solicitudesHomologadas = [];
+  const idsFinalizadas = new Set();
   const mapaTipos = {
     "TS":  "NUEVA",
     "AD": "ADICIONAL",
@@ -594,9 +598,19 @@ function actualizarSolicitudesNuevasAPI() {
 
           const estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
           const tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
+          const rc = String(item.resultCode || "").trim();
 
           const estadoExcluido = ESTADOS_EXCLUIR.has(estadoGeneral);
           const tipoExcluido   = TIPOS_EXCLUIR.has(tipoSolicitud);
+
+          if (estadoGeneral === "APROBADO" || estadoGeneral === "RECHAZADO") {
+            const solId = String(item.consecutive || "").trim();
+            if (solId) idsFinalizadas.add(solId);
+          }
+
+          if (estadoGeneral === "APROBADO_PENDIENTE_BIOMETRIA" && rc !== "500" && rc !== "503") {
+            return;
+          }
 
           if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido) {
 
@@ -661,7 +675,50 @@ function actualizarSolicitudesNuevasAPI() {
   } else {
     Logger.log("Proceso finalizado. No hay solicitudes útiles en este periodo.");
   }
+
+  if (idsFinalizadas.size > 0) {
+    eliminarSolicitudesFinalizadas(idsFinalizadas);
+  }
 }
+
+function eliminarSolicitudesFinalizadas(idsAEliminar) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    Logger.log("❌ Lock no disponible para limpiar finalizadas: " + e.message);
+    return;
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+    if (!hoja) return;
+
+    const lastRow = hoja.getLastRow();
+    if (lastRow < 2) return;
+
+    const ids = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
+    let eliminadas = 0;
+
+    for (let i = ids.length - 1; i >= 0; i--) {
+      if (idsAEliminar.has(String(ids[i][0]).trim())) {
+        hoja.deleteRow(i + 2);
+        eliminadas++;
+      }
+    }
+
+    if (eliminadas > 0) {
+      SpreadsheetApp.flush();
+      Logger.log(`🧹 ${eliminadas} solicitudes finalizadas eliminadas de la hoja (APROBADO/RECHAZADO).`);
+    }
+  } catch (err) {
+    Logger.log("❌ Error eliminando solicitudes finalizadas: " + err.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function formatDateCustom(date) {
   const year = date.getFullYear();
   const month = ("0" + (date.getMonth() + 1)).slice(-2);
