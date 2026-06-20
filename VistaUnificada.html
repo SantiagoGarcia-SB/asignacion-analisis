@@ -237,13 +237,7 @@
               <div class="row">
                 <div class="col-md-6 gestion-group">
                   <label class="gestion-label"><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
-                  <div class="input-group">
-                    <input type="text" id="dig_fecha_radicacion_sai" class="form-control gestion-select sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('dig_fecha_radicacion_sai'))},50)">
-                    <button type="button" class="btn fw-bold" onclick="_llenarFechaAhora('dig_fecha_radicacion_sai')"
-                      style="background:var(--azul-light);color:var(--color-secundario);border:1.5px solid var(--border);border-radius:0 10px 10px 0 !important;font-size:0.85rem;padding:0 14px;">
-                      <i class="bi bi-clock-fill me-1"></i>Ahora
-                    </button>
-                  </div>
+                  <input type="text" id="dig_fecha_radicacion_sai" class="form-control gestion-select sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" style="border-radius:10px;" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('dig_fecha_radicacion_sai'))},50)">
                   <div class="sai-fecha-preview" id="dig_fecha_preview"></div>
                 </div>
                 <div class="col-md-6 gestion-group" id="dig_contenedor_biometria">
@@ -354,11 +348,7 @@
               <div class="row g-3">
                 <div class="col-md-6">
                   <label><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
-                  <div class="input-group">
-                    <input type="text" id="bio_fechaRadicacionSai" class="form-control fw-bold sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('bio_fechaRadicacionSai'))},50)">
-                    <button type="button" class="btn fw-bold" onclick="_llenarFechaAhora('bio_fechaRadicacionSai')"
-                      style="background:var(--azul-light);color:var(--color-secundario);border:1.5px solid var(--border);border-radius:0 10px 10px 0 !important;"><i class="bi bi-clock-fill me-1"></i>Ahora</button>
-                  </div>
+                  <input type="text" id="bio_fechaRadicacionSai" class="form-control fw-bold sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" style="border-radius:10px;" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('bio_fechaRadicacionSai'))},50)">
                   <div class="sai-fecha-preview" id="bio_fecha_preview"></div>
                 </div>
                 <div class="col-md-6"><label>Resultado Llamada</label><select id="bio_resLlamada" class="form-select fw-bold"><option value="" disabled selected>Seleccione...</option><option value="OK llamada">OK llamada</option><option value="No contesto">No contesto</option></select></div>
@@ -427,7 +417,12 @@
               <div class="row g-4">
                 <div class="col-md-6"><label class="d-block"><i class="bi bi-tag me-1"></i>Tipo de Proceso</label><p class="fw-bold text-dark mb-0" id="rst_tipoProceso"></p></div>
                 <div class="col-md-6"><label class="d-block"><i class="bi bi-bookmark me-1"></i>Clase de Solicitud</label><p class="fw-bold text-dark mb-0" id="rst_clase"></p></div>
-                <div class="col-md-12 border-top pt-3"><label class="d-block"><i class="bi bi-folder2-open me-1"></i>Carpeta Drive</label><p class="fw-bold mb-0" id="rst_linkDrive"></p></div>
+                <div class="col-md-12 border-top pt-3" id="rst_driveContainer">
+                  <a id="rst_linkDrive" href="#" target="_blank" class="btn w-100 d-none" style="background:#e8f0fe;color:#1a73e8;border:1px solid #c2d7f5;border-radius:12px;font-weight:700;font-size:0.85rem;padding:12px;">
+                    <i class="bi bi-folder2-open me-2"></i>Abrir carpeta en Google Drive
+                  </a>
+                  <p id="rst_linkDriveNA" class="text-muted mb-0 text-center" style="font-size:0.8rem;">Sin carpeta de Drive asociada</p>
+                </div>
               </div>
             </div>
           </div>

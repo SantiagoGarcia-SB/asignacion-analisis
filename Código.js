@@ -58,7 +58,8 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
                 induccion: parseInt(c.inducciones) || 0,
                 biometria: parseInt(c.biometria) || 0,
                 nuevaUar: parseInt(c.nuevaUar) || 0,
-                deudorUar: parseInt(c.deudorUar) || 0
+                deudorUar: parseInt(c.deudorUar) || 0,
+                biometriaFallida: parseInt(c.biometriaFallida) || 0
               };
             } catch (e) { /* JSON inválido, usar globales */ }
           }
@@ -79,9 +80,9 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
   }
 
   const defaults = {
-    DIGITAL: { nueva: 70, reestudio: 10, induccion: 8, biometria: 0, nuevaUar: 2, deudorUar: 2 },
-    BIOMETRIA: { nueva: 0, reestudio: 0, induccion: 0, biometria: 8, nuevaUar: 0, deudorUar: 0 },
-    REESTUDIOS: { nueva: 0, reestudio: 10, induccion: 2, biometria: 0, nuevaUar: 3, deudorUar: 2 }
+    DIGITAL: { nueva: 70, reestudio: 10, induccion: 8, biometria: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
+    BIOMETRIA: { nueva: 0, reestudio: 0, induccion: 0, biometria: 8, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 },
+    REESTUDIOS: { nueva: 0, reestudio: 10, induccion: 2, biometria: 0, nuevaUar: 3, deudorUar: 2, biometriaFallida: 0 }
   };
   const def = defaults[equipo.toUpperCase()] || defaults.DIGITAL;
 
@@ -91,7 +92,8 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
     induccion: getP(prefix + 'INDUCCIONES', def.induccion),
     biometria: getP(prefix + 'BIOMETRIA', def.biometria),
     nuevaUar: getP(prefix + 'NUEVA_UAR', def.nuevaUar),
-    deudorUar: getP(prefix + 'DEUDOR_UAR', def.deudorUar)
+    deudorUar: getP(prefix + 'DEUDOR_UAR', def.deudorUar),
+    biometriaFallida: getP(prefix + 'BIOMETRIA_FALLIDA', def.biometriaFallida)
   };
 }
 
@@ -188,9 +190,9 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
   if (!encontrado) {
     // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún
     var defaults = {
-      'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [] },
-      'BIOMETRIA': { id: 'BIOMETRIA', nombre: 'Biometría', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [] },
-      'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [] }
+      'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
+      'BIOMETRIA': { id: 'BIOMETRIA', nombre: 'Biometría', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
+      'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] }
     };
     return defaults[equipoId] || defaults['DIGITAL'];
   }
@@ -372,12 +374,16 @@ function getTableData() {
           }
           if (fechaAsigR === "") continue;
 
-          // Crear fila adaptada a la estructura de la hoja solicitud (para que el frontend la renderice)
           const tipoProc = String(dataReest[i][4]).trim();
           const claseR = String(dataReest[i][5]).trim();
           let filaAdaptada = new Array(numCols).fill("");
           filaAdaptada[0] = String(dataReest[i][1]).trim();    // solicitud
           filaAdaptada[1] = String(dataReest[i][3]).trim();    // origen como "poliza"
+          filaAdaptada[2] = String(dataReest[i][2]).trim();    // linkDrive
+          filaAdaptada[3] = String(dataReest[i][3]).trim();    // origen
+          filaAdaptada[4] = tipoProc;                          // tipoProceso
+          filaAdaptada[5] = claseR;                            // clase
+          filaAdaptada[8] = fechaAsigR;                        // fechaAsig (para modal rst)
           filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
           filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
           filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
@@ -392,6 +398,50 @@ function getTableData() {
     }
   } catch(e) {
     Logger.log("Error incluyendo reestudios en getTableData: " + e.message);
+  }
+
+  // 4. Historico_Gestiones de reestudios (casos movidos al asignar)
+  try {
+    const ssReestH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const hojaHistReest = ssReestH.getSheetByName("Historico_Gestiones");
+    if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
+      const dataHistReest = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, 18).getDisplayValues();
+      for (let i = 0; i < dataHistReest.length; i++) {
+        const asignado = String(dataHistReest[i][6]).trim().toLowerCase();
+        if (asignado !== userEmail) continue;
+        const fechaFinR = String(dataHistReest[i][9]).trim();
+        const fechaAsigR = String(dataHistReest[i][8]).trim();
+
+        if (fechaFinR !== "") {
+          if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
+          gestionadasTotal++;
+          continue;
+        }
+        if (fechaAsigR === "") continue;
+
+        const tipoProc = String(dataHistReest[i][4]).trim();
+        const claseR = String(dataHistReest[i][5]).trim();
+        let filaAdaptada = new Array(numCols).fill("");
+        filaAdaptada[0] = String(dataHistReest[i][1]).trim();
+        filaAdaptada[1] = String(dataHistReest[i][3]).trim();
+        filaAdaptada[2] = String(dataHistReest[i][2]).trim();
+        filaAdaptada[3] = String(dataHistReest[i][3]).trim();
+        filaAdaptada[4] = tipoProc;
+        filaAdaptada[5] = claseR;
+        filaAdaptada[8] = fechaAsigR;
+        filaAdaptada[16] = "__REESTUDIO__";
+        filaAdaptada[17] = String(dataHistReest[i][0]).trim();
+        filaAdaptada[20] = tipoProc || claseR;
+        filaAdaptada[26] = fechaAsigR;
+        filaAdaptada[27] = asignado;
+        filaAdaptada[28] = "";
+        filaAdaptada[30] = String(dataHistReest[i][7]).trim();
+        filaAdaptada.push("");
+        misFilasPendientes.push(filaAdaptada);
+      }
+    }
+  } catch(e) {
+    Logger.log("Error incluyendo reestudios historico en getTableData: " + e.message);
   }
 
   // Detectar reasignaciones recientes por admin (últimos 30 min)
@@ -1015,21 +1065,11 @@ function guardarCambiosInternos(data) {
     }
   }
 
-  // Despertar al Motor Omnicanal para traer el siguiente caso
-  let mensajeAsignacion = "";
-  if (disparaAsignacion) {
-    try {
-      const resultadoAuto = RequestLead(); 
-      mensajeAsignacion = "\n📌 " + (resultadoAuto || "Asignación procesada.");
-    } catch (err) {
-      mensajeAsignacion = "\n Error en auto-asignación: " + err.toString();
-    }
-  }
-
-  return { 
-    success: true, 
-    message: "Gestión guardada exitosamente" + mensajeAdicional + mensajeAsignacion, 
-    usuario: usuarioActual 
+  return {
+    success: true,
+    message: "Gestión guardada exitosamente" + mensajeAdicional,
+    usuario: usuarioActual,
+    disparaAsignacion: disparaAsignacion
   };
 }
 function getEmailUsuario() {
@@ -1191,18 +1231,13 @@ function verificarMisCupos(equipo) {
     const hojaUsuarios = ss.getSheetByName("Usuarios");
     const dataUsuarios = hojaUsuarios.getDataRange().getValues();
 
-    // Auto-detectar equipo si no se pasa, basado en especialidad
+    // Auto-detectar equipo si no se pasa, usando resolverEquipoDesdeEspecialidad
     let equipoFinal = equipo;
     if (!equipoFinal) {
       const usuario = dataUsuarios.find(u => String(u[2]).toLowerCase().trim() === userEmail);
-      if (usuario) {
-        const esp = String(usuario[4]).toUpperCase().trim();
-        if (esp.includes("REESTUDIO")) equipoFinal = 'REESTUDIOS';
-        else if (esp.includes("BIOMETRIA")) equipoFinal = 'BIOMETRIA';
-        else equipoFinal = 'DIGITAL';
-      } else {
-        equipoFinal = 'DIGITAL';
-      }
+      const esp = usuario ? String(usuario[4]).toUpperCase().trim() : 'ESTUDIO DIGITAL';
+      const equipoObj = resolverEquipoDesdeEspecialidad(esp);
+      equipoFinal = equipoObj ? equipoObj.id : 'DIGITAL';
     }
 
     const cupos = obtenerCuposEfectivos(userEmail, equipoFinal, dataUsuarios);

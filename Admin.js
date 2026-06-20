@@ -646,7 +646,7 @@ function _getTiposParaCupos() {
 }
 
 function _propKeyCupo(equipoId, tipoId) {
-  var legacy = { nueva: 'NUEVAS', biometria: 'BIOMETRIA', induccion: 'INDUCCIONES', reestudio: 'REESTUDIOS', nuevaUar: 'NUEVA_UAR', deudorUar: 'DEUDOR_UAR' };
+  var legacy = { nueva: 'NUEVAS', biometria: 'BIOMETRIA', induccion: 'INDUCCIONES', reestudio: 'REESTUDIOS', nuevaUar: 'NUEVA_UAR', deudorUar: 'DEUDOR_UAR', biometriaFallida: 'BIOMETRIA_FALLIDA' };
   var suffix = legacy[tipoId] || tipoId.toUpperCase();
   return 'CUPOS_' + equipoId.toUpperCase() + '_' + suffix;
 }
@@ -827,7 +827,8 @@ function admin_setCuposIndividual(correoAnalista, cupos) {
       // Validar
       const suma = (parseInt(cupos.nuevas) || 0) + (parseInt(cupos.reestudios) || 0) +
                    (parseInt(cupos.inducciones) || 0) + (parseInt(cupos.biometria) || 0) +
-                   (parseInt(cupos.nuevaUar) || 0) + (parseInt(cupos.deudorUar) || 0);
+                   (parseInt(cupos.nuevaUar) || 0) + (parseInt(cupos.deudorUar) || 0) +
+                   (parseInt(cupos.biometriaFallida) || 0);
       if (suma > (parseInt(cupos.total) || 0)) {
         return { success: false, message: "La suma de subcategorías (" + suma + ") excede el total (" + cupos.total + ")." };
       }
@@ -840,6 +841,7 @@ function admin_setCuposIndividual(correoAnalista, cupos) {
         biometria: parseInt(cupos.biometria) || 0,
         nuevaUar: parseInt(cupos.nuevaUar) || 0,
         deudorUar: parseInt(cupos.deudorUar) || 0,
+        biometriaFallida: parseInt(cupos.biometriaFallida) || 0,
         fijo: cupos.fijo === true
       };
 
@@ -1554,12 +1556,13 @@ function _getHojaEquipos() {
   var hoja = ss.getSheetByName("Equipos");
   if (!hoja) {
     hoja = ss.insertSheet("Equipos");
-    hoja.getRange(1, 1, 1, 12).setValues([[
+    hoja.getRange(1, 1, 1, 15).setValues([[
       "id", "nombre", "icono", "colorHex", "activo",
       "usarVipRotacion", "usarScoreCategories", "maxAsignarPorLlamada",
-      "ordenPrioridad", "fuentesDatos", "modalTipo", "funcionGuardar"
+      "ordenPrioridad", "fuentesDatos", "modalTipo", "funcionGuardar",
+      "canonDesde", "canonHasta", "canonTipos"
     ]]);
-    hoja.getRange(1, 1, 1, 12).setFontWeight("bold");
+    hoja.getRange(1, 1, 1, 15).setFontWeight("bold");
   }
   return hoja;
 }
@@ -1575,7 +1578,7 @@ function _getEquipos() {
   var lastRow = hoja.getLastRow();
   if (lastRow < 2) return [];
 
-  var data = hoja.getRange(2, 1, lastRow - 1, 12).getValues();
+  var data = hoja.getRange(2, 1, lastRow - 1, 15).getValues();
   var equipos = [];
   for (var i = 0; i < data.length; i++) {
     var row = data[i];
@@ -1599,7 +1602,10 @@ function _getEquipos() {
       ordenPrioridad: ordenPrioridad,
       fuentesDatos: fuentesDatos,
       modalTipo: String(row[10]).trim(),
-      funcionGuardar: String(row[11]).trim()
+      funcionGuardar: String(row[11]).trim(),
+      canonDesde: parseFloat(row[12]) || 0,
+      canonHasta: parseFloat(row[13]) || 0,
+      canonTipos: (function() { try { return JSON.parse(row[14] || '[]'); } catch(e) { return []; } })()
     });
   }
 
@@ -1640,7 +1646,10 @@ function admin_crearEquipo(datos) {
     JSON.stringify(datos.ordenPrioridad || []),
     JSON.stringify(datos.fuentesDatos || []),
     String(datos.modalTipo || 'DIGITAL_FULL').trim(),
-    String(datos.funcionGuardar || 'guardarCambiosInternos').trim()
+    String(datos.funcionGuardar || 'guardarCambiosInternos').trim(),
+    parseFloat(datos.canonDesde) || 0,
+    parseFloat(datos.canonHasta) || 0,
+    JSON.stringify(datos.canonTipos || [])
   ]);
   SpreadsheetApp.flush();
   _invalidarCacheEquipos();
@@ -1664,7 +1673,7 @@ function admin_actualizarEquipo(equipoId, datos) {
   }
   if (filaIndex === -1) throw new Error("Equipo no encontrado: " + equipoId);
 
-  hoja.getRange(filaIndex, 2, 1, 11).setValues([[
+  hoja.getRange(filaIndex, 2, 1, 14).setValues([[
     String(datos.nombre).trim(),
     String(datos.icono || 'bi-people-fill').trim(),
     String(datos.colorHex || '#253150').trim(),
@@ -1675,7 +1684,10 @@ function admin_actualizarEquipo(equipoId, datos) {
     JSON.stringify(datos.ordenPrioridad || []),
     JSON.stringify(datos.fuentesDatos || []),
     String(datos.modalTipo || 'DIGITAL_FULL').trim(),
-    String(datos.funcionGuardar || 'guardarCambiosInternos').trim()
+    String(datos.funcionGuardar || 'guardarCambiosInternos').trim(),
+    parseFloat(datos.canonDesde) || 0,
+    parseFloat(datos.canonHasta) || 0,
+    JSON.stringify(datos.canonTipos || [])
   ]]);
   SpreadsheetApp.flush();
   _invalidarCacheEquipos();

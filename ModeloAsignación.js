@@ -2,13 +2,13 @@ const MAX_VIP_CONSECUTIVAS = 2;
 const CATEGORIAS_ROTACION = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ORDEN_PRIORIDAD_POR_MODO = {
-  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'reestudio', 'nuevaUar', 'deudorUar'],
+  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
 };
 
 // Para analistas del equipo REESTUDIOS, los casos propios (ORIGEN) siempre van primero
-const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'nueva', 'biometria', 'induccion'];
+const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'biometria', 'induccion'];
 
 const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
 
@@ -48,12 +48,13 @@ function RequestLead() {
     const turnoCheck = verificarTurnoActivo(userEmail, ss);
     if (!turnoCheck.ok) return turnoCheck.message;
 
-    // Determinar equipo según especialidad para leer cupos correctos
-    let equipoCupos = 'DIGITAL';
-    if (especialidad.toUpperCase().includes("REESTUDIO")) equipoCupos = 'REESTUDIOS';
-    else if (especialidad.toUpperCase().includes("BIOMETRIA")) equipoCupos = 'BIOMETRIA';
-
     const props = PropertiesService.getScriptProperties();
+
+    const equipoConfig = resolverEquipoDesdeEspecialidad(especialidad);
+    const equipoCupos = equipoConfig ? equipoConfig.id : 'DIGITAL';
+    const canonDesde = equipoConfig ? (equipoConfig.canonDesde || 0) : 0;
+    const canonHasta = equipoConfig ? (equipoConfig.canonHasta || 0) : 0;
+    const canonTipos = equipoConfig ? (equipoConfig.canonTipos || []) : [];
 
     const cuotas = obtenerCuposEfectivos(userEmail, equipoCupos, dataUsuarios);
 
@@ -81,7 +82,7 @@ function RequestLead() {
           || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
-    let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0 };
+    let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0, biometriaFallida: 0 };
     let capPendienteReal = 0;
 
     // getValues() en lugar de getDisplayValues() para obtener Date reales en col 27/29
@@ -146,7 +147,8 @@ function RequestLead() {
         const fechaFin  = row[9];
 
         let tipo = 'reestudio';
-        if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+        if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
+        else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
         else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
@@ -172,7 +174,8 @@ function RequestLead() {
           const fechaAsig = row[8];
           const fechaFin  = row[9];
           let tipo = 'reestudio';
-          if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+          if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
+          else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
           else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
           if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
           const tieneAsigR = fechaAsig instanceof Date ? true : String(fechaAsig).trim() !== "";
@@ -182,7 +185,7 @@ function RequestLead() {
       }
     } catch(eH) { Logger.log("RequestLead Hist reestudios count: " + eH.message); }
 
-    Logger.log(`Analista: ${userEmail} | Límite Cupos Digital: ${JSON.stringify(cuotas)} | Realizado/Asignado Hoy: ${JSON.stringify(conteoHoy)}`);
+    Logger.log(`Analista: ${userEmail} | Equipo: ${equipoCupos} | Cupos: ${JSON.stringify(cuotas)} | Conteo: ${JSON.stringify(conteoHoy)}`);
 
     const capacidadDisponible = capTotal - capPendienteReal;
     if (capacidadDisponible < 1) return "No tienes capacidad disponible. Termina casos pendientes primero.";
@@ -210,7 +213,13 @@ function RequestLead() {
       if (esBiometria) tipo = 'biometria';
       else if (esInduccion) tipo = 'induccion';
 
-      if (conteoHoy[tipo] >= cuotas[tipo]) continue;
+      if (canonTipos.indexOf(tipo) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
+        const canonValor = parseFloat(String(row[9]).replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+        if (canonDesde > 0 && canonValor < canonDesde) continue;
+        if (canonHasta > 0 && canonValor > canonHasta) continue;
+      }
+
+      if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
       const reasignada = String(row[35]).trim().toUpperCase() === "REASIGNADA";
       const esCRM = String(row[36] || "").toLowerCase().trim().startsWith("crm");
@@ -239,10 +248,11 @@ function RequestLead() {
       const tipoP = String(row[4]).toUpperCase().trim();
 
       let tipo = 'reestudio';
-      if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+      if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
+      else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
       else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
-      if (conteoHoy[tipo] >= cuotas[tipo]) continue;
+      if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
       pendientes.push({
         base: 'REESTUDIOS',
@@ -256,7 +266,7 @@ function RequestLead() {
       });
     }
 
-    const _etiquetasTipo = { nueva: 'Nuevas', biometria: 'Biometría', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR' };
+    const _etiquetasTipo = { nueva: 'Nuevas', biometria: 'Desplazamiento', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR', biometriaFallida: 'Biometría Fallida' };
     const cuposLlenosHoy = Object.entries(cuotas)
       .filter(([tipo, lim]) => lim > 0 && conteoHoy[tipo] >= lim)
       .map(([tipo]) => `${_etiquetasTipo[tipo]} (${conteoHoy[tipo]}/${cuotas[tipo]})`);
@@ -293,11 +303,33 @@ function RequestLead() {
       ordenPrioridad = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO'];
     }
 
+    const _tiposSeen = {};
+    const _tiposConPendientes = [];
+    pendientes.forEach(p => {
+      if (!p.reasignada && !_tiposSeen[p.tipo]) {
+        _tiposSeen[p.tipo] = true;
+        _tiposConPendientes.push(p.tipo);
+      }
+    });
+
+    _tiposConPendientes.sort((a, b) => {
+      const ratioA = cuotas[a] > 0 ? conteoHoy[a] / cuotas[a] : 1;
+      const ratioB = cuotas[b] > 0 ? conteoHoy[b] / cuotas[b] : 1;
+      if (ratioA !== ratioB) return ratioA - ratioB;
+      const posA = ordenPrioridad.indexOf(a) !== -1 ? ordenPrioridad.indexOf(a) : 99;
+      const posB = ordenPrioridad.indexOf(b) !== -1 ? ordenPrioridad.indexOf(b) : 99;
+      return posA - posB;
+    });
+
+    const _rankPorTipo = {};
+    for (let r = 0; r < _tiposConPendientes.length; r++) {
+      _rankPorTipo[_tiposConPendientes[r]] = r;
+    }
+
     pendientes.forEach(p => {
       if (p.reasignada) p.tipoPrioridad = -1;
       else {
-        const posicion = ordenPrioridad.indexOf(p.tipo);
-        p.tipoPrioridad = posicion !== -1 ? posicion : 99; 
+        p.tipoPrioridad = _rankPorTipo[p.tipo] !== undefined ? _rankPorTipo[p.tipo] : 99;
       }
     });
 

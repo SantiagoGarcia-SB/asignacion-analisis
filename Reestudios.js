@@ -191,6 +191,7 @@ function getReestudiosData() {
  * @param {Object} datos - { filaReal, estadoGestion, motivoAplazamiento, motivoNegacion, observaciones }
  */
 function guardarGestionReestudio(datos) {
+  if (datos && datos.solicitudId && !datos.solicitud) datos.solicitud = datos.solicitudId;
   if (!datos || (!datos.filaReal && !datos.solicitud)) {
     return { success: false, message: "Identificador del caso no proporcionado." };
   }
@@ -278,18 +279,7 @@ function guardarGestionReestudio(datos) {
       hojaOrigen.deleteRow(targetRow);
     }
 
-    // Intentar auto-asignar un nuevo caso (función en ModeloReestudios.js)
-    let mensajeExtra = "";
-    try {
-      const autoResult = RequestLeadReestudios();
-      if (autoResult.success && autoResult.nueva) {
-        mensajeExtra = "\n📌 " + autoResult.message;
-      }
-    } catch (e) {
-      // No bloquear si falla la auto-asignación
-    }
-
-    return { success: true, message: "Gestión guardada correctamente." + mensajeExtra };
+    return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
 
   } catch (error) {
     return { success: false, message: "Error al guardar: " + error.toString() };

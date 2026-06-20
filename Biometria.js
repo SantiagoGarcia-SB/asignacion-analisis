@@ -282,15 +282,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         SpreadsheetApp.flush();
         lock.releaseLock();
 
-        let mensaje = "Gestión guardada correctamente.";
-        try {
-          let auto = autoAsignarBiometria();
-          if (auto.success && auto.nueva) {
-            mensaje += "\n📌 " + auto.message;
-          }
-        } catch (e) {}
-
-        return { success: true, message: mensaje };
+        return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
       }
     }
     return { success: false, error: "ID no encontrado o ya gestionado." };

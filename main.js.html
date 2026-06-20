@@ -447,6 +447,7 @@ function renderizarTabla(data) {
           if (estado === '__REESTUDIO__') {
             if (clase.includes("NUEVA UAR")) return `<span class="badge shadow-sm" style="background:#fce7f3; color:#be185d; border:1px solid #fbcfe8; padding:5px 10px; border-radius:8px;"><i class="bi bi-person-plus me-1"></i>Nueva UAR</span>`;
             if (clase.includes("DEUDOR UAR")) return `<span class="badge shadow-sm" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:5px 10px; border-radius:8px;"><i class="bi bi-person-dash me-1"></i>Deudor UAR</span>`;
+            if (clase.includes("BIOMETR")) return `<span class="badge shadow-sm" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Bio. Fallida</span>`;
             return `<span class="badge shadow-sm" style="background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
           }
           if (estado.includes('BIOMETRIA')) {
@@ -458,18 +459,30 @@ function renderizarTabla(data) {
           }
         }
       },
-      { title: "Póliza", data: 1 },
-      { title: "Inquilino", data: 4 },
+      { title: "Póliza", data: null, render: (d, t, r) => {
+          if (String(r[16] || '') === '__REESTUDIO__') return '<span class="text-muted" style="font-size:0.8rem;">Origen: </span>' + (r[3] || '—');
+          return r[1] || '';
+        }
+      },
+      { title: "Inquilino", data: null, render: (d, t, r) => {
+          if (String(r[16] || '') === '__REESTUDIO__') return r[5] || '—';
+          return r[4] || '';
+        }
+      },
       { title: "Canon", data: 9 },
       {
         title: "Estado",
-        data: 16,
-        render: d => {
-          const s = String(d || '').toUpperCase();
-          if (s === '__REESTUDIO__') return `<span class="badge" style="background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
+        data: null,
+        render: (d, t, r) => {
+          const s = String(r[16] || '').toUpperCase();
+          if (s === '__REESTUDIO__') {
+            var claseEst = String(r[20] || '').toUpperCase();
+            if (claseEst.includes('BIOMETR')) return `<span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Bio. Fallida</span>`;
+            return `<span class="badge" style="background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
+          }
           if (s.includes('APLAZ')) return `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:5px 10px; border-radius:8px;">Aplazado</span>`;
           if (s.includes('APROB')) return `<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:5px 10px; border-radius:8px;">Aprobado</span>`;
-          return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:8px;">${d || ''}</span>`;
+          return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:8px;">${r[16] || ''}</span>`;
         }
       },
       {
@@ -784,7 +797,13 @@ function manejarGuardarCambios() {
           UX.logActivity(datos.solicitudId, datos.estado_q, datos.motivo_aplazamiento || datos.motivo_negacion || '');
           UX.updateSyncTime();
         }
-        
+
+        _quitarFilaTabla(datos.solicitudId);
+
+        if (r.disparaAsignacion) {
+          _dispararAutoAsignacion();
+        }
+
         Swal.fire({
           icon: 'success',
           title: '¡Operación Exitosa!',
@@ -797,8 +816,7 @@ function manejarGuardarCambios() {
           const modalElement = document.getElementById('modalDetalles');
           const modalInstance = bootstrap.Modal.getInstance(modalElement);
           if (modalInstance) modalInstance.hide();
-          _quitarFilaTabla(datos.solicitudId);
-          cargarDatos(); 
+          cargarDatos();
         });
       } else {
         Swal.fire({
@@ -1111,17 +1129,18 @@ function guardarGestionReestudioDesdeDigital() {
   google.script.run
     .withSuccessHandler(function(r) {
       if (r.success) {
+        _quitarFilaTabla(datos.solicitudId);
+        if (r.disparaAsignacion) _dispararAutoAsignacion();
+
         if (typeof UX !== 'undefined') {
           Swal.close();
           UX.showSuccessCheck(function() {
             UX.showToast('Gestión guardada: ' + datos.estado_q, 'success');
-            _quitarFilaTabla(datos.solicitudId);
             yaSeIntentoAsignar = false;
             cargarDatos();
           });
         } else {
           Swal.fire({ icon: 'success', title: 'Guardado', text: r.message, confirmButtonColor: '#253150' }).then(function() {
-            _quitarFilaTabla(datos.solicitudId);
             yaSeIntentoAsignar = false;
             cargarDatos();
           });
@@ -1155,6 +1174,7 @@ function detectarTipoCaso(rowData) {
   }
   var estado = String(rowData[16] || '').toUpperCase();
   var clase = String(rowData[20] || '').toUpperCase();
+  if (estado === '__REESTUDIO__') return 'reestudio';
   if (estado.indexOf('BIOMETRIA') !== -1 || clase.indexOf('BIOMETRIA') !== -1) return 'biometria';
   if (rowData.__fuente === 'REESTUDIO' || (rowData[3] && String(rowData[3]).toUpperCase() === 'VICTORIA')) return 'reestudio';
   return 'digital';
@@ -1324,13 +1344,15 @@ function poblarModalDig(fila) {
   setTxt('dig_nombreAsesor', fila[14]);
   setTxt('dig_correoAsesor', fila[15]);
 
-  setVal('dig_biometria', fila[23] || '');
-  setVal('dig_comentarios_gestion', fila[24] || '');
-  setVal('dig_estado_q', fila[16] || '');
+  setVal('dig_biometria', '');
+  setVal('dig_comentarios_gestion', '');
+  setVal('dig_estado_q', '');
   setVal('dig_fecha_radicacion_sai', '');
+  var previewEl = document.getElementById('dig_fecha_preview');
+  if (previewEl) { previewEl.textContent = ''; previewEl.className = 'sai-fecha-preview'; }
   if (typeof MotivoPicker !== 'undefined') {
-    MotivoPicker.setValue('dig_motivo_aplazamiento', fila[28] || '');
-    MotivoPicker.setValue('dig_motivo_negacion', fila[29] || '');
+    MotivoPicker.setValue('dig_motivo_aplazamiento', '');
+    MotivoPicker.setValue('dig_motivo_negacion', '');
   }
   var btnG = document.getElementById('dig_btnGuardar');
   if (btnG) btnG.setAttribute('data-solicitud-id', fila[0]);
@@ -1408,26 +1430,35 @@ function poblarModalRst(fila) {
   var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val || ''; };
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
-  setTxt('rst_solicitud', fila[1] || fila[0]);
-  setTxt('rst_solicitud_badge', fila[1] || fila[0]);
+  var esAdaptada = String(fila[16] || '') === '__REESTUDIO__';
+  var solicitudId = esAdaptada ? fila[0] : (fila[1] || fila[0]);
+  var fechaRad = esAdaptada ? fila[17] : fila[0];
+
+  setTxt('rst_solicitud', solicitudId);
+  setTxt('rst_solicitud_badge', solicitudId);
   setTxt('rst_origen', fila[3]);
-  setTxt('rst_fechaRadicacion', fila[0]);
-  setTxt('rst_fechaAsignacion', fila[8]);
+  setTxt('rst_fechaRadicacion', fechaRad);
+  setTxt('rst_fechaAsignacion', esAdaptada ? fila[26] : fila[8]);
   setTxt('rst_tipoProceso', fila[4]);
   setTxt('rst_clase', fila[5]);
-  setVal('rst_solicitud_id', fila[1] || fila[0]);
+  setVal('rst_solicitud_id', solicitudId);
   setVal('rst_poliza', '');
   _verificarAlertaScore(fila, 'rst_solicitud_badge', fila[1] || fila[0]);
   setVal('rst_estado_q', '');
   setVal('rst_observaciones', '');
 
   var linkDrive = fila[2] || '';
-  var driveEl = document.getElementById('rst_linkDrive');
-  var driveBtnEl = document.getElementById('rst_btnDrive');
-  if (driveEl) driveEl.textContent = linkDrive || 'No disponible';
-  if (driveBtnEl) {
-    if (linkDrive) { driveBtnEl.href = linkDrive; driveBtnEl.classList.remove('d-none'); }
-    else { driveBtnEl.classList.add('d-none'); }
+  var driveLink = document.getElementById('rst_linkDrive');
+  var driveNA = document.getElementById('rst_linkDriveNA');
+  var driveBtnHeader = document.getElementById('rst_btnDrive');
+  if (linkDrive) {
+    if (driveLink) { driveLink.href = linkDrive; driveLink.classList.remove('d-none'); }
+    if (driveNA) driveNA.classList.add('d-none');
+    if (driveBtnHeader) { driveBtnHeader.href = linkDrive; driveBtnHeader.classList.remove('d-none'); }
+  } else {
+    if (driveLink) driveLink.classList.add('d-none');
+    if (driveNA) driveNA.classList.remove('d-none');
+    if (driveBtnHeader) driveBtnHeader.classList.add('d-none');
   }
 
   var aplaz = document.getElementById('rst_contenedor_aplazamiento');
@@ -1498,6 +1529,7 @@ function manejarGuardarDigital() {
   if (!_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
 
   UX.setBtnLoading(btn, true);
+  UX.showModalOverlay('modalDigital', true);
 
   var datos = {
     solicitudId: solId,
@@ -1510,8 +1542,8 @@ function manejarGuardarDigital() {
   };
 
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalDigital'); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); onGuardarExitoUnificado(r, 'modalDigital', solId); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarCambiosInternos(datos);
 }
 
@@ -1530,10 +1562,11 @@ function manejarGuardarBiometria() {
   if (!_validarFechaSaiAnteDeGuardar('bio_fechaRadicacionSai')) return;
 
   UX.setBtnLoading(btn, true);
+  UX.showModalOverlay('modalBiometria', true);
 
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalBiometria'); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); onGuardarExitoUnificado(r, 'modalBiometria', solId); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarGestionBiometria(solId, datosForm);
 }
 
@@ -1551,18 +1584,25 @@ function manejarGuardarReestudio() {
   if (!datos.estadoGestion) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
 
   UX.setBtnLoading(btn, true);
+  UX.showModalOverlay('modalReestudio', true);
 
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); onGuardarExitoUnificado(r, 'modalReestudio'); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
+    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarGestionReestudio(datos);
 }
 
-function onGuardarExitoUnificado(r, modalId) {
+function onGuardarExitoUnificado(r, modalId, solicitudId) {
   if (r && (r.success !== false)) {
     var modalEl = document.getElementById(modalId);
     var inst = bootstrap.Modal.getInstance(modalEl);
     if (inst) inst.hide();
+
+    if (solicitudId) _quitarFilaTabla(solicitudId);
+
+    if (r.disparaAsignacion) {
+      _dispararAutoAsignacion();
+    }
 
     if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
       UX.showSuccessCheck(function() {
@@ -1578,6 +1618,19 @@ function onGuardarExitoUnificado(r, modalId) {
   } else {
     Swal.fire({ icon: 'error', title: 'Error', text: (r && r.message) || 'Error al guardar.' });
   }
+}
+
+function _dispararAutoAsignacion() {
+  var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success && res.nueva) {
+        if (typeof UX !== 'undefined' && UX.showToast) UX.showToast(res.message || 'Nuevo caso asignado', 'info');
+        cargarDatos();
+      }
+    })
+    .withFailureHandler(function() {})
+    [fnName]();
 }
 
 // ============================================================

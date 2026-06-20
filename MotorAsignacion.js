@@ -17,15 +17,16 @@ const MAX_VIP_CONSECUTIVAS_UNIF = 2;
 const CATEGORIAS_ROTACION_UNIF = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ETIQUETAS_TIPO = {
-  nueva: 'Nuevas', biometria: 'Biometría', induccion: 'Inducción',
-  reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR'
+  nueva: 'Nuevas', biometria: 'Desplazamiento', induccion: 'Inducción',
+  reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR',
+  biometriaFallida: 'Biometría Fallida'
 };
 
 const ORDEN_PRIORIDAD_MODOS = {
-  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'reestudio', 'nuevaUar', 'deudorUar'],
-  REESTUDIOS_PRIMERO: ['reestudio', 'nuevaUar', 'deudorUar', 'nueva', 'biometria', 'induccion']
+  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  REESTUDIOS_PRIMERO: ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'biometria', 'induccion']
 };
 
 // ============================================================
@@ -92,7 +93,7 @@ function _parseDateUnif(dateStr) {
 // ============================================================
 
 function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
-  var conteoHoy = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0 };
+  var conteoHoy = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ss.getSheetByName("solicitud");
@@ -145,7 +146,7 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
 }
 
 function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
-  var conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0 };
+  var conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ssReestudios.getSheetByName("ORIGEN");
@@ -160,7 +161,8 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
     var origenR = String(row[3]).toUpperCase().trim();
     var tipoP = String(row[4]).toUpperCase().trim();
     var tipo = 'reestudio';
-    if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+    if (tipoP.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoP.indexOf("BIOMETRÍA FALLIDA") !== -1) tipo = 'biometriaFallida';
+    else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
     else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
     if (_cumpleHoyUnif(row[8], ctx) || _cumpleHoyUnif(row[9], ctx)) conteoHoy[tipo]++;
@@ -181,7 +183,8 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
         var origenHR = String(rr[3]).toUpperCase().trim();
         var tipoPHR = String(rr[4]).toUpperCase().trim();
         var tipoHR = 'reestudio';
-        if (origenHR === "CORREO" && tipoPHR === "NUEVA") tipoHR = 'nuevaUar';
+        if (tipoPHR.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoPHR.indexOf("BIOMETRÍA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
+        else if (origenHR === "CORREO" && tipoPHR === "NUEVA") tipoHR = 'nuevaUar';
         else if (origenHR === "CORREO" && tipoPHR === "ADICIONAL") tipoHR = 'deudorUar';
         if (_cumpleHoyUnif(rr[8], ctx) || _cumpleHoyUnif(rr[9], ctx)) conteoHoy[tipoHR]++;
         var tieneAsigHR = rr[8] instanceof Date ? true : String(rr[8]).trim() !== "";
@@ -198,7 +201,7 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
 // RECOLECCIÓN DE PENDIENTES
 // ============================================================
 
-function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy) {
+function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, canonDesde, canonHasta, canonTipos) {
   var pendientes = [];
   for (var i = 1; i < dataSolicitudes.length; i++) {
     var row = dataSolicitudes[i];
@@ -221,7 +224,13 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy) {
     if (esBiometria) tipo = 'biometria';
     else if (esInduccion) tipo = 'induccion';
 
-    if (conteoHoy[tipo] >= cuotas[tipo]) continue;
+    if (canonTipos && canonTipos.indexOf(tipo) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
+      var canonValor = parseFloat(String(row[9]).replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+      if (canonDesde > 0 && canonValor < canonDesde) continue;
+      if (canonHasta > 0 && canonValor > canonHasta) continue;
+    }
+
+    if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
     var reasignada = String(row[35]).trim().toUpperCase() === "REASIGNADA";
     var esCRM = String(row[36] || "").toLowerCase().trim().indexOf("crm") === 0;
@@ -255,10 +264,11 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
     var tipoP = String(row[4]).toUpperCase().trim();
 
     var tipo = 'reestudio';
-    if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
+    if (tipoP.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoP.indexOf("BIOMETRÍA FALLIDA") !== -1) tipo = 'biometriaFallida';
+    else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
     else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
 
-    if (conteoHoy[tipo] >= cuotas[tipo]) continue;
+    if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
     pendientes.push({
       base: 'REESTUDIOS',
@@ -414,7 +424,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var ctx = _buildFechaHoyFormats();
 
     // === CONTEO ===
-    var conteoHoyTotal = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0 };
+    var conteoHoyTotal = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
     var capPendienteReal = 0;
 
     var refPrincipal = null;
@@ -443,7 +453,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var pendientes = [];
 
     if (refPrincipal && refPrincipal.data) {
-      var pPrincipal = _recolectarPendientesPrincipal(refPrincipal.data, cuotas, conteoHoyTotal);
+      var pPrincipal = _recolectarPendientesPrincipal(refPrincipal.data, cuotas, conteoHoyTotal, equipo.canonDesde || 0, equipo.canonHasta || 0, equipo.canonTipos || []);
       pendientes = pendientes.concat(pPrincipal);
     }
 
@@ -474,11 +484,33 @@ function RequestLeadUnificado(equipoIdOverride) {
       ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['NUEVAS_PRIMERO'];
     }
 
+    var _tiposSeen = {};
+    var _tiposConPendientes = [];
+    pendientes.forEach(function(p) {
+      if (!p.reasignada && !_tiposSeen[p.tipo]) {
+        _tiposSeen[p.tipo] = true;
+        _tiposConPendientes.push(p.tipo);
+      }
+    });
+
+    _tiposConPendientes.sort(function(a, b) {
+      var ratioA = cuotas[a] > 0 ? conteoHoyTotal[a] / cuotas[a] : 1;
+      var ratioB = cuotas[b] > 0 ? conteoHoyTotal[b] / cuotas[b] : 1;
+      if (ratioA !== ratioB) return ratioA - ratioB;
+      var posA = ordenPrioridad.indexOf(a) !== -1 ? ordenPrioridad.indexOf(a) : 99;
+      var posB = ordenPrioridad.indexOf(b) !== -1 ? ordenPrioridad.indexOf(b) : 99;
+      return posA - posB;
+    });
+
+    var _rankPorTipo = {};
+    for (var r = 0; r < _tiposConPendientes.length; r++) {
+      _rankPorTipo[_tiposConPendientes[r]] = r;
+    }
+
     pendientes.forEach(function(p) {
       if (p.reasignada) p.tipoPrioridad = -1;
       else {
-        var posicion = ordenPrioridad.indexOf(p.tipo);
-        p.tipoPrioridad = posicion !== -1 ? posicion : 99;
+        p.tipoPrioridad = _rankPorTipo[p.tipo] !== undefined ? _rankPorTipo[p.tipo] : 99;
       }
     });
 

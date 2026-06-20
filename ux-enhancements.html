@@ -66,6 +66,8 @@
     margin-top: -8px;
 }
 @keyframes btnSpin { to { transform: rotate(360deg); } }
+@keyframes uxPulse { 0%,100% { opacity:1;transform:scale(1); } 50% { opacity:0.6;transform:scale(0.92); } }
+@keyframes uxBarSlide { 0% { transform:translateX(-100%); } 100% { transform:translateX(400%); } }
 
 /* 3. Skeleton loaders for table */
 .skeleton-row {
@@ -664,6 +666,46 @@ const UX = (function() {
         }
     }
 
+    // -- Modal saving overlay --
+    function showModalOverlay(modalId, show) {
+        var modalEl = document.getElementById(modalId);
+        if (!modalEl) return;
+        var content = modalEl.querySelector('.modal-content');
+        if (!content) return;
+
+        var existing = content.querySelector('.ux-saving-overlay');
+        if (!show) {
+            if (existing) {
+                existing.style.opacity = '0';
+                setTimeout(function() { existing.remove(); }, 300);
+            }
+            var cancelBtn = modalEl.querySelector('[data-bs-dismiss="modal"]');
+            if (cancelBtn) cancelBtn.disabled = false;
+            return;
+        }
+
+        if (existing) return;
+
+        var cancelBtn = modalEl.querySelector('[data-bs-dismiss="modal"]');
+        if (cancelBtn) cancelBtn.disabled = true;
+
+        var overlay = document.createElement('div');
+        overlay.className = 'ux-saving-overlay';
+        overlay.style.cssText = 'position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(255,255,255,0.92);border-radius:20px;opacity:0;transition:opacity 0.3s;';
+        overlay.innerHTML = ''
+            + '<div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#253150,#3b5998);display:flex;align-items:center;justify-content:center;margin-bottom:16px;box-shadow:0 4px 16px rgba(37,49,80,0.25);">'
+            + '  <i class="bi bi-cloud-arrow-up-fill" style="color:white;font-size:1.6rem;animation:uxPulse 1.2s ease-in-out infinite;"></i>'
+            + '</div>'
+            + '<div style="font-weight:700;font-size:1.05rem;color:#253150;margin-bottom:4px;">Guardando gestión</div>'
+            + '<div style="color:#64748b;font-size:0.85rem;">Espera un momento por favor...</div>'
+            + '<div style="margin-top:16px;width:120px;height:4px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
+            + '  <div style="height:100%;width:30%;background:linear-gradient(90deg,#253150,#3b5998);border-radius:4px;animation:uxBarSlide 1.5s ease-in-out infinite;"></div>'
+            + '</div>';
+        content.style.position = 'relative';
+        content.appendChild(overlay);
+        requestAnimationFrame(function() { overlay.style.opacity = '1'; });
+    }
+
     // -- Animate number with counter effect --
     function animateNumber(elementId, target) {
         const el = document.getElementById(elementId);
@@ -970,6 +1012,7 @@ const UX = (function() {
         showToast: showToast,
         showSuccessCheck: showSuccessCheck,
         setBtnLoading: setBtnLoading,
+        showModalOverlay: showModalOverlay,
         animateNumber: animateNumber,
         getEmptyStateHTML: getEmptyStateHTML,
         getSkeletonHTML: getSkeletonHTML,
@@ -997,46 +1040,86 @@ const NotifSound = (function() {
             try { _ctx = new (window.AudioContext || window.webkitAudioContext)(); }
             catch(e) { return null; }
         }
-        if (_ctx.state === 'suspended') _ctx.resume();
+        if (_ctx && _ctx.state === 'suspended') _ctx.resume();
         return _ctx;
     }
 
-    function playTone(frequencies, durations, volume) {
+    function playNote(ctx, master, freq, startTime, dur, type) {
+        var osc = ctx.createOscillator();
+        var env = ctx.createGain();
+        osc.type = type || 'sine';
+        osc.frequency.value = freq;
+        env.gain.setValueAtTime(0, startTime);
+        env.gain.linearRampToValueAtTime(1, startTime + 0.02);
+        env.gain.exponentialRampToValueAtTime(0.3, startTime + dur * 0.4);
+        env.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+        osc.connect(env);
+        env.connect(master);
+        osc.start(startTime);
+        osc.stop(startTime + dur + 0.05);
+    }
+
+    function playChord(notes, volume) {
         var ctx = getCtx();
         if (!ctx) return;
-        var masterGain = ctx.createGain();
-        masterGain.gain.value = volume || 0.15;
-        masterGain.connect(ctx.destination);
-        var t = ctx.currentTime;
-
-        frequencies.forEach(function(freq, i) {
-            var dur = durations[i] || 0.12;
-            var osc = ctx.createOscillator();
-            var env = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            env.gain.setValueAtTime(0.001, t);
-            env.gain.exponentialRampToValueAtTime(1, t + 0.015);
-            env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-            osc.connect(env);
-            env.connect(masterGain);
-            osc.start(t);
-            osc.stop(t + dur + 0.01);
-            t += dur * 0.65;
+        var master = ctx.createGain();
+        master.gain.value = volume || 0.08;
+        master.connect(ctx.destination);
+        var t = ctx.currentTime + 0.01;
+        notes.forEach(function(n) {
+            playNote(ctx, master, n.freq, t + (n.delay || 0), n.dur || 0.35, n.type);
+            if (n.harmonic) {
+                playNote(ctx, master, n.freq * 2, t + (n.delay || 0), (n.dur || 0.35) * 0.6, 'sine');
+            }
         });
     }
 
     return {
-        success: function() { playTone([880, 1174.66, 1396.91], [0.1, 0.1, 0.18], 0.12); },
-        info:    function() { playTone([783.99, 1046.50], [0.1, 0.14], 0.1); },
-        warning: function() { playTone([659.25, 523.25], [0.12, 0.16], 0.13); },
-        error:   function() { playTone([415.30, 349.23, 293.66], [0.12, 0.12, 0.2], 0.13); },
+        success: function() {
+            playChord([
+                { freq: 1174.66, delay: 0,    dur: 0.25, harmonic: true },
+                { freq: 1396.91, delay: 0.12, dur: 0.25, harmonic: true },
+                { freq: 1760,    delay: 0.24, dur: 0.4,  harmonic: true }
+            ], 0.07);
+        },
+        info: function() {
+            playChord([
+                { freq: 880,     delay: 0,    dur: 0.18, harmonic: true },
+                { freq: 1108.73, delay: 0.15, dur: 0.18, harmonic: true },
+                { freq: 1318.51, delay: 0.30, dur: 0.30, harmonic: true }
+            ], 0.06);
+        },
+        warning: function() {
+            playChord([
+                { freq: 739.99, delay: 0,    dur: 0.2 },
+                { freq: 659.25, delay: 0.18, dur: 0.3 }
+            ], 0.08);
+        },
+        error: function() {
+            playChord([
+                { freq: 466.16, delay: 0,    dur: 0.15 },
+                { freq: 415.30, delay: 0.12, dur: 0.15 },
+                { freq: 349.23, delay: 0.24, dur: 0.35 }
+            ], 0.08);
+        },
         play: function(type) {
             var fn = this[type];
             if (fn) fn();
             else this.info();
-        }
+        },
+        warmUp: function() { getCtx(); }
     };
+})();
+
+// Warm up AudioContext on first user interaction so async sounds work later
+(function() {
+    function onFirstInteraction() {
+        NotifSound.warmUp();
+        document.removeEventListener('click', onFirstInteraction, true);
+        document.removeEventListener('keydown', onFirstInteraction, true);
+    }
+    document.addEventListener('click', onFirstInteraction, true);
+    document.addEventListener('keydown', onFirstInteraction, true);
 })();
 
 // ===== Global Swal Override — applies modern theme to ALL Swal.fire calls =====
