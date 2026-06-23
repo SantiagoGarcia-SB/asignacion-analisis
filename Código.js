@@ -37,16 +37,14 @@ function getEndPointFull() { return props.getProperty('endPointSaiFullStageProd'
 /**
  * Obtiene los cupos efectivos para un analista (individuales si existen, o globales del equipo).
  * @param {string} userEmail - Email del analista
- * @param {string} equipo - 'DIGITAL', 'BIOMETRIA' o 'REESTUDIOS'
+ * @param {string} equipo - 'DIGITAL', 'DESAPLAZAMIENTO' o 'REESTUDIOS'
  * @param {Array} [dataUsuarios] - Datos de la hoja Usuarios (opcional, para evitar releerla)
- * @returns {Object} { nueva, reestudio, induccion, biometria, uar }
+ * @returns {Object} { nueva, reestudio, induccion, desaplazamiento, nuevaUar, deudorUar, biometriaFallida }
  */
 function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
-  // Intentar leer cupos individuales de col Y (índice 24)
   if (dataUsuarios) {
     for (let i = 1; i < dataUsuarios.length; i++) {
       if (String(dataUsuarios[i][2]).toLowerCase().trim() === userEmail) {
-        // getDataRange puede no incluir col Y si está vacía; verificar longitud
         if (dataUsuarios[i].length > 24) {
           const cuposRaw = String(dataUsuarios[i][24] || '').trim();
           if (cuposRaw && cuposRaw.startsWith('{')) {
@@ -56,7 +54,7 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
                 nueva: parseInt(c.nuevas) || 0,
                 reestudio: parseInt(c.reestudios) || 0,
                 induccion: parseInt(c.inducciones) || 0,
-                biometria: parseInt(c.biometria) || 0,
+                desaplazamiento: parseInt(c.desaplazamiento || c.biometria) || 0,
                 nuevaUar: parseInt(c.nuevaUar) || 0,
                 deudorUar: parseInt(c.deudorUar) || 0,
                 biometriaFallida: parseInt(c.biometriaFallida) || 0
@@ -69,28 +67,36 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
     }
   }
 
-  // Fallback: cupos globales del equipo
   const props2 = PropertiesService.getScriptProperties();
-  const prefix = 'CUPOS_' + equipo.toUpperCase() + '_';
+  var equipoNorm = equipo.toUpperCase();
+  if (equipoNorm === 'BIOMETRIA') equipoNorm = 'DESAPLAZAMIENTO';
+  const prefix = 'CUPOS_' + equipoNorm + '_';
   function getP(key, def) {
     const v = props2.getProperty(key);
     if (v === null || v === '') return def;
     const p = parseInt(v, 10);
     return isNaN(p) ? def : p;
   }
+  function getPWithFallback(newKey, oldKey, def) {
+    var v = props2.getProperty(newKey);
+    if (v !== null && v !== '') { var p = parseInt(v, 10); return isNaN(p) ? def : p; }
+    v = props2.getProperty(oldKey);
+    if (v !== null && v !== '') { var p2 = parseInt(v, 10); return isNaN(p2) ? def : p2; }
+    return def;
+  }
 
   const defaults = {
-    DIGITAL: { nueva: 70, reestudio: 10, induccion: 8, biometria: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
-    BIOMETRIA: { nueva: 0, reestudio: 0, induccion: 0, biometria: 8, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 },
-    REESTUDIOS: { nueva: 0, reestudio: 10, induccion: 2, biometria: 0, nuevaUar: 3, deudorUar: 2, biometriaFallida: 0 }
+    DIGITAL: { nueva: 70, reestudio: 10, induccion: 8, desaplazamiento: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
+    DESAPLAZAMIENTO: { nueva: 0, reestudio: 0, induccion: 0, desaplazamiento: 8, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 },
+    REESTUDIOS: { nueva: 0, reestudio: 10, induccion: 2, desaplazamiento: 0, nuevaUar: 3, deudorUar: 2, biometriaFallida: 0 }
   };
-  const def = defaults[equipo.toUpperCase()] || defaults.DIGITAL;
+  const def = defaults[equipoNorm] || defaults.DIGITAL;
 
   return {
     nueva: getP(prefix + 'NUEVAS', def.nueva),
     reestudio: getP(prefix + 'REESTUDIOS', def.reestudio),
     induccion: getP(prefix + 'INDUCCIONES', def.induccion),
-    biometria: getP(prefix + 'BIOMETRIA', def.biometria),
+    desaplazamiento: getPWithFallback(prefix + 'DESAPLAZAMIENTO', 'CUPOS_' + equipoNorm + '_BIOMETRIA', def.desaplazamiento),
     nuevaUar: getP(prefix + 'NUEVA_UAR', def.nuevaUar),
     deudorUar: getP(prefix + 'DEUDOR_UAR', def.deudorUar),
     biometriaFallida: getP(prefix + 'BIOMETRIA_FALLIDA', def.biometriaFallida)
@@ -110,36 +116,14 @@ function doGet() {
   }
 
   if (info.rol === "ASESOR") {
-    const useUnified = props.getProperty('USE_UNIFIED_VIEW') !== 'FALSE';
-
-    if (useUnified) {
-      const equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
-      if (!equipo) return HtmlService.createHtmlOutput("<h2>Equipo no configurado para tu especialidad.</h2>");
-      const template = HtmlService.createTemplateFromFile('VistaUnificada');
-      template.equipoConfig = JSON.stringify(equipo);
-      template.userEmail = userEmail;
-      return template.evaluate()
-        .setTitle('Gestión - ' + equipo.nombre)
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    }
-
-    // Fallback: routing por especialidad (se activa con USE_UNIFIED_VIEW=FALSE)
-    if (info.especialidad === "PENDIENTE_BIOMETRIA") {
-      return HtmlService.createTemplateFromFile('VistaBiometria')
-          .evaluate()
-          .setTitle('Gestión de Biometría')
-          .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    } else if(info.especialidad === 'REESTUDIOS'){
-        return HtmlService.createTemplateFromFile('VistaReestudios')
-        .evaluate()
-        .setTitle('Gestión de Reestudios')
-        .addMetaTag('viewport','width=device-width, initial-scale=1');
-    } else {
-      return HtmlService.createTemplateFromFile('index')
-          .evaluate()
-          .setTitle('Gestión de Solicitudes - Analista')
-          .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-    }
+    const equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
+    if (!equipo) return HtmlService.createHtmlOutput("<h2>Equipo no configurado para tu especialidad.</h2>");
+    const template = HtmlService.createTemplateFromFile('VistaUnificada');
+    template.equipoConfig = JSON.stringify(equipo);
+    template.userEmail = userEmail;
+    return template.evaluate()
+      .setTitle('Gestión - ' + equipo.nombre)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 
   return HtmlService.createHtmlOutput("<h2>Rol no reconocido</h2>");
@@ -180,8 +164,10 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
   var mapeo = {
     'ESTUDIO DIGITAL': 'DIGITAL',
     'ESTUDIO_DIGITAL': 'DIGITAL',
-    'PENDIENTE_BIOMETRIA': 'BIOMETRIA',
-    'BIOMETRIA': 'BIOMETRIA',
+    'PENDIENTE_BIOMETRIA': 'DESAPLAZAMIENTO',
+    'BIOMETRIA': 'DESAPLAZAMIENTO',
+    'DESAPLAZAMIENTO': 'DESAPLAZAMIENTO',
+    'ANALISTA DESPLAZAMIENTO': 'DESAPLAZAMIENTO',
     'REESTUDIOS': 'REESTUDIOS'
   };
   var equipoId = mapeo[esp] || esp;
@@ -191,7 +177,7 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
     // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún
     var defaults = {
       'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
-      'BIOMETRIA': { id: 'BIOMETRIA', nombre: 'Biometría', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
+      'DESAPLAZAMIENTO': { id: 'DESAPLAZAMIENTO', nombre: 'Desaplazamiento', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
       'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] }
     };
     return defaults[equipoId] || defaults['DIGITAL'];
@@ -207,39 +193,35 @@ function getUnifiedTableData() {
   var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
   Logger.log('getUnifiedTableData: email=' + userEmail + ' especialidad=' + info.especialidad + ' equipo=' + equipo.id);
 
-  switch (equipo.id) {
-    case 'BIOMETRIA':
-      var dataBio = getDatosBiometria();
-      Logger.log('getDatosBiometria: pendientes=' + (dataBio.solicitudes || []).length + ' hoy=' + (dataBio.stats || {}).hoy);
-      return {
-        tabla: dataBio.solicitudes || [],
-        stats: dataBio.stats || { hoy: 0, pendientes: 0 },
-        equipoId: equipo.id,
-        equipoNombre: equipo.nombre,
-        tipoVista: 'BIOMETRIA'
-      };
+  // Spreadsheet 1 (TARGET_SOLICITUDES_SS_ID) → "solicitud" + Historico_Gestiones
+  //   Contiene: digitales, biometrías, inducciones
+  // Spreadsheet 2 (ID_HOJA_REESTUDIOS) → "ORIGEN" + Historico_Gestiones
+  //   Contiene: reestudios de Victoria y Correo
+  //
+  // getTableData() ya incluye ambas fuentes (lee ORIGEN + Historico de reestudios
+  // y los marca con __REESTUDIO__). Todos los equipos usan getTableData().
 
-    case 'REESTUDIOS':
-      var dataRest = getReestudiosData();
-      return {
-        tabla: dataRest.solicitudes || [],
-        stats: dataRest.stats || { hoy: 0, pendientes: 0 },
-        equipoId: equipo.id,
-        equipoNombre: equipo.nombre,
-        tipoVista: 'REESTUDIOS'
-      };
-
-    default:
-      var dataDigital = getTableData();
-      return {
-        tabla: dataDigital.tabla || [],
-        stats: dataDigital.stats || { hoy: 0, pendientes: 0 },
-        reasignaciones: dataDigital.reasignaciones || [],
-        equipoId: equipo.id,
-        equipoNombre: equipo.nombre,
-        tipoVista: 'DIGITAL'
-      };
+  if (equipo.id === 'REESTUDIOS') {
+    var dataRest = getReestudiosData();
+    return {
+      tabla: dataRest.solicitudes || [],
+      stats: dataRest.stats || { hoy: 0, pendientes: 0 },
+      equipoId: equipo.id,
+      equipoNombre: equipo.nombre,
+      tipoVista: 'REESTUDIOS'
+    };
   }
+
+  // Digital, Biometría, Inducción y cualquier otro equipo
+  var data = getTableData();
+  return {
+    tabla: data.tabla || [],
+    stats: data.stats || { hoy: 0, pendientes: 0 },
+    reasignaciones: data.reasignaciones || [],
+    equipoId: equipo.id,
+    equipoNombre: equipo.nombre,
+    tipoVista: 'DIGITAL'
+  };
 }
 
 function autoAsignarDesdeEquipo() {
@@ -250,7 +232,7 @@ function autoAsignarDesdeEquipo() {
   var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
 
   switch (equipo.id) {
-    case 'BIOMETRIA':
+    case 'DESAPLAZAMIENTO':
       return autoAsignarBiometria();
     case 'REESTUDIOS':
       return RequestLeadReestudios();
@@ -288,18 +270,21 @@ function getTableData() {
 
   const hojaScore = ss.getSheetByName("score");
   const mapaScore = new Map();
+  const mapaInmobiliaria = new Map();
   if (hojaScore) {
     const dataScore = hojaScore.getDataRange().getDisplayValues();
     for (let i = 1; i < dataScore.length; i++) {
-      let pol = String(dataScore[i][0]).trim(); 
+      let pol = String(dataScore[i][0]).trim();
       let polNorm = pol.replace(/\D/g, '').replace(/^0+/, '');
-      let categoria = String(dataScore[i][2] || "").trim().toUpperCase(); 
-      
-      if (pol) mapaScore.set(pol, categoria);
-      if (polNorm) mapaScore.set(polNorm, categoria);
+      let categoria = String(dataScore[i][2] || "").trim().toUpperCase();
+      let inmobiliaria = String(dataScore[i][3] || "").trim();
+
+      if (pol) { mapaScore.set(pol, categoria); mapaInmobiliaria.set(pol, inmobiliaria); }
+      if (polNorm) { mapaScore.set(polNorm, categoria); mapaInmobiliaria.set(polNorm, inmobiliaria); }
     }
   }
-  headers.push("CategoriaScore"); 
+  headers.push("CategoriaScore");
+  headers.push("Inmobiliaria"); 
 
   const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
   
@@ -337,7 +322,8 @@ function getTableData() {
       const poliza  = String(fila[1]).trim();
       const polNorm = poliza.replace(/\D/g, '').replace(/^0+/, '');
       const cat = mapaScore.get(poliza) || mapaScore.get(polNorm) || "";
-      misFilasPendientes.push([...fila, cat]);
+      const inmo = mapaInmobiliaria.get(poliza) || mapaInmobiliaria.get(polNorm) || "";
+      misFilasPendientes.push([...fila, cat, inmo]);
     }
   }
 
@@ -939,12 +925,11 @@ function guardarCambiosInternos(data) {
   let mensajeAdicional = "";
 
   try {
-    // Definición de las 2 Bases de Datos
-    const ID_WAREHOUSE = "1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0";
-    const ssOrigen = SpreadsheetApp.openById(ID_WAREHOUSE);
+    const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
 
-    const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
-    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
+    const ssReestudios = SpreadsheetApp.openById(
+      PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
+    );
 
     const ahora = new Date();
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
@@ -978,7 +963,7 @@ function guardarCambiosInternos(data) {
       const emailAnalista   = String(filaBase[25] || usuarioActual).toLowerCase().trim(); // col 26
       let valorClaseActual  = filaBase[20]; // col 21
 
-      if (data.tipoSolicitudActual === 'biometria') valorClaseActual = 'BIOMETRIA';
+      if (data.tipoSolicitudActual === 'desaplazamiento') valorClaseActual = 'BIOMETRIA';
       else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
 
       const tRadCola = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
@@ -1044,13 +1029,10 @@ function guardarCambiosInternos(data) {
         tiemposR.minutos_cola, tiemposR.minutos_gestion, tiemposR.minutos_general,
         data.poliza || ''
       ]]);
-      sheetReestudios.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaHistoricoR.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaHistoricoR.getRange(targetRowReest, 15, 1, 3).setNumberFormat("0.00");
 
       SpreadsheetApp.flush();
-
-      // Guardar en Historico Secundario
-      const filaActualizadaR = sheetReestudios.getRange(targetRowReest, 1, 1, 16).getValues()[0];
-      hojaHistoricoR.appendRow(filaActualizadaR);
     }
 
     if (estado_q.includes("APLAZ")) {
@@ -1262,9 +1244,9 @@ function verificarMisCupos(equipo) {
           || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
-    let conteoHoy = { nueva: 0, reestudio: 0, induccion: 0, biometria: 0, nuevaUar: 0, deudorUar: 0 };
+    let conteoHoy = { nueva: 0, reestudio: 0, induccion: 0, desaplazamiento: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
 
-    // Contar desde hoja solicitudes (Digital + Biometría + Inducciones)
+    // Contar desde hoja solicitudes (Digital + Desaplazamiento + Inducciones)
     const hojaSol = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
     if (hojaSol) {
       const lastRowS = hojaSol.getLastRow();
@@ -1276,10 +1258,11 @@ function verificarMisCupos(equipo) {
           const fechaAsig = dataSol[i][26];
           const fechaFin = dataSol[i][28];
           if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
-          const claseNorm = String(dataSol[i][20]).toUpperCase().trim();
-          const estadoNorm = String(dataSol[i][16]).toUpperCase().trim();
+          const claseNorm = String(dataSol[i][20]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoNorm = String(dataSol[i][16]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
           let tipo = 'nueva';
-          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
           else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
           conteoHoy[tipo]++;
         }
@@ -1292,22 +1275,23 @@ function verificarMisCupos(equipo) {
       if (hojaHistV && hojaHistV.getLastRow() > 1) {
         const dataHistV = hojaHistV.getRange(2, 1, hojaHistV.getLastRow() - 1, 37).getValues();
         for (let i = 0; i < dataHistV.length; i++) {
-          const asignado = String(dataHistV[i][25]).trim().toLowerCase(); // hist col 26
+          const asignado = String(dataHistV[i][25]).trim().toLowerCase();
           if (asignado !== userEmail) continue;
-          const fechaAsig = dataHistV[i][24]; // hist col 25
-          const fechaFin  = dataHistV[i][26]; // hist col 27
+          const fechaAsig = dataHistV[i][24];
+          const fechaFin  = dataHistV[i][26];
           if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
-          const claseNorm  = String(dataHistV[i][20]).toUpperCase().trim();
-          const estadoNorm = String(dataHistV[i][16]).toUpperCase().trim();
+          const claseNorm  = String(dataHistV[i][20]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoNorm = String(dataHistV[i][16]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
           let tipo = 'nueva';
-          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
           else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
           conteoHoy[tipo]++;
         }
       }
     } catch(e) {}
 
-    // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR)
+    // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR + Biometría Fallida)
     try {
       const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
       const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
@@ -1322,12 +1306,38 @@ function verificarMisCupos(equipo) {
             const fechaFin = dataReest[i][9];
             if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
             const origenR = String(dataReest[i][3]).toUpperCase().trim();
-            const tipoP = String(dataReest[i][4]).toUpperCase().trim();
-            let tipo = 'reestudio';
-            if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-            else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
-            conteoHoy[tipo]++;
+            const tipoPNorm = String(dataReest[i][4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            let tipo = null;
+            if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
+            else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+            else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+            else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
+            if (tipo) conteoHoy[tipo]++;
           }
+        }
+      }
+    } catch(e) {}
+
+    // Contar desde Historico_Gestiones de reestudios (casos movidos al asignar)
+    try {
+      const ssReestH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hojaHistReestC = ssReestH.getSheetByName("Historico_Gestiones");
+      if (hojaHistReestC && hojaHistReestC.getLastRow() > 1) {
+        const dataHistReestC = hojaHistReestC.getRange(2, 1, hojaHistReestC.getLastRow() - 1, 14).getValues();
+        for (let i = 0; i < dataHistReestC.length; i++) {
+          const asignado = String(dataHistReestC[i][6]).trim().toLowerCase();
+          if (asignado !== userEmail) continue;
+          const fechaAsig = dataHistReestC[i][8];
+          const fechaFin = dataHistReestC[i][9];
+          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
+          const origenR = String(dataHistReestC[i][3]).toUpperCase().trim();
+          const tipoPNorm = String(dataHistReestC[i][4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          let tipo = null;
+          if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
+          else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+          else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+          else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
+          if (tipo) conteoHoy[tipo]++;
         }
       }
     } catch(e) {}
@@ -1337,16 +1347,16 @@ function verificarMisCupos(equipo) {
       { tipo: 'Nuevas', usado: conteoHoy.nueva, limite: cupos.nueva },
       { tipo: 'Reestudios', usado: conteoHoy.reestudio, limite: cupos.reestudio },
       { tipo: 'Inducciones', usado: conteoHoy.induccion, limite: cupos.induccion },
-      { tipo: 'Biometría', usado: conteoHoy.biometria, limite: cupos.biometria },
+      { tipo: 'Desaplazamiento', usado: conteoHoy.desaplazamiento, limite: cupos.desaplazamiento },
       { tipo: 'Nueva UAR', usado: conteoHoy.nuevaUar, limite: cupos.nuevaUar },
-      { tipo: 'Deudor UAR', usado: conteoHoy.deudorUar, limite: cupos.deudorUar }
+      { tipo: 'Deudor UAR', usado: conteoHoy.deudorUar, limite: cupos.deudorUar },
+      { tipo: 'Biometría Fallida', usado: conteoHoy.biometriaFallida, limite: cupos.biometriaFallida }
     ];
 
-    // Verificar si todos los cupos con límite > 0 están llenos
     const cuposActivos = resumen.filter(r => r.limite > 0);
     const todosCumplidos = cuposActivos.length > 0 && cuposActivos.every(r => r.usado >= r.limite);
-    const totalUsado = resumen.reduce((s, r) => s + r.usado, 0);
-    const totalLimite = resumen.reduce((s, r) => s + r.limite, 0);
+    const totalUsado = cuposActivos.reduce((s, r) => s + r.usado, 0);
+    const totalLimite = cuposActivos.reduce((s, r) => s + r.limite, 0);
 
     return {
       cumplido: todosCumplidos,
@@ -1889,12 +1899,15 @@ function obtenerDetalleGestionesHoy() {
           const fechaFin = String(dataHDet[i][26]).trim();               // col 27
           if (asignado === userEmail && fechaFin.includes(hoyStr)) {
             const partes = fechaFin.split(' ');
-            const clH = String(dataHDet[i][20]).toUpperCase().trim();
+            const clH = String(dataHDet[i][20]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            const estH = String(dataHDet[i][16]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            const estHSinGuion = estH.replace(/_/g, ' ');
+            var tipoLabel = 'Nuevas';
+            if (estHSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estH === 'APROBADO_PENDIENTE_BIOMETRIA') tipoLabel = 'Desaplazamiento';
+            else if (clH.includes('INDUCCI') || clH === 'IND') tipoLabel = 'Inducción';
             listado.push({
               solicitud: String(dataHDet[i][0]).trim(),
-              tipo: clH.includes('BIOMETRIA') ? 'Biometría'
-                  : (clH.includes('INDUCCI') || clH === 'IND') ? 'Inducción'
-                  : 'Digital',
+              tipo: tipoLabel,
               horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
               fuente: 'DIGITAL'
             });
@@ -1914,9 +1927,16 @@ function obtenerDetalleGestionesHoy() {
           const fechaFin = String(data[i][9]).trim();               // col J
           if (asignado === userEmail && fechaFin.includes(hoyStr)) {
             const partes = fechaFin.split(' ');
+            const origenR = String(data[i][3]).toUpperCase().trim();
+            const tipoPR = String(data[i][4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            var tipoLabelR = 'Reestudios';
+            if (tipoPR.includes("BIOMETRIA FALLIDA")) tipoLabelR = 'Biometría Fallida';
+            else if (origenR === "CORREO" && tipoPR === "NUEVA") tipoLabelR = 'Nueva UAR';
+            else if (origenR === "CORREO" && tipoPR === "ADICIONAL") tipoLabelR = 'Deudor UAR';
+            else if (tipoPR === "REESTUDIO") tipoLabelR = 'Reestudios';
             listado.push({
               solicitud: String(data[i][1]).trim(),
-              tipo: String(data[i][4]).trim() || 'Reestudio',
+              tipo: tipoLabelR,
               horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
               fuente: 'REESTUDIO'
             });

@@ -25,13 +25,11 @@ The script ID is in `.clasp.json`. Runtime is V8, timezone is `America/Bogota`.
 
 ```
 Browser → doGet() (Código.js) → Role-based HTML view
-                                 ├─ ADMIN           → VistaAdmin.html
-                                 ├─ ESTUDIO_DIGITAL → index.html
-                                 ├─ BIOMETRIA       → VistaBiometria.html
-                                 └─ REESTUDIOS      → VistaReestudios.html
+                                 ├─ ADMIN  → VistaAdmin.html
+                                 └─ ASESOR → VistaUnificada.html (all teams)
 ```
 
-Authentication is implicit (Google Workspace session). Role is resolved from the "Usuarios" sheet (col 4 = Especialidad, col 23 = ADMIN flag).
+Authentication is implicit (Google Workspace session). Role is resolved from the "Usuarios" sheet (col 4 = Especialidad, col 23 = ADMIN flag). Team is resolved via `resolverEquipoDesdeEspecialidad()` and injected as `equipoConfig`.
 
 ### Backend Modules
 
@@ -50,10 +48,8 @@ HTML files embed their JavaScript inline. `main.js.html` is included via `<?= Ht
 
 | File | View |
 |------|------|
-| `index.html` | Digital studies analyst dashboard |
+| `VistaUnificada.html` | Unified analyst dashboard (all teams: Digital, Biometry, Re-studies) |
 | `VistaAdmin.html` | Admin KPIs, user management, priority control |
-| `VistaBiometria.html` | Biometry queue and management |
-| `VistaReestudios.html` | Re-study case management |
 | `ux-enhancements.html` | Shared UI utilities (SweetAlert wrappers, loaders) |
 
 ### Data Sources (Google Sheets)

@@ -1,6 +1,6 @@
 /**
  * ====================================================
- * MÓDULO REESTUDIOS - Backend para VistaReestudios.html
+ * MÓDULO REESTUDIOS - Backend para VistaUnificada.html (modal #modalReestudio)
  * ====================================================
  * Funciones: getReestudiosData, guardarGestionReestudio, getEmailUsuarioReestudios
  * 
@@ -290,9 +290,9 @@ function guardarGestionReestudio(datos) {
 
 /**
  * Wrapper de RequestLead() que devuelve el mismo formato de objeto
- * que espera VistaReestudios.html ({ success, nueva, message }).
+ * que espera el frontend ({ success, nueva, message }).
  */
-function RequestLeadUnificado() {
+function RequestLeadDigitalWrapped() {
   try {
     const result = RequestLead();
     const isSuccess = typeof result === 'string' && result.includes('✅');

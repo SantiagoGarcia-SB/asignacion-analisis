@@ -59,12 +59,40 @@
     .navbar-glass-brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
       color: white;
       font-weight: 800;
       font-size: 1.25rem;
       letter-spacing: -0.5px;
       text-decoration: none;
+    }
+
+    .navbar-brand-logo {
+      height: 34px;
+      width: auto;
+      object-fit: contain;
+      filter: brightness(0) invert(1);
+      transition: opacity 0.3s;
+    }
+
+    .navbar-brand-sep {
+      width: 1px;
+      height: 24px;
+      background: rgba(255,255,255,0.2);
+      flex-shrink: 0;
+    }
+
+    .navbar-brand-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.7);
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 768px) {
+      .navbar-brand-sep, .navbar-brand-title { display: none; }
+      .navbar-brand-logo { height: 28px; }
     }
 
     .navbar-glass-brand .brand-icon {
@@ -326,8 +354,8 @@
 
     .l-logo-wrap {
       position: relative;
-      width: 100px;
-      height: 100px;
+      width: 130px;
+      height: 130px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -347,14 +375,14 @@
     }
 
     .l-ring-2 {
-      inset: 10px;
+      inset: 12px;
       border-top-color: rgba(255, 120, 120, 0.7);
       border-left-color: rgba(255, 120, 120, 0.15);
       animation: lSpin 1.8s linear infinite reverse;
     }
 
     .l-ring-3 {
-      inset: 20px;
+      inset: 24px;
       border-top-color: rgba(37, 49, 80, 0.8);
       border-right-color: rgba(37, 49, 80, 0.15);
       animation: lSpin 2.8s linear infinite;
@@ -367,11 +395,11 @@
     }
 
     .l-logo-inner {
-      width: 52px;
-      height: 52px;
-      background: linear-gradient(135deg, rgba(189, 15, 20, 0.2), rgba(37, 49, 80, 0.3));
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 14px;
+      width: 72px;
+      height: 72px;
+      background: linear-gradient(135deg, rgba(189, 15, 20, 0.15), rgba(37, 49, 80, 0.25));
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -379,15 +407,15 @@
     }
 
     .l-logo-inner img {
-      width: 34px;
-      height: 34px;
+      width: 48px;
+      height: 48px;
       object-fit: contain;
-      filter: brightness(10);
+      filter: brightness(0) invert(1);
     }
 
     .l-orbit-dot {
       position: absolute;
-      inset: -8px;
+      inset: -10px;
       border-radius: 50%;
       animation: lSpin 3s linear infinite;
     }

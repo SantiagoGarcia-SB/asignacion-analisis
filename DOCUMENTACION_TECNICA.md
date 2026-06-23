@@ -62,10 +62,7 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 │   doGet() ──► Autenticación por Email (Session API)          │
 │       │                                                      │
 │       ├── ADMIN ──────────► VistaAdmin.html                  │
-│       ├── ASESOR                                             │
-│       │    ├── PENDIENTE_BIOMETRIA ──► VistaBiometria.html   │
-│       │    ├── REESTUDIOS ───────────► VistaReestudios.html  │
-│       │    └── ESTUDIO DIGITAL ──────► index.html            │
+│       ├── ASESOR ────────────► VistaUnificada.html            │
 │       └── NO RECONOCIDO ─► "Rol no reconocido"              │
 │                                                              │
 │   ┌─────────────┐  ┌──────────────────┐  ┌─────────────┐   │
@@ -96,10 +93,10 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 | `Biometria.js` | **Módulo de biometría.** Descarga desde API de solicitudes con códigos 500/503, asignación automática a analistas de biometría, verificación de estado en tiempo real, gestión y tipificación de casos. |
 | `ModeloReestudios.js` | **Motor de asignación equitativa (Reestudios).** Algoritmo `RequestLeadReestudios()` que distribuye solicitudes de Victoria y Correo según FIFO, cupos diarios por subcategoría (`reestudio`, `nuevaUar`, `deudorUar`). Asigna 1 caso por invocación con control de concurrencia. |
 | `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`) — lee de `Historico_Gestiones` del ssReestudios; guardado de gestión (`guardarGestionReestudio()`) con búsqueda por solicitudId (caso abierto = fechaFin vacía) y auto-reasignación. |
-| `index.html` | **Vista del Analista (Estudio Digital).** Tabla de solicitudes asignadas, modal de gestión con detalle en tiempo real desde la API, selector de estados, métricas personales, control de estado del analista. Modal de gestión de reestudio (`#modalReestudioDigital`) con diseño Bootstrap (header gradiente, info cards, MotivoPicker, botón Ver Anexo). |
+| ~~`index.html`~~ | *(Eliminada)* Vista de Estudio Digital migrada a `VistaUnificada.html` (modal `#modalDigital` con prefijo `dig_`). |
 | `VistaAdmin.html` | **Vista del Administrador.** Dashboard con métricas, tabla de usuarios, control de prioridades, sección de cupos (general + individual), novedades del equipo con tabs (disponibilidad + solicitudes de permisos), sección de **Turnos y Horarios** (CRUD de turnos, asignación de analistas, horas extra), modales CRUD, botón de emergencia. |
-| `VistaBiometria.html` | **Vista de Biometría.** Tabla de solicitudes pendientes de biometría, modal de tipificación con tabs (formulario + historial de deudores). |
-| `VistaReestudios.html` | **Vista de Reestudios.** Tabla unificada de casos asignados (Victoria + Correo), modal de gestión con estados, motivos y observaciones, métricas, control de estado del analista, auto-asignación al entrar. |
+| `VistaUnificada.html` | **Vista unificada del Analista.** Dashboard multi-equipo (Digital, Biometría, Reestudios) con modales especializados por tipo, métricas, cupos, polling automático y control de estado. Reemplaza las vistas individuales anteriores. |
+| ~~`VistaReestudios.html`~~ | *(Eliminada)* Vista de Reestudios migrada a `VistaUnificada.html` (modal `#modalReestudio` con prefijo `rst_`). |
 | `main.js.html` | **JavaScript compartido del Analista.** Lógica de renderizado de tabla con DataTables, auto-asignación al entrar, manejo de estados, guardado de gestiones, comunicación con backend. Incluye: `_quitarFilaTabla()` para remoción optimista inmediata de filas tras guardar; `abrirGestionReestudioDigital()` para poblar y mostrar el modal de reestudio; `rmdActualizarEstado()` y `guardarGestionReestudioDesdeDigital()`. |
 | `appsscript.json` | **Manifiesto del proyecto.** Configuración de zona horaria, runtime V8, despliegue como Web App con ejecución como usuario desplegador y acceso por dominio. |
 | `.clasp.json` | **Configuración de clasp.** Vinculación con el proyecto de Google Apps Script para push/pull del código fuente. |
@@ -110,6 +107,9 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 |---------|-------|
 | `Uar.js` | Módulo UAR eliminado. Las solicitudes UAR que vienen de Victoria/Correo ahora se gestionan desde el módulo de Reestudios. Las UAR de la API se gestionan por el modelo principal. |
 | `VistaUar.html` | Vista UAR eliminada. Ya no existe como especialidad independiente. |
+| `VistaBiometria.html` | Vista de Biometría eliminada. Toda su funcionalidad fue migrada a `VistaUnificada.html` (modal `#modalBiometria` con prefijo `bio_`). |
+| `VistaReestudios.html` | Vista de Reestudios eliminada. Toda su funcionalidad fue migrada a `VistaUnificada.html` (modal `#modalReestudio` con prefijo `rst_`). |
+| `index.html` | Vista de Estudio Digital eliminada. Toda su funcionalidad fue migrada a `VistaUnificada.html` (modal `#modalDigital` con prefijo `dig_`). |
 
 ### Nuevo Archivo (v2.5)
 
@@ -290,7 +290,7 @@ Ambas hojas comparten el mismo esquema de columnas (la fila se mueve completa al
 
 ### 4.3 Flujo de Gestión de una Solicitud — Estudio Digital (`guardarCambiosInternos`)
 
-1. **Frontend (index.html):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos. Puede gestionar tanto solicitudes digitales (de la hoja `solicitud`) como reestudios (de ssReestudios).
+1. **Frontend (VistaUnificada.html → modal `#modalDigital`):** El analista abre un modal, selecciona estado, biometría, comentarios y motivos. Puede gestionar tanto solicitudes digitales (de la hoja `solicitud`) como reestudios (de ssReestudios).
 2. **Discriminador de ruta (`tipoSolicitudActual`):** El frontend envía `tipoSolicitudActual: 'reestudio'` cuando el caso proviene del modal de gestión de reestudio (`#modalReestudioDigital`). Esto permite al backend saber a qué hoja escribir.
 3. **Búsqueda de fila destino (RUTA A — solicitudes digitales y del warehouse):**
    - Solo se ejecuta si `tipoSolicitudActual !== 'reestudio'`.
@@ -307,7 +307,7 @@ Ambas hojas comparten el mismo esquema de columnas (la fila se mueve completa al
 
 ### 4.4 Flujo de Gestión de una Solicitud — Reestudios (`guardarGestionReestudio` en `Reestudios.js`)
 
-1. **Frontend (VistaReestudios.html):** El analista selecciona estado, motivo y observaciones. El `datos` enviado incluye `solicitud` (número de caso) además de `filaReal`.
+1. **Frontend (VistaUnificada.html → modal `#modalReestudio`):** El analista selecciona estado, motivo y observaciones. El `datos` enviado incluye `solicitudId` (número de caso).
 2. **Búsqueda de la fila destino (búsqueda por ID, no por número de fila):**
    - **Primero busca en `Historico_Gestiones`** de ssReestudios: recorre cols B–J buscando la fila donde col B = `solicitudId` Y col J (fechaFinGestion) está vacía (caso abierto). Esto cubre todos los casos asignados normalmente (fueron movidos al asignar).
    - **Fallback:** Si no encuentra en Historico, usa `filaReal` como número de fila en ORIGEN (casos legacy asignados antes del movimiento automático).
@@ -420,9 +420,9 @@ El sistema de cupos define **límites diarios de asignación por equipo y subcat
 
 | Equipo | Vista | Motor de Asignación | Propiedad Prefijo |
 |--------|-------|--------------------|--------------------|
-| Digital | `index.html` | `RequestLead()` en `ModeloAsignación.js` | `CUPOS_DIGITAL_*` |
-| Biometría | `VistaBiometria.html` | `autoAsignarBiometria()` en `Biometria.js` | `CUPOS_BIOMETRIA_*` |
-| Reestudios | `VistaReestudios.html` | `RequestLeadReestudios()` en `ModeloReestudios.js` | `CUPOS_REESTUDIOS_*` |
+| Digital | `VistaUnificada.html` | `RequestLead()` en `ModeloAsignación.js` | `CUPOS_DIGITAL_*` |
+| Biometría | `VistaUnificada.html` | `autoAsignarBiometria()` en `Biometria.js` | `CUPOS_BIOMETRIA_*` |
+| Reestudios | `VistaUnificada.html` | `RequestLeadReestudios()` en `ModeloReestudios.js` | `CUPOS_REESTUDIOS_*` |
 
 **Propiedades almacenadas (ScriptProperties) — Cupos Globales:**
 
@@ -830,9 +830,7 @@ Cada vista elimina inmediatamente la fila de "Mis Solicitudes Asignadas" al guar
 
 | Vista | Archivo | Cómo identifica la fila |
 |-------|---------|------------------------|
-| Estudio Digital | `main.js.html` | DataTable con arrays — compara `d[0]` (índice 0 = solicitudId) |
-| Reestudios | `VistaReestudios.html` | DataTable con objetos — compara `d.solicitud` |
-| Biometría | `VistaBiometria.html` | DataTable inicializado desde HTML — busca por `$(node).find('td:first').text()` |
+| Todos los equipos | `main.js.html` | DataTable con arrays — compara `d[0]` o `d[6]` (solicitudId) |
 
 **Patrón de uso:**
 ```javascript
@@ -847,7 +845,7 @@ function _quitarFilaTabla(solicitudId) {
 
 ### 8.2 Modal de Gestión de Reestudio (Vista Digital)
 
-El modal `#modalReestudioDigital` en `index.html` reemplaza el antiguo popup de SweetAlert2. Sigue el mismo diseño que los demás modales del sistema.
+El modal `#modalReestudio` en `VistaUnificada.html` (antes `#modalReestudioDigital` en index.html) sigue el mismo diseño que los demás modales del sistema.
 
 **Elementos del modal:**
 - Header con gradiente (`modal-header-inner`), ícono `bi-layers`, badge de solicitud (`#rmd_header_sol`) y badge de tipo coloreado (`#rmd_tipo_badge`)
@@ -872,12 +870,12 @@ Todos los `<select>` de Motivo Aplazamiento y Motivo Negación están ordenados 
 
 | Vista | Selects afectados |
 |-------|-----------------|
-| `index.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#rmd_motivo_aplazamiento`, `#rmd_motivo_negacion` |
-| `VistaReestudios.html` | `#d_motivo_aplazamiento`, `#d_motivo_negacion`, `#dig_motivo_aplazamiento`, `#dig_motivo_negacion` |
+| ~~`index.html`~~ *(eliminada)* | Motivos migrados a `VistaUnificada.html` con carga dinámica |
+| `VistaUnificada.html` | `#dig_motivo_aplazamiento`, `#dig_motivo_negacion`, `#rst_motivo_aplazamiento`, `#rst_motivo_negacion` (cargados dinámicamente) |
 
 ### 8.4 Validación de Fecha Futura
 
-En `VistaReestudios.html`, la función `guardarGestionDigitalDesdeVista()` valida que el campo "Fecha y Hora de Radicación SAI" (`#dig_fecha_radicacion_sai`) no sea una fecha futura al momento de guardar. Si lo es, muestra un Swal warning y detiene el guardado.
+En `VistaUnificada.html` / `main.js.html`, la función `_validarFechaSaiAnteDeGuardar()` valida que el campo "Fecha y Hora de Radicación SAI" no sea futura ni tenga formato inválido al momento de guardar. Si falla, muestra un Swal warning y detiene el guardado.
 
 ---
 
@@ -889,12 +887,12 @@ En `VistaReestudios.html`, la función `guardarGestionDigitalDesdeVista()` valid
 | Notificaciones Google Chat (reestudios) | Pendiente | Evaluar si se necesita notificación al chat al asignar reestudios |
 | Reasignación desde Admin | ✅ Completado | El admin puede desasignar casos de reestudios desde el panel de monitoreo (botón "Quitar" con `desasignarSolicitudReestudio()`) |
 | Sistema de cupos por equipo | ✅ Completado | Cupos diarios configurables por equipo (Digital, Biometría, Reestudios) con distribución por subcategoría, cupos individuales por analista, histórico de cambios, y validación estricta (suma = total). UAR dividido en `nuevaUar` y `deudorUar`. |
-| Modal reestudio vista digital | ✅ Completado | Modal Bootstrap reemplaza SweetAlert2 en index.html. |
+| Modal reestudio vista digital | ✅ Completado | Modal `#modalReestudio` en VistaUnificada.html. |
 | Visibilidad de casos asignados en Reestudios | ✅ Completado | `getReestudiosData()` lee de `Historico_Gestiones` de ssReestudios. |
 | Guardado correcto de gestión de reestudio | ✅ Completado | `guardarCambiosInternos()` usa discriminador `tipoSolicitudActual`; `guardarGestionReestudio()` busca por solicitudId + caso abierto. |
-| Remoción inmediata de filas tras gestión | ✅ Completado | `_quitarFilaTabla()` en las 3 vistas elimina la fila del DataTable al instante. |
+| Remoción inmediata de filas tras gestión | ✅ Completado | `_quitarFilaTabla()` elimina la fila del DataTable al instante en todas las vistas. |
 | Ordenamiento alfabético de motivos | ✅ Completado | Todos los selects de Motivo Aplazamiento/Negación están ordenados A→Z. |
-| Validación fecha futura en VistaReestudios | ✅ Completado | `guardarGestionDigitalDesdeVista()` bloquea el guardado si la fecha SAI es futura. |
+| Validación fecha futura en Radicación SAI | ✅ Completado | `_validarFechaSaiAnteDeGuardar()` bloquea el guardado si la fecha SAI es futura o tiene formato inválido. |
 | Motor de tiempos por turno | ✅ Completado | `MotorTiempos.js` con `calcularTiemposCaso()` reemplaza `calcularMinutosHabilesSLA()`. Calcula cola, gestión y general según horario real del analista (turnos + horas extra). |
 | Sistema de Turnos y Horarios | ✅ Completado | Admin puede crear turnos, asignarlos a analistas con vigencia, registrar horas extra y ver alertas de analistas sin turno. Nueva sección "Turnos" en VistaAdmin. |
 | Sistema de Permisos e Incapacidades | ✅ Completado | Analistas solicitan permisos desde su vista; admin los aprueba/rechaza en Novedades → tab Solicitudes de Permisos. Badge naranja en sidebar indica pendientes. |

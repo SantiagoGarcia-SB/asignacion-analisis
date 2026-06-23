@@ -17,16 +17,16 @@ const MAX_VIP_CONSECUTIVAS_UNIF = 2;
 const CATEGORIAS_ROTACION_UNIF = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ETIQUETAS_TIPO = {
-  nueva: 'Nuevas', biometria: 'Desplazamiento', induccion: 'Inducción',
+  nueva: 'Nuevas', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción',
   reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR',
   biometriaFallida: 'Biometría Fallida'
 };
 
 const ORDEN_PRIORIDAD_MODOS = {
-  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  REESTUDIOS_PRIMERO: ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'biometria', 'induccion']
+  NUEVAS_PRIMERO:           ['nueva', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  DESAPLAZAMIENTO_PRIMERO:  ['desaplazamiento', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO:        ['induccion', 'nueva', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  REESTUDIOS_PRIMERO:       ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'desaplazamiento', 'induccion']
 };
 
 // ============================================================
@@ -93,7 +93,7 @@ function _parseDateUnif(dateStr) {
 // ============================================================
 
 function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
-  var conteoHoy = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var conteoHoy = { nueva: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ss.getSheetByName("solicitud");
@@ -108,11 +108,14 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
     var fechaAsig = row[26];
     var fechaFin = row[28];
     var claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-    var estadoNorm = String(row[16]).trim().toUpperCase();
+    var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var estadoSinGuion = estadoNorm.replace(/_/g, ' ');
 
     var tipo = 'nueva';
-    if (estadoNorm.indexOf("BIOMETRIA") !== -1 || claseNorm.indexOf("BIOMETRIA") !== -1) tipo = 'biometria';
+    if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
     else if (claseNorm.indexOf("INDUCCI") !== -1 || claseNorm === "IND") tipo = 'induccion';
+    else if (estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO') tipo = 'nueva';
+    else tipo = 'nueva';
 
     if (_cumpleHoyUnif(fechaAsig, ctx) || _cumpleHoyUnif(fechaFin, ctx)) conteoHoy[tipo]++;
     var tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
@@ -130,9 +133,10 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
         var asigH = String(rh[25]).trim().toLowerCase();
         if (asigH !== userEmail) continue;
         var claseH = String(rh[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-        var estadoH = String(rh[16]).trim().toUpperCase();
+        var estadoH = String(rh[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var estadoHSinGuion = estadoH.replace(/_/g, ' ');
         var tipoH = 'nueva';
-        if (estadoH.indexOf("BIOMETRIA") !== -1 || claseH.indexOf("BIOMETRIA") !== -1) tipoH = 'biometria';
+        if (estadoHSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoH === 'APROBADO_PENDIENTE_BIOMETRIA') tipoH = 'desaplazamiento';
         else if (claseH.indexOf("INDUCCI") !== -1 || claseH === "IND") tipoH = 'induccion';
         if (_cumpleHoyUnif(rh[24], ctx) || _cumpleHoyUnif(rh[26], ctx)) conteoHoy[tipoH]++;
         var tieneAsigH = rh[24] instanceof Date || String(rh[24]).trim() !== "";
@@ -159,12 +163,14 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
     if (asignado !== userEmail) continue;
 
     var origenR = String(row[3]).toUpperCase().trim();
-    var tipoP = String(row[4]).toUpperCase().trim();
-    var tipo = 'reestudio';
-    if (tipoP.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoP.indexOf("BIOMETRÍA FALLIDA") !== -1) tipo = 'biometriaFallida';
-    else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-    else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
+    var tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var tipo = null;
+    if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipo = 'biometriaFallida';
+    else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+    else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+    else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
+    if (!tipo) continue;
     if (_cumpleHoyUnif(row[8], ctx) || _cumpleHoyUnif(row[9], ctx)) conteoHoy[tipo]++;
     var tieneAsig = row[8] instanceof Date ? true : String(row[8]).trim() !== "";
     var tieneFin = row[9] instanceof Date ? true : String(row[9]).trim() !== "";
@@ -181,11 +187,13 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
         var asigHR = String(rr[6]).trim().toLowerCase();
         if (asigHR !== userEmail) continue;
         var origenHR = String(rr[3]).toUpperCase().trim();
-        var tipoPHR = String(rr[4]).toUpperCase().trim();
-        var tipoHR = 'reestudio';
-        if (tipoPHR.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoPHR.indexOf("BIOMETRÍA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
-        else if (origenHR === "CORREO" && tipoPHR === "NUEVA") tipoHR = 'nuevaUar';
-        else if (origenHR === "CORREO" && tipoPHR === "ADICIONAL") tipoHR = 'deudorUar';
+        var tipoPHRNorm = String(rr[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var tipoHR = null;
+        if (tipoPHRNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
+        else if (origenHR === "CORREO" && tipoPHRNorm === "NUEVA") tipoHR = 'nuevaUar';
+        else if (origenHR === "CORREO" && tipoPHRNorm === "ADICIONAL") tipoHR = 'deudorUar';
+        else if (tipoPHRNorm === "REESTUDIO") tipoHR = 'reestudio';
+        if (!tipoHR) continue;
         if (_cumpleHoyUnif(rr[8], ctx) || _cumpleHoyUnif(rr[9], ctx)) conteoHoy[tipoHR]++;
         var tieneAsigHR = rr[8] instanceof Date ? true : String(rr[8]).trim() !== "";
         var tieneFinHR = rr[9] instanceof Date ? true : String(rr[9]).trim() !== "";
@@ -208,20 +216,21 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
     var asignado = String(row[27]).trim();
     var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     var claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var estadoSinGuion = estadoNorm.replace(/_/g, ' ');
 
     if (asignado !== "") continue;
     if (estadoNorm === "") continue;
 
-    var esBiometria = estadoNorm.indexOf("BIOMETRIA") !== -1 || claseNorm.indexOf("BIOMETRIA") !== -1;
-    if ((estadoNorm.indexOf("APROB") !== -1 && !esBiometria) || estadoNorm.indexOf("NEGAD") !== -1 || estadoNorm.indexOf("RECHAZ") !== -1 || estadoNorm.indexOf("APLAZ") !== -1) continue;
+    var esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
+    if ((estadoNorm.indexOf("APROB") !== -1 && !esDesaplazamiento) || estadoNorm.indexOf("NEGAD") !== -1 || estadoNorm.indexOf("RECHAZ") !== -1 || estadoNorm.indexOf("APLAZ") !== -1) continue;
 
     var esInduccion = claseNorm.indexOf("INDUCCI") !== -1 || claseNorm === "IND";
-    var esNueva = claseNorm.indexOf("NUEV") !== -1 || claseNorm.indexOf("REESTUDIO") !== -1 || estadoNorm.indexOf("EN_ESTUDIO") !== -1 || estadoNorm.indexOf("EN ESTUDIO") !== -1 || estadoNorm.indexOf("BORRADOR") !== -1;
+    var esNueva = estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO';
 
-    if (!esNueva && !esBiometria && !esInduccion) continue;
+    if (!esNueva && !esDesaplazamiento && !esInduccion) continue;
 
     var tipo = 'nueva';
-    if (esBiometria) tipo = 'biometria';
+    if (esDesaplazamiento) tipo = 'desaplazamiento';
     else if (esInduccion) tipo = 'induccion';
 
     if (canonTipos && canonTipos.indexOf(tipo) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
@@ -261,13 +270,15 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
     if (String(row[1]).trim() === "") continue;
 
     var origenR = String(row[3]).toUpperCase().trim();
-    var tipoP = String(row[4]).toUpperCase().trim();
+    var tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-    var tipo = 'reestudio';
-    if (tipoP.indexOf("BIOMETRIA FALLIDA") !== -1 || tipoP.indexOf("BIOMETRÍA FALLIDA") !== -1) tipo = 'biometriaFallida';
-    else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-    else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
+    var tipo = null;
+    if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipo = 'biometriaFallida';
+    else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+    else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+    else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
+    if (!tipo) continue;
     if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
     pendientes.push({
@@ -408,6 +419,9 @@ function RequestLeadUnificado(equipoIdOverride) {
     var turnoCheck = verificarTurnoActivo(userEmail, ss);
     if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
 
+    var permisoCheck = verificarPermisoVigenteHoy();
+    if (permisoCheck.tienePermiso) return { success: false, message: "⛔ Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
+
     // Resolver equipo
     var equipo;
     if (equipoIdOverride) {
@@ -424,7 +438,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var ctx = _buildFechaHoyFormats();
 
     // === CONTEO ===
-    var conteoHoyTotal = { nueva: 0, biometria: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+    var conteoHoyTotal = { nueva: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
     var capPendienteReal = 0;
 
     var refPrincipal = null;
@@ -481,6 +495,7 @@ function RequestLeadUnificado(equipoIdOverride) {
       ordenPrioridad = ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'];
     } else {
       var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
       ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['NUEVAS_PRIMERO'];
     }
 
@@ -518,7 +533,7 @@ function RequestLeadUnificado(equipoIdOverride) {
       if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
       if (a.esCRM && !b.esCRM) return -1;
       if (!a.esCRM && b.esCRM) return 1;
-      return a.tipo === 'biometria' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+      return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
     });
 
     // === SELECCIONAR CANDIDATO ===

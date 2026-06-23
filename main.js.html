@@ -9,12 +9,91 @@ let estadoGlobalAsesor = "INACTIVO";
 let tipoSolicitudActual = "";
 let cargaInicialHecha = false;
 var _timerFinTurno = null;
+var _pollingTablaVacia = null;
+var _POLLING_INTERVALO_MS = 2 * 60 * 1000;
+var _pollingEnCurso = false;
+
+function _mostrarBannerPolling(visible) {
+  var banner = document.getElementById('bannerPolling');
+  if (!banner) return;
+  if (visible) {
+    banner.classList.remove('d-none');
+    banner.style.display = 'flex';
+  } else {
+    banner.classList.add('d-none');
+    banner.style.display = 'none';
+  }
+}
+
+function _actualizarHoraPolling() {
+  var el = document.getElementById('pollingUltimaBusqueda');
+  if (!el) return;
+  var ahora = new Date();
+  var h = String(ahora.getHours()).padStart(2, '0');
+  var m = String(ahora.getMinutes()).padStart(2, '0');
+  el.textContent = 'Última revisión: ' + h + ':' + m;
+}
+
+function _iniciarPollingTablaVacia() {
+  if (_pollingTablaVacia) return;
+  _mostrarBannerPolling(true);
+  _actualizarHoraPolling();
+  _pollingTablaVacia = setInterval(function() {
+    if (estadoGlobalAsesor !== 'ACTIVO') return;
+    if (datosGlobales && datosGlobales.length > 0) {
+      _detenerPollingTablaVacia();
+      return;
+    }
+    if (_pollingEnCurso) return;
+    _pollingEnCurso = true;
+    _actualizarHoraPolling();
+    var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        _pollingEnCurso = false;
+        _actualizarHoraPolling();
+        if (res && res.success && res.nueva) {
+          var msgEl = document.getElementById('pollingMensaje');
+          if (msgEl) msgEl.textContent = '¡Caso encontrado! Cargando solicitud...';
+          Swal.fire({ icon: 'success', title: '¡Nuevo caso asignado!', text: res.message || 'Cargando solicitud...', toast: true, position: 'top-end', showConfirmButton: false, timer: 6000, timerProgressBar: true });
+          yaSeIntentoAsignar = false;
+          setTimeout(function() { cargarDatos(); }, 2000);
+        }
+      })
+      .withFailureHandler(function() {
+        _pollingEnCurso = false;
+        _actualizarHoraPolling();
+      })
+      [fnName]();
+  }, _POLLING_INTERVALO_MS);
+}
+
+function _detenerPollingTablaVacia() {
+  if (_pollingTablaVacia) { clearInterval(_pollingTablaVacia); _pollingTablaVacia = null; }
+  _pollingEnCurso = false;
+  _mostrarBannerPolling(false);
+}
+
+function _asegurarPollingActivo() {
+  if (estadoGlobalAsesor === 'ACTIVO' && (!datosGlobales || datosGlobales.length === 0) && !_pollingTablaVacia) {
+    _iniciarPollingTablaVacia();
+  }
+}
 
 function _programarAutoInactivo() {
   if (_timerFinTurno) { clearTimeout(_timerFinTurno); _timerFinTurno = null; }
   google.script.run
     .withSuccessHandler(function(info) {
-      if (!info || !info.tieneTurno) return;
+      var badge = document.getElementById('turnoInfoBadge');
+      var txt = document.getElementById('turnoFinText');
+      if (!info || !info.tieneTurno) {
+        if (badge) badge.style.display = 'none';
+        return;
+      }
+      if (badge && txt) {
+        txt.textContent = (info.nombreTurno ? info.nombreTurno + ' — ' : '') + 'Hasta ' + info.horaFinStr;
+        badge.style.display = 'block';
+      }
       var msRestantes = info.minutosRestantes * 60 * 1000;
       if (msRestantes <= 0) {
         _forzarInactivoPorTurno(info);
@@ -300,8 +379,8 @@ function cargarDatos() {
       }
 
       var tipoVista = response.tipoVista || 'DIGITAL';
-      if (tipoVista === 'BIOMETRIA') {
-        renderizarTablaBiometria(response.tabla);
+      if (tipoVista === 'REESTUDIOS') {
+        renderizarTabla(_normalizarFilasReestudios(response.tabla));
       } else {
         renderizarTabla(response.tabla);
       }
@@ -332,12 +411,13 @@ function cargarDatos() {
       // UX: Update sync time
       if (typeof UX !== 'undefined') UX.updateSyncTime();
 
-      // Count pending: biometria/reestudios no tienen header row
+      // Digital: getTableData incluye header row → length - 1
+      // Reestudios: getReestudiosData devuelve solo datos → length directo
       var registrosPendientes = 0;
-      if (tipoVista === 'DIGITAL') {
-        registrosPendientes = response.tabla ? response.tabla.length - 1 : 0;
-      } else {
+      if (tipoVista === 'REESTUDIOS') {
         registrosPendientes = response.tabla ? response.tabla.length : 0;
+      } else {
+        registrosPendientes = response.tabla ? Math.max(response.tabla.length - 1, 0) : 0;
       }
       
       if (typeof animarNumero === "function") {
@@ -358,6 +438,8 @@ function cargarDatos() {
 
       const tablaRealmenteVacia = registrosPendientes <= 0;
       const estadoParaValidar = (typeof estadoGlobalAsesor !== 'undefined' ? estadoGlobalAsesor : ($('#selectEstadoAsesor').val() || "INACTIVO")).toUpperCase();
+
+      if (!tablaRealmenteVacia) _detenerPollingTablaVacia();
 
       if (tablaRealmenteVacia && !yaSeIntentoAsignar && estadoParaValidar === "ACTIVO") {
         yaSeIntentoAsignar = true; 
@@ -381,6 +463,8 @@ function cargarDatos() {
                 cargarDatos();
               }, 3000);
             } else {
+              yaSeIntentoAsignar = false;
+              _iniciarPollingTablaVacia();
               console.warn("Asignación omitida: " + res.message);
               if (res.message && res.message.trim() !== '') {
                 Swal.fire({
@@ -398,13 +482,15 @@ function cargarDatos() {
           })
           .withFailureHandler(function(err) {
             console.error("Error en autoAsignarAlEntrar:", err);
-            yaSeIntentoAsignar = false; 
+            yaSeIntentoAsignar = false;
+            _iniciarPollingTablaVacia();
           })
           [window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar']();
 
       } else {
         if (!tablaRealmenteVacia) console.log("Asignación omitida: La tabla ya tiene datos.");
         if (estadoParaValidar !== "ACTIVO") console.log("Asignación omitida: El asesor está en estado " + estadoParaValidar);
+        if (tablaRealmenteVacia && estadoParaValidar === "ACTIVO") _asegurarPollingActivo();
       }
     })
     .withFailureHandler(function (e) {
@@ -417,8 +503,36 @@ function cargarDatos() {
         text: 'No se pudieron cargar los datos de la tabla.',
         confirmButtonColor: '#253150'
       });
+      _asegurarPollingActivo();
     })
     [_dataFetchFn]();
+}
+
+// Convierte las filas-objeto de getReestudiosData() a la estructura posicional
+// "__REESTUDIO__" que entienden renderizarTabla() y poblarModalRst().
+function _normalizarFilasReestudios(filas) {
+  if (!Array.isArray(filas)) return [['_header_rst']];
+  var out = filas.map(function(o) {
+    // Si ya es un array (caso defensivo), devolverlo tal cual.
+    if (Array.isArray(o)) return o;
+    var fila = new Array(38).fill('');
+    fila[0]  = o.solicitud || '';
+    fila[1]  = o.poliza || o.origen || '';   // columna "Póliza/Origen" de la tabla
+    fila[2]  = o.linkDrive || '';
+    fila[3]  = o.origen || '';
+    fila[4]  = o.tipoProceso || '';
+    fila[5]  = o.claseSolicitud || o.clase || '';
+    fila[8]  = o.fechaAsignacion || '';
+    fila[9]  = o.canon || '';
+    fila[16] = '__REESTUDIO__';
+    fila[17] = o.fechaRadicacion || '';
+    fila[20] = o.tipoProceso || o.claseSolicitud || o.clase || '';
+    fila[26] = o.fechaAsignacion || '';
+    fila.push('');                            // CategoriaScore
+    return fila;
+  });
+  // renderizarTabla descarta la primera fila (cabecera); anteponemos un placeholder.
+  return [['_header_rst']].concat(out);
 }
 
 function renderizarTabla(data) {
@@ -435,54 +549,49 @@ function renderizarTabla(data) {
   $('#miTabla').DataTable({
     data: registros,
     columns: [
-      { title: "Solicitud", data: 0}, 
-
+      { title: "Solicitud", data: 0, className: "fw-bold" },
       {
         title: "Tipo",
         data: null,
         render: (d, t, r) => {
           const estado = String(r[16] || '').toUpperCase();
           const clase = String(r[20] || '').toUpperCase();
-          
           if (estado === '__REESTUDIO__') {
-            if (clase.includes("NUEVA UAR")) return `<span class="badge shadow-sm" style="background:#fce7f3; color:#be185d; border:1px solid #fbcfe8; padding:5px 10px; border-radius:8px;"><i class="bi bi-person-plus me-1"></i>Nueva UAR</span>`;
-            if (clase.includes("DEUDOR UAR")) return `<span class="badge shadow-sm" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:5px 10px; border-radius:8px;"><i class="bi bi-person-dash me-1"></i>Deudor UAR</span>`;
-            if (clase.includes("BIOMETR")) return `<span class="badge shadow-sm" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Bio. Fallida</span>`;
-            return `<span class="badge shadow-sm" style="background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
+            if (clase.includes("NUEVA UAR")) return `<span class="badge shadow-sm" style="background:#fce7f3;color:#be185d;border:1px solid #fbcfe8;padding:5px 10px;border-radius:8px;"><i class="bi bi-person-plus me-1"></i>Nueva UAR</span>`;
+            if (clase.includes("DEUDOR UAR")) return `<span class="badge shadow-sm" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;border-radius:8px;"><i class="bi bi-person-dash me-1"></i>Deudor UAR</span>`;
+            if (clase.includes("BIOMETR")) return `<span class="badge shadow-sm" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Bio. Fallida</span>`;
+            return `<span class="badge shadow-sm" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe;padding:5px 10px;border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
           }
-          if (estado.includes('BIOMETRIA')) {
-            return `<span class="badge shadow-sm" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Biometría</span>`;
-          } else if (clase.includes('INDUCCI') || clase === 'IND') {
-            return `<span class="badge shadow-sm" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
-          } else {
-            return `<span class="badge shadow-sm" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:5px 10px; border-radius:8px;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
-          }
+          if (estado === '__DESAPLAZAMIENTO__' || estado.includes('BIOMETRIA')) return `<span class="badge shadow-sm" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;padding:5px 10px;border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Desaplazamiento</span>`;
+          if (clase.includes('INDUCCI') || clase === 'IND') return `<span class="badge shadow-sm" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
+          return `<span class="badge shadow-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:5px 10px;border-radius:8px;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
         }
       },
-      { title: "Póliza", data: null, render: (d, t, r) => {
-          if (String(r[16] || '') === '__REESTUDIO__') return '<span class="text-muted" style="font-size:0.8rem;">Origen: </span>' + (r[3] || '—');
-          return r[1] || '';
+      {
+        title: "Clase",
+        data: null,
+        render: (d, t, r) => {
+          const m = String(r[16] || '').toUpperCase();
+          if (m === '__REESTUDIO__') return r[5] || r[4] || '—';
+          return r[20] || '—';
         }
       },
-      { title: "Inquilino", data: null, render: (d, t, r) => {
-          if (String(r[16] || '') === '__REESTUDIO__') return r[5] || '—';
-          return r[4] || '';
-        }
+      {
+        title: "Radicación",
+        data: 17,
+        render: (d) => d || '—'
       },
-      { title: "Canon", data: 9 },
       {
         title: "Estado",
         data: null,
         render: (d, t, r) => {
           const s = String(r[16] || '').toUpperCase();
-          if (s === '__REESTUDIO__') {
-            var claseEst = String(r[20] || '').toUpperCase();
-            if (claseEst.includes('BIOMETR')) return `<span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; padding:5px 10px; border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Bio. Fallida</span>`;
-            return `<span class="badge" style="background:#ede9fe; color:#7c3aed; border:1px solid #ddd6fe; padding:5px 10px; border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
-          }
-          if (s.includes('APLAZ')) return `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; padding:5px 10px; border-radius:8px;">Aplazado</span>`;
-          if (s.includes('APROB')) return `<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:5px 10px; border-radius:8px;">Aprobado</span>`;
-          return `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; padding:5px 10px; border-radius:8px;">${r[16] || ''}</span>`;
+          if (s === '__REESTUDIO__' || s === '__DESAPLAZAMIENTO__') return `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;">Pendiente</span>`;
+          if (s.includes('APLAZ')) return `<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:5px 10px;border-radius:8px;">Aplazado</span>`;
+          if (s.includes('APROBADO') && s.includes('BIOMETRIA')) return `<span class="badge" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;padding:5px 10px;border-radius:8px;">Pend. Biometría</span>`;
+          if (s.includes('APROB')) return `<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:5px 10px;border-radius:8px;">Aprobado</span>`;
+          if (s.includes('PENDIENTE')) return `<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;">${r[16]}</span>`;
+          return `<span class="badge" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;padding:5px 10px;border-radius:8px;">${r[16] || 'Pendiente'}</span>`;
         }
       },
       {
@@ -536,8 +645,8 @@ function renderizarTabla(data) {
     let tipoBadgeModal = '';
     
     if (estadoFila.includes('BIOMETRIA')) {
-        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-fingerprint me-1"></i>Biometría</span>`;
-        tipoSolicitudActual = 'biometria';
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-fingerprint me-1"></i>Desaplazamiento</span>`;
+        tipoSolicitudActual = 'desaplazamiento';
     } else if (claseFila.includes('INDUCCI') || claseFila === 'IND') {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
         tipoSolicitudActual = 'induccion';
@@ -554,7 +663,7 @@ function renderizarTabla(data) {
 
  
     const polizaText = fila[1] || '';
-    const categoriaScore = fila[fila.length - 1] ? String(fila[fila.length - 1]).toUpperCase() : '';
+    const categoriaScore = fila[fila.length - 2] ? String(fila[fila.length - 2]).toUpperCase() : '';
     
     if (categoriaScore.includes('VIP')) {
       $('#d_poliza').html(`<span class="badge shadow-sm" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; padding:6px 12px; border-radius:8px;"><i class="bi bi-star-fill me-1"></i>${polizaText} (VIP)</span>`);
@@ -875,10 +984,11 @@ function cambiarMiEstado(nuevoEstado) {
   if (estadoGlobalAsesor === 'ACTIVO') {
     statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
     card.css('border-color', '#22c55e');
-    yaSeIntentoAsignar = false; 
+    yaSeIntentoAsignar = false;
   } else {
     statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
     card.css('border-color', '#e2e8f0');
+    if (estadoGlobalAsesor === 'INACTIVO') _detenerPollingTablaVacia();
   }
 
   var estadoAnterior = estadoGlobalAsesor;
@@ -1167,16 +1277,12 @@ var _filaActualUnificada = null;
 
 function detectarTipoCaso(rowData) {
   if (!rowData) return 'digital';
-  if (window.__EQUIPO_CONFIG__) {
-    var eqId = window.__EQUIPO_CONFIG__.id;
-    if (eqId === 'BIOMETRIA') return 'biometria';
-    if (eqId === 'REESTUDIOS') return 'reestudio';
-  }
-  var estado = String(rowData[16] || '').toUpperCase();
-  var clase = String(rowData[20] || '').toUpperCase();
-  if (estado === '__REESTUDIO__') return 'reestudio';
-  if (estado.indexOf('BIOMETRIA') !== -1 || clase.indexOf('BIOMETRIA') !== -1) return 'biometria';
-  if (rowData.__fuente === 'REESTUDIO' || (rowData[3] && String(rowData[3]).toUpperCase() === 'VICTORIA')) return 'reestudio';
+  var marcador = String(rowData[16] || '').toUpperCase();
+  if (marcador === '__REESTUDIO__') return 'reestudio';
+  if (marcador === '__DESAPLAZAMIENTO__') return 'desaplazamiento';
+  if (rowData.__fuente === 'REESTUDIO') return 'reestudio';
+  var marcadorSinGuion = marcador.replace(/_/g, ' ');
+  if (marcadorSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || marcador === 'APROBADO_PENDIENTE_BIOMETRIA') return 'desaplazamiento';
   return 'digital';
 }
 
@@ -1187,8 +1293,10 @@ function abrirModalUnificado(index) {
   tipoSolicitudActual = detectarTipoCaso(fila);
 
   switch (tipoSolicitudActual) {
-    case 'biometria':
+    case 'desaplazamiento':
       poblarModalBio(fila);
+      var bioInfoTab = document.querySelector('#modalBiometria button[data-bs-target="#bio_tab_info"]');
+      if (bioInfoTab) new bootstrap.Tab(bioInfoTab).show();
       new bootstrap.Modal(document.getElementById('modalBiometria')).show();
       break;
     case 'reestudio':
@@ -1296,7 +1404,7 @@ function _buildFaroSvg() {
 }
 
 function _verificarAlertaScore(fila, polizaElId, polizaText) {
-  var categoriaScore = fila[fila.length - 1] ? String(fila[fila.length - 1]).toUpperCase() : '';
+  var categoriaScore = fila[fila.length - 2] ? String(fila[fila.length - 2]).toUpperCase() : '';
   var polizaEl = document.getElementById(polizaElId);
   if (!polizaEl) return;
 
@@ -1321,7 +1429,8 @@ function _verificarAlertaScore(fila, polizaElId, polizaText) {
 }
 
 function poblarModalDig(fila) {
-  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val || ''; };
+  // Campos informativos: muestran "—" cuando no hay dato para evitar celdas en blanco.
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—'; };
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
   setTxt('dig_solicitud', fila[0]);
@@ -1341,6 +1450,10 @@ function poblarModalDig(fila) {
   setTxt('dig_destinoInmueble', fila[12]);
   setTxt('dig_canon', fila[9] ? '$' + Number(fila[9]).toLocaleString('es-CO') : '');
   setTxt('dig_cuota', fila[10] ? '$' + Number(fila[10]).toLocaleString('es-CO') : '');
+  setTxt('dig_clase', fila[20] || '');
+  setTxt('dig_uar', fila[21] || 'No');
+  setTxt('dig_canal', fila[36] || '');
+  setTxt('dig_categoriaScore', fila[37] || fila[fila.length - 2] || '');
   setTxt('dig_nombreAsesor', fila[14]);
   setTxt('dig_correoAsesor', fila[15]);
 
@@ -1368,7 +1481,14 @@ function poblarModalDig(fila) {
   var claseNorm = String(fila[20] || '').toUpperCase();
   var selectEstadoDig = document.getElementById('dig_estado_q');
   var contBioDig = document.getElementById('dig_contenedor_biometria');
-  if (claseNorm.indexOf('INDUCCI') !== -1 || claseNorm === 'IND') {
+  var tipoBadgeEl = document.getElementById('dig_tipoBadge');
+  var esInduccion = (claseNorm.indexOf('INDUCCI') !== -1 || claseNorm === 'IND');
+  if (tipoBadgeEl) {
+    tipoBadgeEl.innerHTML = esInduccion
+      ? '<span class="badge ms-1" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-easel me-1"></i>Inducción</span>'
+      : '<span class="badge ms-1" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>';
+  }
+  if (esInduccion) {
     if (contBioDig) contBioDig.classList.add('d-none');
     setVal('dig_biometria', 'No');
     if (selectEstadoDig) {
@@ -1395,24 +1515,44 @@ function poblarModalDig(fila) {
 }
 
 function poblarModalBio(fila) {
-  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
-  setVal('bio_solicitudId', fila[6] || fila[0]);
+  // Los datos vienen de getTableData() con los mismos índices que digital:
+  // fila[0]=solicitud, fila[1]=poliza, fila[4]=inquilino, fila[6]=telefono,
+  // fila[9]=canon, fila[10]=cuota, fila[11]=direccion, fila[13]=ciudad(sucursal),
+  // fila[14]=inmobiliaria... pero histToSol mapea diferente.
+  // Usamos los mismos índices que poblarModalDig.
+  var solId = fila[0] || '';
+  document.getElementById('bio_solicitudId').value = solId;
   var dispEl = document.getElementById('bio_displaySol');
-  if (dispEl) dispEl.textContent = fila[6] || fila[0] || '';
-  setVal('bio_poliza', fila[3] || '');
-  _verificarAlertaScore(fila, 'bio_poliza', fila[3] || '');
-  setVal('bio_inmobiliaria', fila[4] || '');
-  setVal('bio_ciudad', fila[5] || '');
-  setVal('bio_direccion', fila[10] || '');
-  setVal('bio_inquilinoNombre', fila[11] || '');
-  setVal('bio_canon', fila[7] || '');
-  setVal('bio_celular', fila[8] || '');
-  setVal('bio_fechaRadicacionSai', '');
-  setVal('bio_resLlamada', '');
-  setVal('bio_fueAprobada', '');
-  setVal('bio_resFinal', '');
+  if (dispEl) dispEl.textContent = solId;
 
-  var solId = fila[6] || fila[0];
+  var setTxt = function(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—';
+  };
+
+  // Tab Información — mismos índices que el modal digital
+  setTxt('bio_inquilino', fila[4]);
+  setTxt('bio_celular', fila[6]);
+  setTxt('bio_poliza', fila[1]);
+  _verificarAlertaScore(fila, 'bio_poliza', fila[1] || '');
+  setTxt('bio_inmobiliaria', fila[fila.length - 1] || '');
+  setTxt('bio_sucursal', fila[13]);
+  setTxt('bio_canon', fila[9] ? '$' + Number(String(fila[9]).replace(/[^\d.-]/g,'')).toLocaleString('es-CO') : '');
+  setTxt('bio_cuota', fila[10] ? '$' + Number(String(fila[10]).replace(/[^\d.-]/g,'')).toLocaleString('es-CO') : '');
+  setTxt('bio_direccion', fila[11]);
+
+  // Reset tab Gestión
+  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+  setVal('bio_resLlamada', '');
+  setVal('bio_resFinal', '');
+  setVal('bio_motivoAplazamiento', '');
+  if (typeof MotivoPicker !== 'undefined') {
+    try { MotivoPicker.reset('bio_motivoAplazamiento'); } catch(e) {}
+  }
+  var contAplaz = document.getElementById('bio_contenedor_aplazamiento');
+  if (contAplaz) contAplaz.classList.add('d-none');
+
+  // Tab Historial
   var accEl = document.getElementById('bio_accordionResultados');
   if (accEl && solId) {
     accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Consultando deudores...</p></div>';
@@ -1420,14 +1560,14 @@ function poblarModalBio(fila) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('bio_accordionResultados', res.resultados);
       } else {
-        accEl.innerHTML = '<p class="text-muted text-center py-3">Sin resultados disponibles.</p>';
+        accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#94a3b8;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
       }
     }).getDataUniqueForSolicitud(solId);
   }
 }
 
 function poblarModalRst(fila) {
-  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = val || ''; };
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—'; };
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
   var esAdaptada = String(fila[16] || '') === '__REESTUDIO__';
@@ -1443,21 +1583,20 @@ function poblarModalRst(fila) {
   setTxt('rst_clase', fila[5]);
   setVal('rst_solicitud_id', solicitudId);
   setVal('rst_poliza', '');
-  _verificarAlertaScore(fila, 'rst_solicitud_badge', fila[1] || fila[0]);
   setVal('rst_estado_q', '');
   setVal('rst_observaciones', '');
 
   var linkDrive = fila[2] || '';
   var driveLink = document.getElementById('rst_linkDrive');
-  var driveNA = document.getElementById('rst_linkDriveNA');
+  var driveContainer = document.getElementById('rst_driveContainer');
   var driveBtnHeader = document.getElementById('rst_btnDrive');
-  if (linkDrive) {
-    if (driveLink) { driveLink.href = linkDrive; driveLink.classList.remove('d-none'); }
-    if (driveNA) driveNA.classList.add('d-none');
+  if (linkDrive && linkDrive.startsWith('http')) {
+    if (driveLink) { driveLink.href = linkDrive; driveLink.classList.remove('d-none'); driveLink.style.display = 'flex'; }
+    if (driveContainer) driveContainer.style.display = '';
     if (driveBtnHeader) { driveBtnHeader.href = linkDrive; driveBtnHeader.classList.remove('d-none'); }
   } else {
-    if (driveLink) driveLink.classList.add('d-none');
-    if (driveNA) driveNA.classList.remove('d-none');
+    if (driveLink) { driveLink.classList.add('d-none'); driveLink.style.display = 'none'; }
+    if (driveContainer) driveContainer.style.display = 'none';
     if (driveBtnHeader) driveBtnHeader.classList.add('d-none');
   }
 
@@ -1465,6 +1604,23 @@ function poblarModalRst(fila) {
   var neg = document.getElementById('rst_contenedor_negacion');
   if (aplaz) aplaz.classList.add('d-none');
   if (neg) neg.classList.add('d-none');
+  if (typeof MotivoPicker !== 'undefined') {
+    MotivoPicker.reset('rst_motivo_aplazamiento');
+    MotivoPicker.reset('rst_motivo_negacion');
+  }
+
+  var accEl = document.getElementById('rst_accordionResultados');
+  if (accEl && solicitudId) {
+    var solIdLimpio = solicitudId.replace(/\*/g, '').trim();
+    accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Consultando historial...</p></div>';
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && res.resultados) {
+        renderResultadosUnificados('rst_accordionResultados', res.resultados);
+      } else {
+        if (accEl) accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#94a3b8;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
+      }
+    }).getDataUniqueForSolicitud(solIdLimpio);
+  }
 }
 
 function renderResultadosUnificados(containerId, resultados) {
@@ -1483,9 +1639,20 @@ function renderResultadosUnificados(containerId, resultados) {
     html += '<div id="unif_acc_' + idx + '" class="accordion-collapse collapse ' + (idx === 0 ? 'show' : '') + '">';
     html += '<div class="accordion-body" style="padding:12px;">';
     items.forEach(function(item) {
-      html += '<div class="d-flex justify-content-between align-items-center py-2 border-bottom">';
-      html += '<div><strong>' + (item.nombre || '') + '</strong><br><small class="text-muted">' + (item.documento || '') + '</small></div>';
-      html += '<span class="badge ' + (item.estadoEstudio === 'APROBADO' ? 'bg-success' : 'bg-danger') + '">' + (item.estadoEstudio || item.descripcionResultado || '') + '</span>';
+      var estado = (item.estadoEstudio || '').toUpperCase();
+      var badgeClass = 'bg-secondary';
+      if (estado.indexOf('APROBADO') !== -1) badgeClass = 'bg-success';
+      else if (estado.indexOf('NEGAD') !== -1 || estado.indexOf('RECHAZ') !== -1) badgeClass = 'bg-danger';
+      else if (estado.indexOf('ESTUDIO') !== -1 || estado.indexOf('BORRADOR') !== -1) badgeClass = 'bg-warning text-dark';
+      else if (estado.indexOf('APLAZ') !== -1 || estado.indexOf('PENDIENTE') !== -1) badgeClass = 'bg-info text-dark';
+      html += '<div class="p-3 mb-2 bg-white border rounded-3">';
+      html += '<div class="d-flex justify-content-between align-items-center mb-2">';
+      html += '<div><strong>' + (item.nombre || 'Sin nombre') + '</strong><br><small class="text-muted"><i class="bi bi-card-heading me-1"></i>' + (item.identificacion || '') + '</small></div>';
+      html += '<span class="badge ' + badgeClass + '" style="font-size:0.78rem;">' + (item.estadoEstudio || 'Sin estado') + '</span>';
+      html += '</div>';
+      if (item.descripcionResultado) {
+        html += '<div class="pt-2 border-top" style="font-size:0.82rem;"><i class="bi bi-file-text me-1 text-muted"></i><span class="text-dark">' + item.descripcionResultado + '</span></div>';
+      }
       html += '</div>';
     });
     html += '</div></div></div>';
@@ -1526,6 +1693,25 @@ function manejarGuardarDigital() {
   var solId = btn.getAttribute('data-solicitud-id');
   var estado = document.getElementById('dig_estado_q').value;
   if (!estado) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
+
+  var esInduccionDig = (tipoSolicitudActual === 'induccion');
+  var biometriaVal = document.getElementById('dig_biometria').value || '';
+  if (!esInduccionDig && !biometriaVal) {
+    Swal.fire({ icon: 'warning', title: 'Biometría requerida', text: 'Indica el resultado de biometría antes de guardar.' });
+    return;
+  }
+
+  var estadoUpperDig = estado.toUpperCase();
+  var motivoAplazDig = document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '';
+  var motivoNegDig = document.getElementById('dig_motivo_negacion') ? document.getElementById('dig_motivo_negacion').value : '';
+  if (estadoUpperDig.indexOf('APLAZ') !== -1 && !motivoAplazDig) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de aplazamiento es obligatorio.' });
+    return;
+  }
+  if ((estadoUpperDig.indexOf('NEGAD') !== -1 || estadoUpperDig.indexOf('RECHAZ') !== -1) && !motivoNegDig) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' });
+    return;
+  }
   if (!_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
 
   UX.setBtnLoading(btn, true);
@@ -1533,10 +1719,10 @@ function manejarGuardarDigital() {
 
   var datos = {
     solicitudId: solId,
-    biometria: document.getElementById('dig_biometria').value || '',
+    biometria: biometriaVal,
     estado_q: estado,
-    motivo_aplazamiento: document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '',
-    motivo_negacion: document.getElementById('dig_motivo_negacion') ? document.getElementById('dig_motivo_negacion').value : '',
+    motivo_aplazamiento: motivoAplazDig,
+    motivo_negacion: motivoNegDig,
     fecha_radicacion_sai: document.getElementById('dig_fecha_radicacion_sai').value || '',
     comentarios_gestion: document.getElementById('dig_comentarios_gestion').value || ''
   };
@@ -1550,16 +1736,23 @@ function manejarGuardarDigital() {
 function manejarGuardarBiometria() {
   var btn = document.getElementById('bio_btnGuardar');
   var solId = document.getElementById('bio_solicitudId').value;
+  var resFinal = (document.getElementById('bio_resFinal').value || '').toUpperCase();
+  var resLlamada = document.getElementById('bio_resLlamada').value || '';
+  var motivoAplaz = '';
+
+  if (!resLlamada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Selecciona el resultado de la llamada.', confirmButtonColor: '#253150' }); return; }
+  if (!resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.', confirmButtonColor: '#253150' }); return; }
+  if (resFinal === 'APLAZADA') {
+    var selMotivo = document.getElementById('bio_motivoAplazamiento');
+    motivoAplaz = selMotivo ? selMotivo.value : '';
+    if (!motivoAplaz) { Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'Selecciona el motivo de aplazamiento.', confirmButtonColor: '#253150' }); return; }
+  }
+
   var datosForm = {
-    fechaRadicacionSai: document.getElementById('bio_fechaRadicacionSai').value || '',
-    resLlamada: document.getElementById('bio_resLlamada').value || '',
-    fueAprobada: document.getElementById('bio_fueAprobada').value || '',
-    resFinal: document.getElementById('bio_resFinal').value || ''
+    resLlamada: resLlamada,
+    resFinal: resFinal,
+    motivoAplazamiento: motivoAplaz
   };
-  if (!datosForm.resLlamada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Selecciona el resultado de la llamada.' }); return; }
-  if (!datosForm.fueAprobada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Indica si la solicitud fue aprobada.' }); return; }
-  if (!datosForm.resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.' }); return; }
-  if (!_validarFechaSaiAnteDeGuardar('bio_fechaRadicacionSai')) return;
 
   UX.setBtnLoading(btn, true);
   UX.showModalOverlay('modalBiometria', true);
@@ -1582,6 +1775,14 @@ function manejarGuardarReestudio() {
     fuente: 'REESTUDIO'
   };
   if (!datos.estadoGestion) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
+  if (!datos.poliza || !String(datos.poliza).trim()) { Swal.fire({ icon: 'warning', title: 'Póliza requerida', text: 'El campo Póliza es obligatorio.' }); return; }
+  var estadoUpperRst = datos.estadoGestion.toUpperCase();
+  if (estadoUpperRst.indexOf('APLAZ') !== -1 && !datos.motivoAplazamiento) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de aplazamiento es obligatorio.' }); return;
+  }
+  if ((estadoUpperRst.indexOf('NEGAD') !== -1 || estadoUpperRst.indexOf('RECHAZ') !== -1) && !datos.motivoNegacion) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' }); return;
+  }
 
   UX.setBtnLoading(btn, true);
   UX.showModalOverlay('modalReestudio', true);

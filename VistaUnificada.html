@@ -52,8 +52,9 @@
 <!-- NAVBAR -->
 <nav class="navbar-glass">
   <div class="navbar-glass-brand">
-    <div class="brand-icon" id="navEquipoIcono"><i class="bi bi-shield-check"></i></div>
-    <span id="navEquipoNombre">Gestión de Solicitudes</span>
+    <img src="https://www.ellibertador.co/assets/img/logo.svg" alt="El Libertador" class="navbar-brand-logo">
+    <div class="navbar-brand-sep"></div>
+    <span class="navbar-brand-title" id="navEquipoNombre">Gestión de Solicitudes</span>
     <span id="navEquipoBadge" class="badge ms-2" style="font-size:0.7rem;border-radius:8px;padding:4px 10px;"></span>
   </div>
 
@@ -64,6 +65,10 @@
         <p class="mb-0" style="font-size:0.6rem;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,0.6);">Estado Actual</p>
         <p id="currentStatusText" class="mb-0 fw-bold" style="font-size:0.85rem;">INACTIVO</p>
       </div>
+    </div>
+
+    <div id="turnoInfoBadge" style="display:none;background:rgba(255,255,255,0.1);border-radius:10px;padding:4px 10px;font-size:0.72rem;color:rgba(255,255,255,0.85);white-space:nowrap;">
+      <i class="bi bi-clock me-1"></i><span id="turnoFinText"></span>
     </div>
 
     <div class="dropdown">
@@ -141,6 +146,18 @@
   </div>
 </div>
 
+<!-- BANNER POLLING SILENCIOSO -->
+<div class="container">
+  <div id="bannerPolling" class="d-none" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border:1px solid #bfdbfe;border-radius:14px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+    <div class="spinner-grow spinner-grow-sm text-primary" role="status" style="width:14px;height:14px;"></div>
+    <div style="flex:1;">
+      <p class="mb-0 fw-bold" style="font-size:0.85rem;color:#1e40af;">Sin solicitudes por ahora</p>
+      <p class="mb-0" style="font-size:0.78rem;color:#3b82f6;" id="pollingMensaje">Buscando nuevos casos automáticamente cada 2 min. No necesitas recargar la página.</p>
+    </div>
+    <div id="pollingUltimaBusqueda" class="text-end" style="font-size:0.72rem;color:#64748b;white-space:nowrap;"></div>
+  </div>
+</div>
+
 <!-- TABLA PRINCIPAL -->
 <div class="container mb-5">
   <div class="table-container">
@@ -177,7 +194,7 @@
             <i class="bi bi-file-earmark-ruled fs-4 text-white"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Solicitud a gestionar</h5>
+            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Solicitud <span id="dig_tipoBadge"></span></h5>
             <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Solicitud: <span id="dig_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
           </div>
           <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
@@ -185,7 +202,7 @@
       </div>
 
       <ul class="nav nav-tabs-modern" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dig_tab_general" type="button"><i class="bi bi-info-square-fill me-2"></i>General</button></li>
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#dig_tab_general" type="button"><i class="bi bi-info-square-fill me-2"></i>Información</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dig_tab_gestion" type="button"><i class="bi bi-pencil-square me-2"></i>Gestión</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dig_tab_historial" type="button"><i class="bi bi-clock-history me-2"></i>Historial</button></li>
       </ul>
@@ -203,10 +220,10 @@
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Solicitante e Ingresos</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
               <div class="row g-4">
-                <div class="col-md-4"><label class="d-block"><i class="bi bi-person me-1"></i>Nombre Inquilino</label><p class="fw-bold text-dark mb-0 text-truncate" id="dig_nombreInquilino"></p></div>
+                <div class="col-md-4"><label class="d-block"><i class="bi bi-person me-1"></i>Nombre Inquilino</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_nombreInquilino"></p></div>
                 <div class="col-md-4"><label class="d-block"><i class="bi bi-card-heading me-1"></i>Identificación</label><p class="fw-bold text-dark mb-0"><span id="dig_tipoIdentificacion"></span> <span id="dig_identificacionInquilino"></span></p></div>
                 <div class="col-md-4"><label class="d-block"><i class="bi bi-calendar3 me-1"></i>Fecha Expedición</label><p class="fw-bold text-dark mb-0" id="dig_fechaExpedicion"></p></div>
-                <div class="col-md-4 border-top pt-3"><label class="d-block"><i class="bi bi-envelope me-1"></i>Correo</label><p class="fw-bold text-primary mb-0" id="dig_correoInquilino"></p></div>
+                <div class="col-md-4 border-top pt-3"><label class="d-block"><i class="bi bi-envelope me-1"></i>Correo</label><p class="fw-bold text-primary mb-0" style="word-break:break-word;" id="dig_correoInquilino"></p></div>
                 <div class="col-md-4 border-top pt-3"><label class="d-block"><i class="bi bi-telephone me-1"></i>Teléfono</label><p class="fw-bold text-dark mb-0" id="dig_telefonoInquilino"></p></div>
                 <div class="col-md-4 border-top pt-3"><label class="d-block"><i class="bi bi-graph-up-arrow me-1"></i>Ingresos</label><p class="fw-bold text-success mb-0" id="dig_ingresos"></p></div>
               </div>
@@ -214,18 +231,27 @@
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-house-door me-2 text-primary"></i>Detalles del Inmueble y Contrato</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
               <div class="row g-4">
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-geo-alt me-1"></i>Dirección</label><p class="fw-bold text-dark mb-0" id="dig_direccionInmueble"></p></div>
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-geo-alt me-1"></i>Dirección</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_direccionInmueble"></p></div>
                 <div class="col-md-3"><label class="d-block"><i class="bi bi-geo me-1"></i>Ciudad</label><p class="fw-bold text-dark mb-0" id="dig_ciudadInmueble"></p></div>
                 <div class="col-md-3"><label class="d-block"><i class="bi bi-info-circle me-1"></i>Destino</label><p class="fw-bold text-dark mb-0" id="dig_destinoInmueble"></p></div>
                 <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-cash-coin me-1"></i>Canon</label><p class="fw-bold text-success mb-0" id="dig_canon"></p></div>
                 <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-percent me-1"></i>Cuota Admin</label><p class="fw-bold text-dark mb-0" id="dig_cuota"></p></div>
               </div>
             </div>
+            <h6 class="fw-bold mb-3 text-muted" style="font-size:0.9rem;"><i class="bi bi-tag me-2"></i>Clasificación</h6>
+            <div class="bg-white border rounded-4 p-4 mb-4">
+              <div class="row g-4">
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-bookmark me-1"></i>Clase</label><p class="fw-bold text-dark mb-0" id="dig_clase"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-shield-exclamation me-1"></i>UAR<i class="bi bi-question-circle-fill" title="Indica si la solicitud proviene de la Unidad de Análisis de Riesgo (UAR)." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><p class="fw-bold text-dark mb-0" id="dig_uar"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-megaphone me-1"></i>Canal</label><p class="fw-bold text-dark mb-0" id="dig_canal"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-star me-1"></i>Categoría Score<i class="bi bi-question-circle-fill" title="Calificación de riesgo asignada a la póliza (ej. VIP, NEGAR). Determina la prioridad y el tratamiento de la solicitud." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><p class="fw-bold text-dark mb-0" id="dig_categoriaScore"></p></div>
+              </div>
+            </div>
             <h6 class="fw-bold mb-3 text-muted" style="font-size:0.9rem;"><i class="bi bi-person-workspace me-2"></i>Información del Asesor</h6>
             <div class="bg-white border rounded-4 p-4">
               <div class="row g-4">
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-person-badge me-1"></i>Nombre</label><p class="fw-bold text-dark mb-0" id="dig_nombreAsesor"></p></div>
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-envelope-at me-1"></i>Correo</label><p class="fw-bold text-dark mb-0" id="dig_correoAsesor"></p></div>
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-person-badge me-1"></i>Nombre</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_nombreAsesor"></p></div>
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-envelope-at me-1"></i>Correo</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_correoAsesor"></p></div>
               </div>
             </div>
           </div>
@@ -236,19 +262,19 @@
               <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
               <div class="row">
                 <div class="col-md-6 gestion-group">
-                  <label class="gestion-label"><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
+                  <label class="gestion-label"><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI<i class="bi bi-question-circle-fill" title="Copia la fecha y hora exacta en que la solicitud quedó radicada en SAI y pégala aquí (DD/MM/AAAA HH:MM). Se usa para calcular los tiempos de gestión." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <input type="text" id="dig_fecha_radicacion_sai" class="form-control gestion-select sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" style="border-radius:10px;" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('dig_fecha_radicacion_sai'))},50)">
                   <div class="sai-fecha-preview" id="dig_fecha_preview"></div>
                 </div>
                 <div class="col-md-6 gestion-group" id="dig_contenedor_biometria">
-                  <label class="gestion-label"><i class="bi bi-fingerprint me-1"></i>Biometría</label>
+                  <label class="gestion-label"><i class="bi bi-fingerprint me-1"></i>Biometría<i class="bi bi-question-circle-fill" title="¿Se realizó la validación biométrica del inquilino? Selecciona 'Fallidos Biometría' si la validación no pudo completarse." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <select id="dig_biometria" class="form-select gestion-select">
                     <option value="" selected disabled>Seleccione...</option>
                     <option value="Si">Sí</option><option value="No">No</option><option value="Fallidos Biometria">Fallidos Biometría</option>
                   </select>
                 </div>
                 <div class="col-12 gestion-group">
-                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión</label>
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del estudio. Al elegir APLAZADA o NEGADA deberás indicar el motivo correspondiente." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <select id="dig_estado_q" class="form-select gestion-select estado-final">
                     <option value="" selected disabled>Seleccione una opción</option>
                     <option value="APROBADA">APROBADA</option><option value="APLAZADA">APLAZADA</option><option value="NEGADA">NEGADA</option>
@@ -305,7 +331,7 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- MODAL BIOMETRÍA (bio_) — 2 tabs: Tipificación / Historial    -->
+<!-- MODAL BIOMETRÍA (bio_) — 3 tabs: Información / Gestión / Historial -->
 <!-- ============================================================ -->
 <div class="modal fade" id="modalBiometria" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -316,50 +342,82 @@
             <i class="bi bi-fingerprint fs-4 text-white"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Solicitud #<span id="bio_displaySol"></span></h5>
-            <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Gestión de Biometría</p>
+            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Solicitud <span class="badge ms-2" style="background:rgba(255,255,255,0.2);font-size:0.7rem;padding:4px 10px;border-radius:8px;vertical-align:middle;">Biometría</span></h5>
+            <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Solicitud: <span id="bio_displaySol" class="badge bg-white text-dark fw-bold ms-1"></span></p>
           </div>
           <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
         </div>
       </div>
 
       <ul class="nav nav-tabs-modern" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#bio_tab_form"><i class="bi bi-pencil-square me-2"></i>Tipificación</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#bio_tab_hist"><i class="bi bi-people me-2"></i>Historial Deudores</button></li>
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#bio_tab_info" type="button"><i class="bi bi-info-square-fill me-2"></i>Información</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#bio_tab_form" type="button"><i class="bi bi-pencil-square me-2"></i>Gestión</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#bio_tab_hist" type="button"><i class="bi bi-clock-history me-2"></i>Historial</button></li>
       </ul>
 
       <div class="modal-body p-4">
         <div class="tab-content">
-          <div class="tab-pane fade show active" id="bio_tab_form">
+          <!-- Información -->
+          <div class="tab-pane fade show active" id="bio_tab_info">
             <input type="hidden" id="bio_solicitudId">
+            <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Inquilino</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
-              <div class="row g-3">
-                <div class="col-md-6"><label>Póliza</label><input type="text" id="bio_poliza" class="form-control" readonly></div>
-                <div class="col-md-6"><label>Inmobiliaria</label><input type="text" id="bio_inmobiliaria" class="form-control" readonly></div>
-                <div class="col-md-6"><label>Ciudad</label><input type="text" id="bio_ciudad" class="form-control" readonly></div>
-                <div class="col-md-6"><label>Dirección</label><input type="text" id="bio_direccion" class="form-control" readonly></div>
-                <div class="col-md-6 border-top pt-3"><label>Nombre del Inquilino</label><input type="text" id="bio_inquilinoNombre" class="form-control" readonly></div>
-                <div class="col-md-6 border-top pt-3"><label>Canon ($)</label><input type="text" id="bio_canon" class="form-control" readonly></div>
-                <div class="col-md-6"><label>Celular</label><input type="tel" id="bio_celular" class="form-control" readonly></div>
+              <div class="row g-4">
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-person me-1"></i>Inquilino</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="bio_inquilino"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-telephone me-1"></i>Celular</label><p class="fw-bold text-dark mb-0" id="bio_celular"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-shield-check me-1"></i>Póliza</label><p class="fw-bold text-dark mb-0" id="bio_poliza"></p></div>
               </div>
             </div>
-            <div class="bg-white border rounded-4 p-4" style="border-left:5px solid #253150 !important;">
-              <h6 class="fw-bold mb-3 text-dark"><i class="bi bi-clipboard-check me-2 text-primary"></i>Datos de Gestión</h6>
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <label><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI</label>
-                  <input type="text" id="bio_fechaRadicacionSai" class="form-control fw-bold sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" style="border-radius:10px;" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('bio_fechaRadicacionSai'))},50)">
-                  <div class="sai-fecha-preview" id="bio_fecha_preview"></div>
-                </div>
-                <div class="col-md-6"><label>Resultado Llamada</label><select id="bio_resLlamada" class="form-select fw-bold"><option value="" disabled selected>Seleccione...</option><option value="OK llamada">OK llamada</option><option value="No contesto">No contesto</option></select></div>
-                <div class="col-md-6"><label>¿La solicitud fue aprobada?</label><select id="bio_fueAprobada" class="form-select fw-bold"><option value="" disabled selected>Seleccione...</option><option value="Si">Si</option><option value="No">No</option></select></div>
-                <div class="col-12"><label>Resultado Final</label><select id="bio_resFinal" class="form-select fw-bold"><option value="" disabled selected>Seleccione...</option><option value="APLAZADA">APLAZADA</option><option value="APROBADA">APROBADA</option><option value="NEGADA">NEGADA</option></select></div>
+            <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-house-door me-2 text-primary"></i>Inmueble y Contrato</h6>
+            <div class="bg-white border rounded-4 p-4">
+              <div class="row g-4">
+                <div class="col-md-5"><label class="d-block"><i class="bi bi-building me-1"></i>Inmobiliaria</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="bio_inmobiliaria"></p></div>
+                <div class="col-md-4"><label class="d-block"><i class="bi bi-geo-alt me-1"></i>Sucursal</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="bio_sucursal"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-cash-coin me-1"></i>Canon</label><p class="fw-bold text-success mb-0" id="bio_canon"></p></div>
+                <div class="col-md-3 border-top pt-3"><label class="d-block"><i class="bi bi-cash-stack me-1"></i>Cuota Administración</label><p class="fw-bold text-success mb-0" id="bio_cuota"></p></div>
+                <div class="col-md-9 border-top pt-3"><label class="d-block"><i class="bi bi-pin-map me-1"></i>Dirección</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="bio_direccion"></p></div>
               </div>
             </div>
           </div>
+          <!-- Gestión -->
+          <div class="tab-pane fade" id="bio_tab_form">
+            <div class="gestion-card p-4" style="border-left:5px solid var(--color-primario) !important;">
+              <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-clipboard-check me-2"></i>Gestión</h6>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="gestion-label"><i class="bi bi-telephone me-1"></i>Resultado Llamada <span class="text-danger">*</span></label>
+                  <select id="bio_resLlamada" class="form-select gestion-select"><option value="" disabled selected>Seleccione...</option><option value="OK LLAMADA">OK LLAMADA</option><option value="NO CONTESTO">NO CONTESTO</option></select>
+                </div>
+                <div class="col-md-6">
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Resultado Final <span class="text-danger">*</span></label>
+                  <select id="bio_resFinal" class="form-select gestion-select estado-final" onchange="bioActualizarMotivo()"><option value="" disabled selected>Seleccione...</option><option value="APLAZADA">APLAZADA</option><option value="APROBADA">APROBADA</option><option value="NEGADA">NEGADA</option></select>
+                </div>
+                <div class="col-md-6 d-none" id="bio_contenedor_aplazamiento">
+                  <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento <span class="text-danger">*</span></label>
+                  <select id="bio_motivoAplazamiento" class="motivo-picker-hidden">
+                    <option value="">Sin aplazamiento</option>
+                    <option value="Agotó los intentos">Agotó los intentos</option>
+                    <option value="Conserva resultado">Conserva resultado</option>
+                    <option value="Error página biometría">Error página biometría</option>
+                    <option value="No desea realizar el proceso">No desea realizar el proceso</option>
+                    <option value="No llegó link">No llegó link</option>
+                    <option value="Sin intentos de biometría">Sin intentos de biometría</option>
+                  </select>
+                  <div id="picker_bio_motivoAplazamiento" class="motivo-picker">
+                    <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
+                    <div class="motivo-picker-dropdown"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Historial -->
           <div class="tab-pane fade" id="bio_tab_hist">
-            <div class="bg-white border rounded-4 p-4">
-              <div id="bio_loaderResultados" class="text-center py-4 d-none"><div class="spinner-border text-danger" role="status"></div><p class="small text-muted mt-2">Consultando deudores...</p></div>
+            <div class="p-4 border rounded-4 bg-white">
+              <div class="d-flex align-items-center mb-4">
+                <i class="bi bi-journal-text me-3 fs-4" style="color:var(--color-secundario);"></i>
+                <h6 class="fw-bold mb-0 text-dark">Resultados por tipo de deudor</h6>
+              </div>
               <div class="accordion accordion-flush" id="bio_accordionResultados"></div>
             </div>
           </div>
@@ -377,7 +435,7 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- MODAL REESTUDIO (rst_) — 2 tabs: Información / Gestión       -->
+<!-- MODAL REESTUDIO (rst_) — 3 tabs: Información / Gestión / Historial -->
 <!-- ============================================================ -->
 <div class="modal fade" id="modalReestudio" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -388,7 +446,7 @@
             <i class="bi bi-arrow-repeat fs-4 text-white"></i>
           </div>
           <div>
-            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Reestudio</h5>
+            <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Solicitud <span class="badge ms-2" style="background:rgba(255,255,255,0.2);font-size:0.7rem;padding:4px 10px;border-radius:8px;vertical-align:middle;">Reestudio</span></h5>
             <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Solicitud: <span id="rst_solicitud_badge" class="badge bg-white text-dark fw-bold ms-1"></span></p>
           </div>
           <a id="rst_btnDrive" href="#" target="_blank" class="btn ms-auto me-3 d-none" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);color:white;border-radius:12px;padding:8px 16px;font-size:0.8rem;font-weight:700;">
@@ -401,11 +459,21 @@
       <ul class="nav nav-tabs-modern" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rst_tab_info" type="button"><i class="bi bi-info-square-fill me-2"></i>Información</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#rst_tab_gestion" type="button"><i class="bi bi-pencil-square me-2"></i>Gestión</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#rst_tab_historial" type="button"><i class="bi bi-clock-history me-2"></i>Historial</button></li>
       </ul>
 
       <div class="modal-body p-4">
         <div class="tab-content">
           <div class="tab-pane fade show active" id="rst_tab_info" role="tabpanel">
+            <!-- Link Drive prominente -->
+            <div id="rst_driveContainer" class="mb-4">
+              <a id="rst_linkDrive" href="#" target="_blank" class="d-none" style="display:flex !important;align-items:center;gap:12px;padding:16px 20px;background:linear-gradient(135deg,#e8f0fe,#dbeafe);border:1.5px solid #93c5fd;border-radius:14px;color:#1d4ed8;font-weight:700;font-size:0.9rem;text-decoration:none;transition:all 0.2s;" onmouseover="this.style.background='linear-gradient(135deg,#dbeafe,#bfdbfe)';this.style.transform='translateY(-1px)'" onmouseout="this.style.background='linear-gradient(135deg,#e8f0fe,#dbeafe)';this.style.transform='none'">
+                <div style="width:40px;height:40px;border-radius:12px;background:rgba(29,78,216,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="bi bi-folder2-open" style="font-size:1.2rem;"></i></div>
+                <div style="flex:1;"><div style="font-size:0.9rem;">Abrir carpeta en Google Drive</div><div style="font-size:0.72rem;color:#3b82f6;font-weight:500;margin-top:2px;">Ver documentos y anexos de esta solicitud</div></div>
+                <i class="bi bi-box-arrow-up-right" style="font-size:1.1rem;opacity:0.6;"></i>
+              </a>
+              <p id="rst_linkDriveNA" class="text-muted mb-0 text-center d-none" style="font-size:0.8rem;"></p>
+            </div>
             <div class="row g-3 mb-4 text-center">
               <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100" style="border-top:4px solid var(--color-primario) !important;"><label class="d-block mb-1"><i class="bi bi-hash me-1"></i>Solicitud</label><div id="rst_solicitud" class="fw-bold fs-6 text-dark"></div></div></div>
               <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-box-arrow-in-right me-1"></i>Origen</label><div id="rst_origen" class="fw-bold fs-6 text-dark"></div></div></div>
@@ -415,14 +483,8 @@
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-file-earmark-text me-2 text-primary"></i>Detalles del Proceso</h6>
             <div class="bg-white border rounded-4 p-4">
               <div class="row g-4">
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-tag me-1"></i>Tipo de Proceso</label><p class="fw-bold text-dark mb-0" id="rst_tipoProceso"></p></div>
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-tag me-1"></i>Tipo de Proceso<i class="bi bi-question-circle-fill" title="Tipo de reestudio a realizar (ej. Nueva UAR, Deudor UAR, biometría fallida)." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><p class="fw-bold text-dark mb-0" id="rst_tipoProceso"></p></div>
                 <div class="col-md-6"><label class="d-block"><i class="bi bi-bookmark me-1"></i>Clase de Solicitud</label><p class="fw-bold text-dark mb-0" id="rst_clase"></p></div>
-                <div class="col-md-12 border-top pt-3" id="rst_driveContainer">
-                  <a id="rst_linkDrive" href="#" target="_blank" class="btn w-100 d-none" style="background:#e8f0fe;color:#1a73e8;border:1px solid #c2d7f5;border-radius:12px;font-weight:700;font-size:0.85rem;padding:12px;">
-                    <i class="bi bi-folder2-open me-2"></i>Abrir carpeta en Google Drive
-                  </a>
-                  <p id="rst_linkDriveNA" class="text-muted mb-0 text-center" style="font-size:0.8rem;">Sin carpeta de Drive asociada</p>
-                </div>
               </div>
             </div>
           </div>
@@ -434,9 +496,9 @@
             <div class="p-4">
               <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
               <div class="row g-3">
-                <div class="col-md-6"><label><i class="bi bi-shield-check me-1"></i>Póliza</label><input type="number" id="rst_poliza" class="form-control fw-bold" placeholder="Ej: 483" min="1" step="1"></div>
+                <div class="col-md-6"><label><i class="bi bi-shield-check me-1"></i>Póliza<i class="bi bi-question-circle-fill" title="Número de póliza resultante del reestudio. Respeta los ceros a la izquierda si los tiene." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><input type="text" inputmode="numeric" id="rst_poliza" class="form-control fw-bold" placeholder="Ej: 483" autocomplete="off"></div>
                 <div class="col-md-6">
-                  <label><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión</label>
+                  <label><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del reestudio. Al elegir APLAZADA o NEGADA deberás indicar el motivo." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <select id="rst_estado_q" class="form-select fw-bold" onchange="rstActualizarCamposGestion()">
                     <option value="" selected disabled>Seleccione una opción</option>
                     <option value="APROBADA">APROBADA</option><option value="APLAZADA">APLAZADA</option><option value="NEGADA">NEGADA</option>
@@ -460,6 +522,19 @@
                   </div>
                 </div>
                 <div class="col-12"><label><i class="bi bi-chat-dots me-1"></i>Observaciones</label><textarea id="rst_observaciones" class="form-control" rows="3" placeholder="Escriba algún comentario..."></textarea></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Historial Deudores -->
+          <div class="tab-pane fade" id="rst_tab_historial" role="tabpanel">
+            <div class="p-4 border rounded-4 bg-white">
+              <div class="d-flex align-items-center mb-4">
+                <i class="bi bi-journal-text me-3 fs-4" style="color:var(--color-secundario);"></i>
+                <h6 class="fw-bold mb-0 text-dark">Resultados por tipo de deudor</h6>
+              </div>
+              <div id="rst_accordionResultados" class="accordion accordion-flush">
+                <div class="text-center py-5"><div class="spinner-border" role="status" style="color:var(--color-primario);"></div><p class="mt-3 text-muted">Cargando...</p></div>
               </div>
             </div>
           </div>
@@ -542,7 +617,7 @@
                 <div class="col-md-6" id="col-ausencia-hora-fin" style="display:none;"><label class="small fw-bold mb-1">Hora de fin <span class="text-danger">*</span></label><input type="time" id="ausencia-hora-fin" class="form-control" style="border-radius:10px;"></div>
                 <div class="col-12"><label class="small fw-bold mb-1">Observación <span class="text-muted fw-normal">(opcional)</span></label><textarea id="ausencia-observacion" class="form-control" rows="3" placeholder="Detalla el motivo..." style="border-radius:10px;resize:none;"></textarea></div>
                 <div class="col-12"><div class="p-3 rounded-3" style="background:#eff6ff;border:1px solid #bfdbfe;"><p class="small mb-0" style="color:#1e40af;"><i class="bi bi-send-check me-1"></i><strong>Tu solicitud será enviada al administrador.</strong></p></div></div>
-                <div class="col-12 d-flex justify-content-end gap-2 pt-2"><button class="btn btn-outline-secondary px-4" onclick="volverAusenciasPaso1()">Cancelar</button><button class="btn text-white px-5 fw-bold" onclick="enviarSolicitudPermiso()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:10px;border:none;"><i class="bi bi-send-fill me-2"></i>Enviar Solicitud</button></div>
+                <div class="col-12 d-flex justify-content-end gap-2 pt-2"><button class="btn btn-outline-secondary px-4" onclick="volverAusenciasPaso1()">Cancelar</button><button id="btn-enviar-permiso" class="btn text-white px-5 fw-bold" onclick="enviarSolicitudPermiso()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:10px;border:none;"><i class="bi bi-send-fill me-2"></i>Enviar Solicitud</button></div>
               </div>
             </div>
           </div>
@@ -873,9 +948,27 @@ window.addEventListener('load', function() {
   }).getEmailUsuario();
 });
 
+// Mostrar/ocultar motivo aplazamiento en biometría
+function bioActualizarMotivo() {
+  var estado = (document.getElementById('bio_resFinal').value || '').toUpperCase();
+  var cont = document.getElementById('bio_contenedor_aplazamiento');
+  if (cont) {
+    if (estado === 'APLAZADA') {
+      cont.classList.remove('d-none');
+    } else {
+      cont.classList.add('d-none');
+      var sel = document.getElementById('bio_motivoAplazamiento');
+      if (sel) sel.selectedIndex = 0;
+    }
+  }
+}
+
 // Inicialización
 document.addEventListener('DOMContentLoaded', function() {
   setTimeout(cargarMotivosUnificados, 500);
+  setTimeout(function() {
+    try { MotivoPicker.init('picker_bio_motivoAplazamiento', 'bio_motivoAplazamiento'); } catch(e) {}
+  }, 600);
 });
 </script>
 

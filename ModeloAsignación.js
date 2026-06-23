@@ -2,13 +2,13 @@ const MAX_VIP_CONSECUTIVAS = 2;
 const CATEGORIAS_ROTACION = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ORDEN_PRIORIDAD_POR_MODO = {
-  NUEVAS_PRIMERO:    ['nueva', 'biometria', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  BIOMETRIA_PRIMERO: ['biometria', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO: ['induccion', 'nueva', 'biometria', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  NUEVAS_PRIMERO:          ['nueva', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  DESAPLAZAMIENTO_PRIMERO: ['desaplazamiento', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO:       ['induccion', 'nueva', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
 };
 
 // Para analistas del equipo REESTUDIOS, los casos propios (ORIGEN) siempre van primero
-const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'biometria', 'induccion'];
+const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'desaplazamiento', 'induccion'];
 
 const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
 
@@ -48,6 +48,9 @@ function RequestLead() {
     const turnoCheck = verificarTurnoActivo(userEmail, ss);
     if (!turnoCheck.ok) return turnoCheck.message;
 
+    const permisoCheck = verificarPermisoVigenteHoy();
+    if (permisoCheck.tienePermiso) return "⛔ Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy.";
+
     const props = PropertiesService.getScriptProperties();
 
     const equipoConfig = resolverEquipoDesdeEspecialidad(especialidad);
@@ -82,7 +85,7 @@ function RequestLead() {
           || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
-    let conteoHoy = { nueva: 0, biometria: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0, biometriaFallida: 0 };
+    let conteoHoy = { nueva: 0, desaplazamiento: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0, biometriaFallida: 0 };
     let capPendienteReal = 0;
 
     // getValues() en lugar de getDisplayValues() para obtener Date reales en col 27/29
@@ -95,10 +98,11 @@ function RequestLead() {
         const fechaAsig = row[26];
         const fechaFin  = row[28];
         const claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const estadoNorm = String(row[16]).trim().toUpperCase();
+        const estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
 
         let tipo = 'nueva';
-        if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+        if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
         else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
 
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
@@ -122,9 +126,10 @@ function RequestLead() {
           const fechaAsig = row[24]; // hist col 25: fecha asignación
           const fechaFin  = row[26]; // hist col 27: fecha fin gestión
           const claseNorm  = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          const estadoNorm = String(row[16]).trim().toUpperCase();
+          const estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
           let tipo = 'nueva';
-          if (estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA")) tipo = 'biometria';
+          if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
           else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
           if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
           const tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
@@ -142,16 +147,17 @@ function RequestLead() {
 
       if (asignado === userEmail) {
         const origenR = String(row[3]).toUpperCase().trim();
-        const tipoP  = String(row[4]).toUpperCase().trim();
+        const tipoPNorm  = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
         const fechaAsig = row[8];
         const fechaFin  = row[9];
 
-        let tipo = 'reestudio';
-        if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
-        else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-        else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
+        let tipo = null;
+        if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
+        else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+        else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+        else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
-        if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
+        if (tipo && (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin))) {
           conteoHoy[tipo]++;
         }
         const tieneAsigR = fechaAsig instanceof Date ? true : String(fechaAsig).trim() !== "";
@@ -170,14 +176,15 @@ function RequestLead() {
           const asignado = String(row[6]).trim().toLowerCase();
           if (asignado !== userEmail) continue;
           const origenR = String(row[3]).toUpperCase().trim();
-          const tipoP  = String(row[4]).toUpperCase().trim();
+          const tipoPNorm  = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
           const fechaAsig = row[8];
           const fechaFin  = row[9];
-          let tipo = 'reestudio';
-          if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
-          else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-          else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
-          if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
+          let tipo = null;
+          if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
+          else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+          else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+          else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
+          if (tipo && (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin))) conteoHoy[tipo]++;
           const tieneAsigR = fechaAsig instanceof Date ? true : String(fechaAsig).trim() !== "";
           const tieneFinR  = fechaFin  instanceof Date ? true : String(fechaFin).trim()  !== "";
           if (tieneAsigR && !tieneFinR) capPendienteReal++;
@@ -201,16 +208,17 @@ function RequestLead() {
       if (asignado !== "") continue; 
       if (estadoNorm === "") continue;
       
-      const esBiometria = estadoNorm.includes("BIOMETRIA") || claseNorm.includes("BIOMETRIA");
-      if ((estadoNorm.includes("APROB") && !esBiometria) || estadoNorm.includes("NEGAD") || estadoNorm.includes("RECHAZ") || estadoNorm.includes("APLAZ")) continue;
+      const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
+      const esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
+      if ((estadoNorm.includes("APROB") && !esDesaplazamiento) || estadoNorm.includes("NEGAD") || estadoNorm.includes("RECHAZ") || estadoNorm.includes("APLAZ")) continue;
 
       const esInduccion = claseNorm.includes("INDUCCI") || claseNorm === "IND";
-      const esNueva = claseNorm.includes("NUEV") || claseNorm.includes("REESTUDIO") || estadoNorm.includes("EN_ESTUDIO") || estadoNorm.includes("EN ESTUDIO") || estadoNorm.includes("BORRADOR");
-      
-      if (!esNueva && !esBiometria && !esInduccion) continue;
+      const esNueva = estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO';
+
+      if (!esNueva && !esDesaplazamiento && !esInduccion) continue;
 
       let tipo = 'nueva';
-      if (esBiometria) tipo = 'biometria';
+      if (esDesaplazamiento) tipo = 'desaplazamiento';
       else if (esInduccion) tipo = 'induccion';
 
       if (canonTipos.indexOf(tipo) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
@@ -245,13 +253,15 @@ function RequestLead() {
       if (estadoGest !== "") continue; 
       
       const origenR = String(row[3]).toUpperCase().trim();
-      const tipoP = String(row[4]).toUpperCase().trim();
+      const tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-      let tipo = 'reestudio';
-      if (tipoP.includes("BIOMETRIA FALLIDA") || tipoP.includes("BIOMETRÍA FALLIDA")) tipo = 'biometriaFallida';
-      else if (origenR === "CORREO" && tipoP === "NUEVA") tipo = 'nuevaUar';
-      else if (origenR === "CORREO" && tipoP === "ADICIONAL") tipo = 'deudorUar';
+      let tipo = null;
+      if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
+      else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+      else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+      else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
+      if (!tipo) continue;
       if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
       pendientes.push({
@@ -266,7 +276,7 @@ function RequestLead() {
       });
     }
 
-    const _etiquetasTipo = { nueva: 'Nuevas', biometria: 'Desplazamiento', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR', biometriaFallida: 'Biometría Fallida' };
+    const _etiquetasTipo = { nueva: 'Nuevas', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR', biometriaFallida: 'Biometría Fallida' };
     const cuposLlenosHoy = Object.entries(cuotas)
       .filter(([tipo, lim]) => lim > 0 && conteoHoy[tipo] >= lim)
       .map(([tipo]) => `${_etiquetasTipo[tipo]} (${conteoHoy[tipo]}/${cuotas[tipo]})`);
@@ -299,7 +309,8 @@ function RequestLead() {
     if (equipoCupos === 'REESTUDIOS') {
       ordenPrioridad = ORDEN_PRIORIDAD_REESTUDIOS;
     } else {
-      const prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      let prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
       ordenPrioridad = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO'];
     }
 
@@ -337,7 +348,7 @@ function RequestLead() {
       if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
       if (a.esCRM && !b.esCRM) return -1;
       if (!a.esCRM && b.esCRM) return 1;
-      return a.tipo === 'biometria' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+      return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
     });
 
     let punteroRotacion = parseInt(props.getProperty('PUNTERO_ROTACION')) || 0;
