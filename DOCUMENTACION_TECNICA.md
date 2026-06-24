@@ -86,12 +86,12 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 
 | Archivo | Responsabilidad |
 |---------|----------------|
-| `Código.js` | **Núcleo del sistema.** Enrutador `doGet()`, autenticación, constantes globales, carga de datos de tabla (desde `Historico_Gestiones` + fallback a `solicitud`), consulta a API SAI, `guardarCambiosInternos()`, gestión de estados del analista, sincronización de API, sistema de permisos/incapacidades (`solicitarPermiso`, `verificarPermisoVigenteHoy`), funciones de autoservicio del analista (`verificarMisCupos`, `getResumenGestionesHoy`, `obtenerDetalleGestionesHoy`). |
-| `ModeloAsignación.js` | **Motor de asignación inteligente (multi-equipo).** Algoritmo `RequestLead()` que detecta automáticamente el equipo del analista (DIGITAL/REESTUDIOS/BIOMETRIA) y distribuye solicitudes según prioridad (VIP, rotación por categorías), cupos efectivos y orden configurable globalmente. |
+| `Código.js` | **Núcleo del sistema.** Enrutador `doGet()`, autenticación, `obtenerCuposEfectivos()` (lectura de cupos individuales/globales con retrocompatibilidad singular/plural), `guardarCambiosInternos()` (guardado con mapeo tipo→clase para los 7 tipos), gestión de estados (`actualizarEstadoPropio`, `admin_sincronizarEstado` — ambos con `getScriptLock`), sincronización API SAI, permisos/incapacidades, autoservicio del analista. |
+| `ModeloAsignación.js` | **Motor legacy de asignación (v1).** `RequestLead()` — supersedido por `RequestLeadUnificado` en `MotorAsignacion.js`. Se mantiene por compatibilidad pero no es llamado desde el frontend actual. |
 | `Admin.js` | **Panel de administración.** CRUD de usuarios, dashboard de KPIs, control de prioridad global, cupos por equipo e individuales con histórico, novedades/estados del equipo, sistema de **turnos y horarios** (CRUD de turnos, asignación a analistas, horas extra, alertas), gestión de **permisos e incapacidades** (aprobación/rechazo), botón de pánico, desasignación de solicitudes. |
 | `MotorTiempos.js` | **Motor unificado de tiempos hábiles.** `calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista)` → `{ minutos_cola, minutos_gestion, minutos_general }`. Lee turnos de las hojas `Turnos`, `Analistas_Turnos` y `Horas_Extra` para calcular tiempos según el horario real de cada analista. |
 | `Biometria.js` | **Módulo de biometría.** Descarga desde API de solicitudes con códigos 500/503, asignación automática a analistas de biometría, verificación de estado en tiempo real, gestión y tipificación de casos. |
-| `ModeloReestudios.js` | **Motor de asignación equitativa (Reestudios).** Algoritmo `RequestLeadReestudios()` que distribuye solicitudes de Victoria y Correo según FIFO, cupos diarios por subcategoría (`reestudio`, `nuevaUar`, `deudorUar`). Asigna 1 caso por invocación con control de concurrencia. |
+| `ModeloReestudios.js` | **Motor legacy de reestudios (v1).** `RequestLeadReestudios()` — supersedido por `RequestLeadUnificado` en `MotorAsignacion.js`. Se mantiene por compatibilidad. |
 | `Reestudios.js` | **Módulo de gestión de reestudios.** Obtención de datos asignados (`getReestudiosData()`) — lee de `Historico_Gestiones` del ssReestudios; guardado de gestión (`guardarGestionReestudio()`) con búsqueda por solicitudId (caso abierto = fechaFin vacía) y auto-reasignación. |
 | ~~`index.html`~~ | *(Eliminada)* Vista de Estudio Digital migrada a `VistaUnificada.html` (modal `#modalDigital` con prefijo `dig_`). |
 | `VistaAdmin.html` | **Vista del Administrador.** Dashboard con métricas, tabla de usuarios, control de prioridades, sección de cupos (general + individual), novedades del equipo con tabs (disponibilidad + solicitudes de permisos), sección de **Turnos y Horarios** (CRUD de turnos, asignación de analistas, horas extra), modales CRUD, botón de emergencia. |
@@ -116,6 +116,8 @@ El proyecto utiliza un patrón **Enrutador Central + Módulos por Especialidad**
 | Archivo | Responsabilidad |
 |---------|----------------|
 | `MotorTiempos.js` | **Motor unificado de cálculo de tiempos hábiles.** Reemplaza `calcularMinutosHabilesSLA()` para soportar turnos personalizados por analista. Función principal: `calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista)` que devuelve `{ minutos_cola, minutos_gestion, minutos_general }`. Lee configuración de las hojas `Turnos`, `Analistas_Turnos` y `Horas_Extra`. |
+| `MotorAsignacion.js` | **Motor unificado de asignación (v3).** `RequestLeadUnificado(equipoIdOverride)` — motor principal para los 5 equipos. Sorting proporcional por ratio de cupos, prioridad de canal externo, filtro de canon, VIP/Score para equipos digitales. Reemplaza `RequestLead` y `RequestLeadReestudios`. |
+| `Tests.js` | **Suite de pruebas 360° (253 tests).** Bloques A-U: equipos, mapeo, cupos, prioridad, sorting, VIP, canon, motor unificado, utilidades, datos reales, dry-runs, turnos, catálogo dinámico, locks, histórico. Ejecutar: `EJECUTAR_TODAS_LAS_PRUEBAS` en GAS. |
 
 ### Gestión de Datos
 
@@ -207,29 +209,41 @@ function verificarPermisoAdmin() {
 
 ## 4. ⚙️ Flujos Clave del Sistema (Core Workflows)
 
-### 4.1 Flujo de Asignación Inteligente — Multi-equipo (`RequestLead`)
+### 4.1 Flujo de Asignación Unificada — `RequestLeadUnificado` (MotorAsignacion.js)
 
-Motor principal para solicitudes de la API SAI. También asigna reestudios y UAR de la hoja ORIGEN. Desde v2.5, detecta automáticamente el equipo del analista según su especialidad y no requiere "ESTUDIO DIGITAL" explícitamente.
+Motor principal de asignación para todos los equipos. Reemplaza a `RequestLead` (ModeloAsignación.js) y `RequestLeadReestudios` (ModeloReestudios.js) que se mantienen como código legacy.
+
+**5 equipos configurados dinámicamente (hoja `Equipos`):**
+
+| Equipo | Canon | VIP/Score | Modal |
+|--------|-------|-----------|-------|
+| DIGITAL | 0 – 7,999,999 | Sí | DIGITAL_FULL |
+| CANONES_ALTOS | 8,000,000+ | Sí | DIGITAL_FULL |
+| REESTUDIOS | Sin filtro | No | REESTUDIO_SIMPLE |
+| UAR | Sin filtro | No | REESTUDIO_SIMPLE |
+| DESAPLAZAMIENTO | Sin filtro | No | BIOMETRIA_TIPIFICACION |
 
 **Paso a paso:**
 
-1. **Bloqueo de concurrencia:** Se adquiere un `ScriptLock` para evitar asignaciones duplicadas.
-2. **Validación del usuario:** Se verifica que el analista esté ACTIVO y con capacidad disponible.
-3. **Detección de equipo:** Se determina `equipoCupos` según la especialidad (`ESTUDIO DIGITAL` → `DIGITAL`, `REESTUDIO` → `REESTUDIOS`, `BIOMETRIA` → `BIOMETRIA`).
-4. **Lectura de cupos efectivos:** `obtenerCuposEfectivos(email, equipo, dataUsuarios)` retorna cupos individuales si existen, o globales del equipo.
-5. **Cálculo de capacidad real:**
-   ```javascript
-   capacidadDisponible = capTotal - capPendienteReal
+1. **Bloqueo de concurrencia:** `ScriptLock` con `waitLock(15000)`. Solo 1 asignación a la vez.
+2. **Validación del usuario:** ACTIVO + capacidad disponible (`capTotal - cargaPendiente > 0`).
+3. **Resolución de equipo:** Vía `resolverEquipoDesdeEspecialidad()` o `equipoIdOverride`. Lee configuración de la hoja `Equipos` (cacheada 6h).
+4. **Lectura de cupos:** `obtenerCuposEfectivos(email, equipoId, dataUsuarios)` → individuales (JSON col Y) o globales (ScriptProperties).
+5. **Conteo de asignaciones hoy:** Cuenta por tipo (`digital`, `induccion`, `reestudio`, `desaplazamiento`, `nuevaUar`, `deudorUar`, `biometriaFallida`) en `Historico_Gestiones` principal + reestudios.
+6. **Recolección de pendientes:** Recorre hoja `solicitud` y `ORIGEN` (reestudios). Descarta tipos con cupo lleno. Aplica filtro de canon si el equipo lo tiene (`canonTipos=["digital"]`).
+7. **Ordenamiento — 4 niveles de prioridad:**
+
    ```
-6. **Conteo de asignaciones del día:** Se cuentan casos de cada tipo (nueva, biometría, inducción, reestudio, nuevaUar, deudorUar) del analista en la hoja `solicitud`, `Historico_Gestiones` (principal), hoja ORIGEN y `Historico_Gestiones` (reestudios). Se salta cualquier tipo cuyo cupo diario esté lleno.
-7. **Clasificación de solicitudes:** Se categorizan las pólizas en buckets (VIP, grande, mediana, pequeña, genérica, en desarrollo, revisar, otros) usando la hoja `score`.
-8. **Priorización configurable:** Se respeta el orden global definido por el admin:
-   - `NUEVAS_PRIMERO` → nueva > biometría > inducción > reestudio > nuevaUar > deudorUar
-   - `BIOMETRIA_PRIMERO` → biometría > nueva > inducción > reestudio > nuevaUar > deudorUar
-   - `INDUCCION_PRIMERO` → inducción > nueva > biometría > reestudio > nuevaUar > deudorUar
-   - Para analistas de Reestudios: reestudio > nuevaUar > deudorUar > nueva > biometría > inducción
-9. **Rotación de categorías:** Se alterna entre VIP y el resto con un máximo de 2 VIP consecutivas.
-10. **Escritura en hoja:** Se registra la fecha de asignación, el email del analista y su nombre. Si el caso viene de la hoja ORIGEN (reestudios), se escribe en columnas G/H/I de esa hoja.
+   NIVEL 1: Reasignadas (marcadas por admin) → prioridad -1
+   NIVEL 2: Tipo con menor ratio cupo usado (asignadosHoy / cupoDiario)
+            Desempate: GLOBAL_PRIORIDAD (DIGITAL_PRIMERO, INDUCCION_PRIMERO, etc.)
+   NIVEL 3: Canal externo primero (Canal ≠ EL_LIBERTADOR)
+   NIVEL 4: FIFO (más antiguo). Excepción: desplazamiento = LIFO (más reciente)
+   ```
+
+8. **VIP y Score (solo DIGITAL y CANONES_ALTOS):** Rotación 2 VIP → 1 otra categoría. Categorías: mediana, grande, pequeña, premier, preferente, micro, pyme.
+9. **Asignación:** Escribe email/nombre/fecha, mueve fila a `Historico_Gestiones`, elimina de hoja origen.
+10. **Libera lock.**
 
 ### 4.2 Flujo de Asignación Equitativa — Reestudios (`RequestLeadReestudios` en `ModeloReestudios.js`)
 
@@ -416,37 +430,52 @@ El panel "Seguimiento de Analistas" permite consultar la actividad por fecha (pr
 
 El sistema de cupos define **límites diarios de asignación por equipo y subcategoría**. Permite control granular tanto a nivel de equipo (global) como a nivel de analista individual.
 
-**Equipos definidos:**
+**Equipos definidos (dinámicos, hoja `Equipos`):**
 
-| Equipo | Vista | Motor de Asignación | Propiedad Prefijo |
-|--------|-------|--------------------|--------------------|
-| Digital | `VistaUnificada.html` | `RequestLead()` en `ModeloAsignación.js` | `CUPOS_DIGITAL_*` |
-| Biometría | `VistaUnificada.html` | `autoAsignarBiometria()` en `Biometria.js` | `CUPOS_BIOMETRIA_*` |
-| Reestudios | `VistaUnificada.html` | `RequestLeadReestudios()` en `ModeloReestudios.js` | `CUPOS_REESTUDIOS_*` |
+| Equipo | Motor de Asignación | Propiedad Prefijo |
+|--------|--------------------|--------------------|
+| DIGITAL | `RequestLeadUnificado()` en `MotorAsignacion.js` | `CUPOS_DIGITAL_*` |
+| CANONES_ALTOS | `RequestLeadUnificado()` en `MotorAsignacion.js` | `CUPOS_CANONES_ALTOS_*` |
+| REESTUDIOS | `RequestLeadUnificado()` en `MotorAsignacion.js` | `CUPOS_REESTUDIOS_*` |
+| UAR | `RequestLeadUnificado()` en `MotorAsignacion.js` | `CUPOS_UAR_*` |
+| DESAPLAZAMIENTO | `autoAsignarBiometria()` en `Biometria.js` | `CUPOS_DESAPLAZAMIENTO_*` |
 
 **Propiedades almacenadas (ScriptProperties) — Cupos Globales:**
 
-Cada equipo tiene 7 propiedades (UAR se divide en dos subtipos desde v2.5):
+Cada equipo tiene 8 propiedades. Los sufijos usan nombres legacy mapeados por `_propKeyCupo()`:
 
 ```
-CUPOS_{EQUIPO}_TOTAL        → Tope máximo del equipo (la suma de subcategorías debe igualar este valor)
-CUPOS_{EQUIPO}_NUEVAS       → Cupo para solicitudes nuevas digitales
-CUPOS_{EQUIPO}_REESTUDIOS   → Cupo para reestudios
-CUPOS_{EQUIPO}_INDUCCIONES  → Cupo para inducciones
-CUPOS_{EQUIPO}_BIOMETRIA    → Cupo para biometrías
-CUPOS_{EQUIPO}_NUEVA_UAR    → Cupo para solicitudes Nueva UAR (CORREO + tipoProceso = "NUEVA")
-CUPOS_{EQUIPO}_DEUDOR_UAR   → Cupo para solicitudes Deudor UAR (CORREO + tipoProceso = "ADICIONAL")
+CUPOS_{EQUIPO}_TOTAL              → Tope máximo del equipo
+CUPOS_{EQUIPO}_DIGITAL            → Cupo para solicitudes digitales (legacy: NUEVAS)
+CUPOS_{EQUIPO}_REESTUDIOS         → Cupo para reestudios
+CUPOS_{EQUIPO}_INDUCCIONES        → Cupo para inducciones
+CUPOS_{EQUIPO}_DESAPLAZAMIENTO    → Cupo para desplazamientos (legacy: BIOMETRIA)
+CUPOS_{EQUIPO}_NUEVA_UAR          → Cupo para Nueva UAR
+CUPOS_{EQUIPO}_DEUDOR_UAR         → Cupo para Deudor UAR
+CUPOS_{EQUIPO}_BIOMETRIA_FALLIDA  → Cupo para biometría fallida
 ```
+
+**Mapeo tipo catálogo → sufijo ScriptProperty (`_propKeyCupo`):**
+
+| ID catálogo (singular) | Sufijo property (legacy) |
+|------------------------|-------------------------|
+| `digital` | `DIGITAL` |
+| `induccion` | `INDUCCIONES` |
+| `reestudio` | `REESTUDIOS` |
+| `desaplazamiento` | `DESAPLAZAMIENTO` |
+| `nuevaUar` | `NUEVA_UAR` |
+| `deudorUar` | `DEUDOR_UAR` |
+| `biometriaFallida` | `BIOMETRIA_FALLIDA` |
 
 **Cupos Individuales (por analista):**
 
-Se almacenan como JSON en la columna Y (index 24) de la hoja `Usuarios`:
+Se almacenan como JSON en la columna Y (index 24) de la hoja `Usuarios`. Usan los IDs del catálogo dinámico (singular):
 
 ```json
-{"total":12,"nuevas":8,"reestudios":2,"inducciones":1,"biometria":0,"nuevaUar":1,"deudorUar":1}
+{"total":12,"digital":8,"reestudio":2,"induccion":1,"desaplazamiento":0,"nuevaUar":1,"deudorUar":1,"biometriaFallida":0,"fijo":false}
 ```
 
-Si un analista tiene cupos individuales, estos prevalecen sobre los globales del equipo. Si no tiene (celda vacía), usa los globales.
+`obtenerCuposEfectivos()` acepta tanto las claves nuevas (singular) como las antiguas (plural) para retrocompatibilidad. Si un analista tiene cupos individuales, estos prevalecen sobre los globales del equipo.
 
 **Función compartida `obtenerCuposEfectivos()` (Código.js):**
 
@@ -491,15 +520,14 @@ Accesible desde el sidebar del panel de administración. Tiene 2 modos:
 
 **Cómo afectan la asignación:**
 
-- **Equipo Digital (`RequestLead`):** Llama `obtenerCuposEfectivos(email, 'DIGITAL', dataUsuarios)`. Si el cupo del tipo está lleno, salta ese caso.
-- **Equipo Reestudios (`RequestLeadReestudios`):** Llama `obtenerCuposEfectivos(email, 'REESTUDIOS', dataUsuarios)`. Valida por tipo (reestudio vs UAR).
-- **Equipo Biometría (`autoAsignarBiometria`):** Llama `obtenerCuposEfectivos(email, 'BIOMETRIA', dataUsuarios)`. Limita al cupo de biometría del día.
+- **Todos los equipos (`RequestLeadUnificado`):** Llama `obtenerCuposEfectivos(email, equipoId, dataUsuarios)`. Si el cupo de un tipo está lleno, salta casos de ese tipo.
+- **Desaplazamiento (`autoAsignarBiometria`):** Llama `obtenerCuposEfectivos(email, 'DESAPLAZAMIENTO', dataUsuarios)`. Limita al cupo de desplazamiento del día.
 
 **Competencia entre equipos:** Los equipos Digital y Reestudios pueden asignar casos de la misma hoja ORIGEN. El control de concurrencia (`LockService`) evita duplicados, y los cupos determinan cuántos casos absorbe cada equipo por día.
 
 **Histórico de cupos (hoja `historico_cupos`):**
 
-Cada cambio de cupos (global o individual) se registra automáticamente:
+Cada cambio de cupos (global o individual) se registra automáticamente. Las columnas de tipos se generan dinámicamente desde el catálogo `_getTiposParaCupos()`:
 
 | Columna | Campo |
 |---------|-------|
@@ -509,12 +537,8 @@ Cada cambio de cupos (global o individual) se registra automáticamente:
 | D | Email del analista (vacío si es general) |
 | E | Nombre del analista (vacío si es general) |
 | F | Total |
-| G | Nuevas |
-| H | Reestudios |
-| I | Inducciones |
-| J | Biometría |
-| K | UAR |
-| L | Email del admin que hizo el cambio |
+| G+ | Una columna por cada tipo activo del catálogo (orden según `_getTiposParaCupos`) |
+| Última | Email del admin que hizo el cambio |
 
 **Backend (Admin.js):**
 

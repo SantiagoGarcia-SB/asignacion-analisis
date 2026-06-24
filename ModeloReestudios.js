@@ -100,7 +100,7 @@ function RequestLeadReestudios() {
 
     // Contar carga actual y cupos usados hoy
     let cargaActual = 0;
-    let conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0, nueva: 0, induccion: 0, desaplazamiento: 0 };
+    let conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0, digital: 0, induccion: 0, desaplazamiento: 0 };
 
     for (const fila of data) {
       const asignado = String(fila[6]).trim().toLowerCase(); // col G

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Google Apps Script (GAS) web application for managing request assignment workflows at El Libertador (surety/real estate company). Three analyst roles: Digital Studies, Biometry, and Re-studies. Deployed as a domain-restricted web app on Google Workspace.
+Google Apps Script (GAS) web application for managing request assignment workflows at El Libertador (surety/real estate company). Five analyst teams: Digital, Canones Altos, Reestudios, UAR, and Desaplazamiento. Teams are configured dynamically in the `Equipos` sheet. Deployed as a domain-restricted web app on Google Workspace.
 
 ## Deployment Commands
 
@@ -35,12 +35,15 @@ Authentication is implicit (Google Workspace session). Role is resolved from the
 
 | File | Responsibility |
 |------|----------------|
-| `Código.js` | Entry point (`doGet`), SAI API sync, SLA calculation, shared utilities |
-| `ModeloAsignación.js` | Assignment algorithm for digital studies — capacity, VIP rotation, category priority |
-| `ModeloReestudios.js` | Assignment algorithm for re-studies — FIFO, 1 case per call, excludes UAR |
-| `Admin.js` | Admin dashboard data, user CRUD, emergency disable |
+| `Código.js` | Entry point (`doGet`), SAI API sync, `obtenerCuposEfectivos`, `guardarCambiosInternos`, shared utilities |
+| `MotorAsignacion.js` | **Primary assignment engine** (`RequestLeadUnificado`) — proportional cupo sorting, VIP rotation, canon filtering, external channel priority. Used by all teams. |
+| `ModeloAsignación.js` | Legacy assignment engine (`RequestLead`) — superseded by MotorAsignacion.js, kept for backwards compatibility |
+| `ModeloReestudios.js` | Legacy re-studies assignment (`RequestLeadReestudios`) — superseded by MotorAsignacion.js |
+| `MotorTiempos.js` | SLA time calculation engine — per-analyst shift-aware working minutes |
+| `Admin.js` | Admin dashboard, user CRUD, dynamic cupos (global/individual), teams CRUD, shifts, permissions |
 | `Biometria.js` | Downloads pending biometries (SAI codes 500/503), auto-assigns |
 | `Reestudios.js` | Saves re-study outcomes, triggers next assignment |
+| `Tests.js` | Test suite (253 tests) — run `EJECUTAR_TODAS_LAS_PRUEBAS` in GAS editor |
 
 ### Frontend Files
 
@@ -66,19 +69,39 @@ All IDs are stored in **Script Properties** (not in code). Key properties:
 | `KeyEndPointSaiFullProd` | SAI API key |
 | `endPointSaiFullStageProd` | SAI endpoint (by request ID) |
 | `endpointSaiNewApi` | SAI endpoint (by consecutive) |
-| `GLOBAL_PRIORIDAD` | Assignment priority mode |
+| `GLOBAL_PRIORIDAD` | Assignment priority mode (DIGITAL_PRIMERO, DESAPLAZAMIENTO_PRIMERO, INDUCCION_PRIMERO) |
 | `PUNTERO_ROTACION` | Category rotation pointer |
+| `CUPOS_{EQUIPO}_{TIPO}` | Daily cupo limits per team and type |
 
-### Assignment Engine Logic (`ModeloAsignación.js`)
+### Dynamic Type Catalog
 
-`RequestLead()` runs when an analyst clicks "Get New Case":
-1. Checks analyst is ACTIVE and has capacity (`cupo > 0`)
-2. Reads `GLOBAL_PRIORIDAD` to determine category order (NUEVAS_PRIMERO, BIOMETRIA_PRIMERO, INDUCCION_PRIMERO)
-3. Applies VIP rotation (tracks `VIP_COUNT_{email}` in Script Properties)
-4. Assigns the oldest matching unassigned case, writes analyst email/name/date to the sheet
-5. Uses `LockService` to prevent concurrent double-assignments
+Request types are configured dynamically in the `TiposSolicitud` sheet (not hardcoded). The 7 active type IDs are:
 
-Same pattern applies in `ModeloReestudios.js` (FIFO, simpler — no VIP or category rotation).
+`digital`, `induccion`, `reestudio`, `desaplazamiento`, `nuevaUar`, `deudorUar`, `biometriaFallida`
+
+All code must use these exact IDs (singular form). The legacy mapping to Script Property suffixes is handled by `_propKeyCupo()` in Admin.js.
+
+### Assignment Engine Logic (`MotorAsignacion.js`)
+
+`RequestLeadUnificado()` is the primary assignment engine for all teams:
+
+1. Acquires `ScriptLock` (only 1 assignment at a time system-wide)
+2. Validates analyst is ACTIVE with available capacity
+3. Resolves team from specialist config or override
+4. Reads cupos via `obtenerCuposEfectivos()` (individual JSON or global properties)
+5. Counts today's assignments per type from `Historico_Gestiones`
+6. Collects pending cases, skipping types with full cupos
+7. Applies canon filter (DIGITAL < 8M, CANONES_ALTOS >= 8M)
+8. **Sorts by 4 levels:** reasignadas first → lowest cupo ratio type → external channel first → FIFO (oldest)
+9. For DIGITAL/CANONES_ALTOS: applies VIP rotation + score categories
+10. Writes assignment, moves row to `Historico_Gestiones`, deletes from source
+11. Releases lock
+
+### Teams Configuration (`Equipos` sheet)
+
+5 teams configured dynamically with columns: id, nombre, icono, colorHex, activo, usarVipRotacion, usarScoreCategories, maxAsignarPorLlamada, ordenPrioridad, fuentesDatos, modalTipo, funcionGuardar, canonDesde, canonHasta, canonTipos.
+
+Teams are cached for 6 hours — call `_invalidarCacheEquipos()` (or `limpiarCache()`) after changes.
 
 ### Automatic Triggers
 
@@ -88,7 +111,7 @@ Two time-based triggers run server-side (configured in GAS triggers UI, not in c
 
 ### SLA Calculation
 
-`calcularMinutosHabilesSLA()` in `Código.js` counts only working minutes (8am–6pm Mon–Fri, excluding holidays from the "Festivos" sheet). Stored in column 35 of the main solicitudes sheet in hours.
+`calcularTiemposCaso()` in `MotorTiempos.js` is the active SLA engine. It calculates three metrics (minutos_cola, minutos_gestion, minutos_general) using per-analyst shifts from the `Turnos`, `Analistas_Turnos`, and `Horas_Extra` sheets. The legacy `calcularMinutosHabilesSLA()` in `Código.js` is deprecated.
 
 ## Key Conventions
 

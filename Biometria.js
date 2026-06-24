@@ -107,41 +107,88 @@ function limpiarBiometriasResueltas() {
     if (lastRow < 2) return;
 
     const datos = hoja.getRange(2, 1, lastRow - 1, 17).getValues();
-    const baseUrl = getEndPointNewSai();
+
+    const bioIds = new Set();
+
+    for (let i = 0; i < datos.length; i++) {
+      const estado = String(datos[i][16]).toUpperCase().trim();
+      if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+
+      const solicitud = String(datos[i][0]).trim();
+      if (!solicitud) continue;
+      bioIds.add(solicitud);
+    }
+
+    if (bioIds.size === 0) {
+      Logger.log("✅ No hay biometrías pendientes para revisar.");
+      return;
+    }
+
+    Logger.log("📋 " + bioIds.size + " biometrías pendientes a verificar contra SAI.");
+
+    const props = PropertiesService.getScriptProperties();
+    const endpointBase = props.getProperty('endPointSaiNewApiDate');
     const keyFull = getKeyFull();
-    if (!baseUrl || !keyFull) { Logger.log("❌ Faltan credenciales API."); return; }
+    if (!endpointBase || !keyFull) { Logger.log("❌ Faltan credenciales API."); return; }
+
+    const hace3Dias = new Date();
+    hace3Dias.setDate(hace3Dias.getDate() - 3);
+    const sIni = formatDateCustom(hace3Dias);
+    const sFin = formatDateCustom(new Date());
+
+    const estadosSai = new Map();
+    let paginaActual = 1;
+    let totalPaginas = 1;
+
+    do {
+      const url = endpointBase + '?startDate=' + sIni + '&endDate=' + sFin + '&page=' + paginaActual + '&size=200';
+      const response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
+        muteHttpExceptions: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log("❌ API error HTTP " + response.getResponseCode() + " en página " + paginaActual);
+        break;
+      }
+
+      const json = JSON.parse(response.getContentText());
+      totalPaginas = json.totalPages || 1;
+      const contenido = json.content || [];
+
+      contenido.forEach(function(item) {
+        const id = String(item.consecutive || "").trim();
+        if (id && bioIds.has(id)) {
+          estadosSai.set(id, String(item.studyStatus || "").toUpperCase().trim());
+        }
+      });
+
+      Logger.log("Página " + paginaActual + "/" + totalPaginas + " — " + contenido.length + " registros. Encontradas: " + estadosSai.size + "/" + bioIds.size);
+
+      if (estadosSai.size >= bioIds.size) {
+        Logger.log("✅ Todas las biometrías encontradas en SAI. Deteniendo paginación.");
+        break;
+      }
+
+      paginaActual++;
+      if (paginaActual <= totalPaginas) Utilities.sleep(2000);
+    } while (paginaActual <= totalPaginas);
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
     const filasAEliminar = [];
 
     for (let i = 0; i < datos.length; i++) {
-      const estadoLocal = String(datos[i][16]).toUpperCase().trim();
-      if (estadoLocal !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+      const estado = String(datos[i][16]).toUpperCase().trim();
+      if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
 
       const solicitud = String(datos[i][0]).trim();
       if (!solicitud) continue;
 
-      try {
-        const response = UrlFetchApp.fetch(baseUrl + solicitud, {
-          method: "GET",
-          muteHttpExceptions: true,
-          headers: { "x-api-key": keyFull, "Accept": "application/json" }
-        });
-
-        if (response.getResponseCode() !== 200) {
-          Logger.log("⚠️ API error HTTP " + response.getResponseCode() + " para solicitud " + solicitud + " — se conserva.");
-          continue;
-        }
-
-        const statusApi = String(JSON.parse(response.getContentText()).studyStatus || "").toUpperCase().trim();
-        if (!ESTADOS_CONSERVAR.has(statusApi)) {
-          filasAEliminar.push(i + 2);
-          Logger.log("🗑️ Solicitud " + solicitud + " cambió a " + statusApi + " — marcada para eliminar.");
-        }
-
-        Utilities.sleep(500);
-      } catch (e) {
-        Logger.log("⚠️ Error consultando solicitud " + solicitud + ": " + e.message + " — se conserva.");
+      const statusSai = estadosSai.get(solicitud);
+      if (statusSai && !ESTADOS_CONSERVAR.has(statusSai)) {
+        filasAEliminar.push(i + 2);
+        Logger.log("🗑️ Solicitud " + solicitud + " cambió a " + statusSai);
       }
     }
 
@@ -151,9 +198,9 @@ function limpiarBiometriasResueltas() {
 
     if (filasAEliminar.length > 0) {
       SpreadsheetApp.flush();
-      Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas de la hoja solicitud.");
+      Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas.");
     } else {
-      Logger.log("✅ Ninguna biometría resuelta para eliminar.");
+      Logger.log("✅ Ninguna biometría cambió de estado.");
     }
   } catch (e) {
     Logger.log("❌ Error en limpiarBiometriasResueltas: " + e.message);
@@ -367,10 +414,13 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         // Col AE (31): fecha solo día
         hojaHist.getRange(filaReal, 31).setValue(fechaSoloDia);
 
-        // Calcular tiempos SLA: fechaDiligenciadaRadicación (col 34) y fechaAsignación (col 25)
-        const fechaDiligenciada = _parseFechaGAS(fila[33]);
+        // Calcular tiempos SLA
         const fechaAsignacion = _parseFechaGAS(fila[24]);
-        const tiempos = calcularTiemposCaso(fechaDiligenciada, fechaAsignacion, ahora, userEmail);
+        // Desaplazamiento: fechaDiligenciadaRadicación = fechaAsignación (cola = 0)
+        const tRadCola = fechaAsignacion;
+        hojaHist.getRange(filaReal, 34).setValue(fechaAsignacion || '');
+        if (fechaAsignacion) hojaHist.getRange(filaReal, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+        const tiempos = calcularTiemposCaso(tRadCola, fechaAsignacion, ahora, userEmail);
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
 

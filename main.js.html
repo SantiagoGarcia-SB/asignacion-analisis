@@ -232,10 +232,14 @@ function ajustarCamposPorTipoSolicitud() {
   const selectEstado = $('#d_estado_q');
   const selectAplaz = $('#d_motivo_aplazamiento');
 
+  var contFechaRad = $('#d_fecha_radicacion_sai').closest('.gestion-group, .col-md-6, .col-md-4');
+
   if (tipoSolicitudActual === 'induccion') {
-    // Ocultar biometría
+    // Ocultar biometría y fecha radicación SAI
     contBiometria.addClass('d-none');
+    contFechaRad.addClass('d-none');
     $('#d_biometria').val('No');
+    $('#d_fecha_radicacion_sai').val('');
 
     // Estado Final: solo APLAZADA
     selectEstado.html(`
@@ -253,8 +257,9 @@ function ajustarCamposPorTipoSolicitud() {
     selectEstado.closest('.gestion-group').removeClass('col-md-8').addClass('col-md-12');
 
   } else {
-    // Restaurar biometría
+    // Restaurar biometría y fecha radicación SAI
     contBiometria.removeClass('d-none');
+    contFechaRad.removeClass('d-none');
 
     // Restaurar Estado Final completo
     selectEstado.html(`
@@ -563,8 +568,9 @@ function renderizarTabla(data) {
             return `<span class="badge shadow-sm" style="background:#ede9fe;color:#7c3aed;border:1px solid #ddd6fe;padding:5px 10px;border-radius:8px;"><i class="bi bi-layers me-1"></i>Reestudio</span>`;
           }
           if (estado === '__DESAPLAZAMIENTO__' || estado.includes('BIOMETRIA')) return `<span class="badge shadow-sm" style="background:#e0e7ff;color:#4338ca;border:1px solid #c7d2fe;padding:5px 10px;border-radius:8px;"><i class="bi bi-fingerprint me-1"></i>Desaplazamiento</span>`;
-          if (clase.includes('INDUCCI') || clase === 'IND') return `<span class="badge shadow-sm" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
-          return `<span class="badge shadow-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:5px 10px;border-radius:8px;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
+          if (clase === 'INDUCCION' || clase === 'INDUCCIÓN') return `<span class="badge shadow-sm" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;padding:5px 10px;border-radius:8px;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
+          if (clase.includes('REESTUDIO')) return `<span class="badge shadow-sm" style="background:#c7d2fe;color:#3730a3;border:1px solid #a5b4fc;padding:5px 10px;border-radius:8px;"><i class="bi bi-arrow-repeat me-1"></i>Reestudio Digital</span>`;
+          return `<span class="badge shadow-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;padding:5px 10px;border-radius:8px;"><i class="bi bi-laptop me-1"></i>Digital</span>`;
         }
       },
       {
@@ -647,11 +653,14 @@ function renderizarTabla(data) {
     if (estadoFila.includes('BIOMETRIA')) {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#e0e7ff; color:#4338ca; border:1px solid #c7d2fe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-fingerprint me-1"></i>Desaplazamiento</span>`;
         tipoSolicitudActual = 'desaplazamiento';
-    } else if (claseFila.includes('INDUCCI') || claseFila === 'IND') {
+    } else if (claseFila === 'INDUCCION' || claseFila === 'INDUCCIÓN') {
         tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-easel me-1"></i>Inducción</span>`;
         tipoSolicitudActual = 'induccion';
+    } else if (claseFila.includes('REESTUDIO')) {
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#c7d2fe; color:#3730a3; border:1px solid #a5b4fc; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>Reestudio Digital</span>`;
+        tipoSolicitudActual = 'digital';
     } else {
-        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>`;
+        tipoBadgeModal = `<span class="badge shadow-sm ms-3" style="background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; padding:6px 12px; border-radius:8px; font-size:0.75rem;"><i class="bi bi-laptop me-1"></i>Digital</span>`;
         tipoSolicitudActual = 'digital';
     }
 
@@ -842,7 +851,7 @@ function manejarGuardarCambios() {
     motivo_aplazamiento: ($('#d_motivo_aplazamiento').val() || '').trim(),
     motivo_negacion: ($('#d_motivo_negacion').val() || '').trim(),
     tipoSolicitudActual: tipoSolicitudActual,
-    fecha_radicacion_sai: ($('#d_fecha_radicacion_sai').val() || '').trim()
+    fecha_radicacion_sai: tipoSolicitudActual === 'induccion' ? '' : ($('#d_fecha_radicacion_sai').val() || '').trim()
   };
 
   if (!datos.estado_q || (!datos.biometria && tipoSolicitudActual !== 'induccion')) {
@@ -1256,11 +1265,7 @@ function guardarGestionReestudioDesdeDigital() {
           });
         }
       } else {
-        Swal.fire({ icon: 'success', title: '¡Operación Exitosa!', html: r.message ? r.message.replace(/\n/g, '<br>') : 'Gestión guardada correctamente.', confirmButtonColor: '#253150' }).then(function() {
-          bootstrap.Modal.getInstance(document.getElementById('modalReestudioDigital')).hide();
-          yaSeIntentoAsignar = false;
-          cargarDatos();
-        });
+        Swal.fire({ icon: 'warning', title: 'Atención', html: r.message ? r.message.replace(/\n/g, '<br>') : 'No se pudo guardar la gestión.', confirmButtonColor: '#253150' });
       }
     })
     .withFailureHandler(function(e) {
@@ -1283,6 +1288,8 @@ function detectarTipoCaso(rowData) {
   if (rowData.__fuente === 'REESTUDIO') return 'reestudio';
   var marcadorSinGuion = marcador.replace(/_/g, ' ');
   if (marcadorSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || marcador === 'APROBADO_PENDIENTE_BIOMETRIA') return 'desaplazamiento';
+  var clase = String(rowData[20] || '').toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (clase === 'INDUCCION') return 'induccion';
   return 'digital';
 }
 
@@ -1301,10 +1308,14 @@ function abrirModalUnificado(index) {
       break;
     case 'reestudio':
       poblarModalRst(fila);
+      var rstInfoTab = document.querySelector('#modalReestudio button[data-bs-target="#rst_tab_info"]');
+      if (rstInfoTab) new bootstrap.Tab(rstInfoTab).show();
       new bootstrap.Modal(document.getElementById('modalReestudio')).show();
       break;
     default:
       poblarModalDig(fila);
+      var digInfoTab = document.querySelector('#modalDigital button[data-bs-target="#dig_tab_general"]');
+      if (digInfoTab) new bootstrap.Tab(digInfoTab).show();
       new bootstrap.Modal(document.getElementById('modalDigital')).show();
       break;
   }
@@ -1453,9 +1464,43 @@ function poblarModalDig(fila) {
   setTxt('dig_clase', fila[20] || '');
   setTxt('dig_uar', fila[21] || 'No');
   setTxt('dig_canal', fila[36] || '');
-  setTxt('dig_categoriaScore', fila[37] || fila[fila.length - 2] || '');
+  setTxt('dig_categoriaScore', fila[fila.length - 2] || '');
   setTxt('dig_nombreAsesor', fila[14]);
   setTxt('dig_correoAsesor', fila[15]);
+
+  var codSection = document.getElementById('dig_codeudores_section');
+  var codContainer = document.getElementById('dig_codeudores_container');
+  if (codSection && codContainer) {
+    codContainer.innerHTML = '';
+    var tieneCod = false;
+    for (var ci = 0; ci < 3; ci++) {
+      var base = 37 + (ci * 7);
+      var nombre = String(fila[base] || '').trim();
+      if (!nombre) continue;
+      tieneCod = true;
+      var doc = String(fila[base + 1] || '').trim();
+      var tipoD = String(fila[base + 2] || '').trim();
+      var email = String(fila[base + 3] || '').trim();
+      var tel = String(fila[base + 4] || '').trim();
+      var estado = String(fila[base + 5] || '').trim();
+      var resultado = String(fila[base + 6] || '').trim();
+      var numCod = ci + 1;
+      var card = '<div class="bg-white border rounded-4 p-4 mb-3">' +
+        '<div class="d-flex align-items-center mb-3"><span class="badge me-2" style="background:var(--grad-azul);color:#fff;padding:5px 10px;border-radius:8px;font-size:0.72rem;"><i class="bi bi-person-fill me-1"></i>Codeudor ' + numCod + '</span>' +
+        (estado ? '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:4px 10px;border-radius:8px;font-size:0.7rem;">' + estado + '</span>' : '') +
+        '</div>' +
+        '<div class="row g-3">' +
+        '<div class="col-md-4"><label class="d-block" style="font-size:0.78rem;color:var(--text-muted);"><i class="bi bi-person me-1"></i>Nombre</label><p class="fw-bold text-dark mb-0" style="font-size:0.88rem;word-break:break-word;">' + (nombre || '—') + '</p></div>' +
+        '<div class="col-md-4"><label class="d-block" style="font-size:0.78rem;color:var(--text-muted);"><i class="bi bi-card-heading me-1"></i>Documento</label><p class="fw-bold text-dark mb-0" style="font-size:0.88rem;">' + (tipoD ? tipoD + ' ' : '') + (doc || '—') + '</p></div>' +
+        '<div class="col-md-4"><label class="d-block" style="font-size:0.78rem;color:var(--text-muted);"><i class="bi bi-envelope me-1"></i>Correo</label><p class="fw-bold text-primary mb-0" style="font-size:0.88rem;word-break:break-word;">' + (email || '—') + '</p></div>' +
+        '<div class="col-md-4"><label class="d-block" style="font-size:0.78rem;color:var(--text-muted);"><i class="bi bi-telephone me-1"></i>Teléfono</label><p class="fw-bold text-dark mb-0" style="font-size:0.88rem;">' + (tel || '—') + '</p></div>' +
+        (resultado ? '<div class="col-md-8"><label class="d-block" style="font-size:0.78rem;color:var(--text-muted);"><i class="bi bi-file-text me-1"></i>Resultado</label><p class="text-dark mb-0" style="font-size:0.82rem;word-break:break-word;">' + resultado + '</p></div>' : '') +
+        '</div></div>';
+      codContainer.innerHTML += card;
+    }
+    if (tieneCod) codSection.classList.remove('d-none');
+    else codSection.classList.add('d-none');
+  }
 
   setVal('dig_biometria', '');
   setVal('dig_comentarios_gestion', '');
@@ -1482,15 +1527,22 @@ function poblarModalDig(fila) {
   var selectEstadoDig = document.getElementById('dig_estado_q');
   var contBioDig = document.getElementById('dig_contenedor_biometria');
   var tipoBadgeEl = document.getElementById('dig_tipoBadge');
-  var esInduccion = (claseNorm.indexOf('INDUCCI') !== -1 || claseNorm === 'IND');
+  var esInduccion = (claseNorm === 'INDUCCION' || claseNorm === 'INDUCCIÓN');
   if (tipoBadgeEl) {
-    tipoBadgeEl.innerHTML = esInduccion
-      ? '<span class="badge ms-1" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-easel me-1"></i>Inducción</span>'
-      : '<span class="badge ms-1" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-laptop me-1"></i>Estudio Digital</span>';
+    if (esInduccion) {
+      tipoBadgeEl.innerHTML = '<span class="badge ms-1" style="background:#fef3c7;color:#b45309;border:1px solid #fde68a;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-easel me-1"></i>Inducción</span>';
+    } else if (claseNorm.includes('REESTUDIO')) {
+      tipoBadgeEl.innerHTML = '<span class="badge ms-1" style="background:#c7d2fe;color:#3730a3;border:1px solid #a5b4fc;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-arrow-repeat me-1"></i>Reestudio Digital</span>';
+    } else {
+      tipoBadgeEl.innerHTML = '<span class="badge ms-1" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-laptop me-1"></i>Digital</span>';
+    }
   }
+  var contFechaRadDig = document.getElementById('dig_contenedor_fecha_radicacion');
   if (esInduccion) {
     if (contBioDig) contBioDig.classList.add('d-none');
+    if (contFechaRadDig) contFechaRadDig.classList.add('d-none');
     setVal('dig_biometria', 'No');
+    setVal('dig_fecha_radicacion_sai', '');
     if (selectEstadoDig) {
       selectEstadoDig.innerHTML = '<option value="" selected disabled>Seleccione una opción</option><option value="APLAZADA">APLAZADA</option>';
       selectEstadoDig.value = '';
@@ -1498,6 +1550,10 @@ function poblarModalDig(fila) {
     if (aplaz) aplaz.classList.remove('d-none');
   } else {
     if (contBioDig) contBioDig.classList.remove('d-none');
+    if (contFechaRadDig) contFechaRadDig.classList.remove('d-none');
+    if (selectEstadoDig && selectEstadoDig.options.length <= 2) {
+      selectEstadoDig.innerHTML = '<option value="" selected disabled>Seleccione una opción</option><option value="APROBADA">APROBADA</option><option value="APLAZADA">APLAZADA</option><option value="NEGADA">NEGADA</option><option value="PENDIENTE VALIDACION">PENDIENTE VALIDACION</option><option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>';
+    }
   }
 
   var solId = String(fila[0]).trim();
@@ -1712,10 +1768,7 @@ function manejarGuardarDigital() {
     Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' });
     return;
   }
-  if (!_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
-
-  UX.setBtnLoading(btn, true);
-  UX.showModalOverlay('modalDigital', true);
+  if (!esInduccionDig && !_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
 
   var datos = {
     solicitudId: solId,
@@ -1723,13 +1776,16 @@ function manejarGuardarDigital() {
     estado_q: estado,
     motivo_aplazamiento: motivoAplazDig,
     motivo_negacion: motivoNegDig,
-    fecha_radicacion_sai: document.getElementById('dig_fecha_radicacion_sai').value || '',
-    comentarios_gestion: document.getElementById('dig_comentarios_gestion').value || ''
+    fecha_radicacion_sai: esInduccionDig ? '' : (document.getElementById('dig_fecha_radicacion_sai').value || ''),
+    comentarios_gestion: document.getElementById('dig_comentarios_gestion').value || '',
+    tipoSolicitudActual: tipoSolicitudActual
   };
 
+  if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalDigital', true); }
+
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); onGuardarExitoUnificado(r, 'modalDigital', solId); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } onGuardarExitoUnificado(r, 'modalDigital', solId); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarCambiosInternos(datos);
 }
 
@@ -1754,12 +1810,11 @@ function manejarGuardarBiometria() {
     motivoAplazamiento: motivoAplaz
   };
 
-  UX.setBtnLoading(btn, true);
-  UX.showModalOverlay('modalBiometria', true);
+  if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalBiometria', true); }
 
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); onGuardarExitoUnificado(r, 'modalBiometria', solId); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } onGuardarExitoUnificado(r, 'modalBiometria', solId); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarGestionBiometria(solId, datosForm);
 }
 
@@ -1784,12 +1839,11 @@ function manejarGuardarReestudio() {
     Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' }); return;
   }
 
-  UX.setBtnLoading(btn, true);
-  UX.showModalOverlay('modalReestudio', true);
+  if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalReestudio', true); }
 
   google.script.run
-    .withSuccessHandler(function(r) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
-    .withFailureHandler(function(e) { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
     .guardarGestionReestudio(datos);
 }
 
@@ -1802,18 +1856,19 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
     if (solicitudId) _quitarFilaTabla(solicitudId);
 
     if (r.disparaAsignacion) {
+      yaSeIntentoAsignar = true;
       _dispararAutoAsignacion();
     }
 
     if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
       UX.showSuccessCheck(function() {
         if (typeof UX.showToast === 'function') UX.showToast('Gestión guardada correctamente', 'success');
-        yaSeIntentoAsignar = false;
+        if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
         cargarDatos();
       });
     } else {
       Swal.fire({ icon: 'success', title: 'Guardado', text: r.message || 'Gestión guardada.', timer: 2000, showConfirmButton: false });
-      yaSeIntentoAsignar = false;
+      if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
       cargarDatos();
     }
   } else {
@@ -1825,12 +1880,13 @@ function _dispararAutoAsignacion() {
   var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
   google.script.run
     .withSuccessHandler(function(res) {
+      yaSeIntentoAsignar = false;
       if (res && res.success && res.nueva) {
         if (typeof UX !== 'undefined' && UX.showToast) UX.showToast(res.message || 'Nuevo caso asignado', 'info');
         cargarDatos();
       }
     })
-    .withFailureHandler(function() {})
+    .withFailureHandler(function() { yaSeIntentoAsignar = false; })
     [fnName]();
 }
 
@@ -1961,11 +2017,23 @@ function abrirResumenHoy() {
         if (res.listado.length === 0) { $('#rh_empty').removeClass('d-none'); }
         else {
           var tbody = $('#rh_tbody');
-          res.listado.forEach(function(item) {
-            var fBadge = item.fuente === 'DIGITAL'
-              ? '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(29,78,216,0.1);color:#1d4ed8;border:1px solid rgba(29,78,216,0.2);margin-left:6px;">DIG</span>'
-              : '<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:5px;background:rgba(67,56,202,0.1);color:#4338ca;border:1px solid #c7d2fe;margin-left:6px;">REST</span>';
-            tbody.append('<tr><td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fBadge + '</td><td style="padding:10px 14px;font-size:0.875rem;">' + item.tipo + '</td><td style="padding:10px 14px;"><span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td></tr>');
+          res.listado.forEach(function(item, idx) {
+            var fBadge = '';
+            var obsText = item.observaciones || '';
+            var obsCell = obsText
+              ? '<a href="javascript:void(0)" class="rh-obs-toggle" data-target="rh_obs_' + idx + '" style="font-size:0.75rem;font-weight:600;color:#4338ca;text-decoration:none;"><i class="bi bi-chat-left-text me-1"></i>Ver comentario</a>'
+              : '<span class="text-muted" style="font-size:0.75rem;">—</span>';
+            var obsRow = obsText
+              ? '<tr id="rh_obs_' + idx + '" style="display:none;"><td colspan="4" style="padding:8px 14px 12px 14px;background:#f8fafc;border-top:none;"><div style="font-size:0.8rem;color:#334155;line-height:1.5;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;white-space:pre-wrap;word-break:break-word;">' + obsText.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></td></tr>'
+              : '';
+            tbody.append('<tr><td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fBadge + '</td><td style="padding:10px 14px;font-size:0.875rem;">' + item.tipo + '</td><td style="padding:10px 14px;"><span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td><td style="padding:10px 14px;">' + obsCell + '</td></tr>' + obsRow);
+          });
+          tbody.on('click', '.rh-obs-toggle', function(e) {
+            e.preventDefault();
+            var target = $('#' + $(this).data('target'));
+            var isVisible = target.is(':visible');
+            target.toggle();
+            $(this).html(isVisible ? '<i class="bi bi-chat-left-text me-1"></i>Ver comentario' : '<i class="bi bi-x-circle me-1"></i>Ocultar');
           });
           $('#rh_tabla_detalle').show();
         }
@@ -1999,9 +2067,16 @@ function abrirResumenHoy() {
       });
       html += '</div>';
       if (res.listado && res.listado.length > 0) {
-        html += '<table class="table" style="font-size:0.85rem;"><thead><tr><th>Solicitud</th><th>Tipo</th><th>Hora</th></tr></thead><tbody>';
-        res.listado.forEach(function(item) {
-          html += '<tr><td class="fw-bold text-primary">' + item.solicitud + '</td><td>' + item.tipo + '</td><td><span style="font-weight:700;padding:4px 10px;border-radius:8px;background:rgba(37,49,80,0.07);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td></tr>';
+        html += '<table class="table" style="font-size:0.85rem;"><thead><tr><th>Solicitud</th><th>Tipo</th><th>Hora</th><th>Observaciones</th></tr></thead><tbody>';
+        res.listado.forEach(function(item, idx) {
+          var obs = item.observaciones || '';
+          var obsHtml = obs
+            ? '<a href="javascript:void(0)" onclick="var r=document.getElementById(\'rhs_obs_' + idx + '\');var v=r.style.display!==\'none\';r.style.display=v?\'none\':\'\';this.innerHTML=v?\'<i class=bi-chat-left-text></i> Ver comentario\':\'<i class=bi-x-circle></i> Ocultar\';" style="font-size:0.75rem;font-weight:600;color:#4338ca;text-decoration:none;"><i class="bi bi-chat-left-text"></i> Ver comentario</a>'
+            : '<span class="text-muted">—</span>';
+          var obsRow = obs
+            ? '<tr id="rhs_obs_' + idx + '" style="display:none;"><td colspan="4" style="padding:8px 14px 12px;background:#f8fafc;border-top:none;"><div style="font-size:0.8rem;color:#334155;line-height:1.5;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;white-space:pre-wrap;word-break:break-word;">' + obs.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></td></tr>'
+            : '';
+          html += '<tr><td class="fw-bold text-primary">' + item.solicitud + '</td><td>' + item.tipo + '</td><td><span style="font-weight:700;padding:4px 10px;border-radius:8px;background:rgba(37,49,80,0.07);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td><td>' + obsHtml + '</td></tr>' + obsRow;
         });
         html += '</tbody></table>';
       }

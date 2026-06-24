@@ -248,11 +248,15 @@
               </div>
             </div>
             <h6 class="fw-bold mb-3 text-muted" style="font-size:0.9rem;"><i class="bi bi-person-workspace me-2"></i>Información del Asesor</h6>
-            <div class="bg-white border rounded-4 p-4">
+            <div class="bg-white border rounded-4 p-4 mb-4">
               <div class="row g-4">
                 <div class="col-md-6"><label class="d-block"><i class="bi bi-person-badge me-1"></i>Nombre</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_nombreAsesor"></p></div>
                 <div class="col-md-6"><label class="d-block"><i class="bi bi-envelope-at me-1"></i>Correo</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_correoAsesor"></p></div>
               </div>
+            </div>
+            <div id="dig_codeudores_section" class="d-none">
+              <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-people-fill me-2 text-primary"></i>Codeudores</h6>
+              <div id="dig_codeudores_container"></div>
             </div>
           </div>
 
@@ -261,7 +265,7 @@
             <div class="gestion-card p-4">
               <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
               <div class="row">
-                <div class="col-md-6 gestion-group">
+                <div class="col-md-6 gestion-group" id="dig_contenedor_fecha_radicacion">
                   <label class="gestion-label"><i class="bi bi-calendar-plus me-1"></i>Fecha y Hora Radicación SAI<i class="bi bi-question-circle-fill" title="Copia la fecha y hora exacta en que la solicitud quedó radicada en SAI y pégala aquí (DD/MM/AAAA HH:MM). Se usa para calcular los tiempos de gestión." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <input type="text" id="dig_fecha_radicacion_sai" class="form-control gestion-select sai-fecha-input" placeholder="Pega desde SAI: DD/MM/AAAA HH:MM" autocomplete="off" style="border-radius:10px;" oninput="_validarFechaSai(this)" onpaste="setTimeout(function(){_validarFechaSai(document.getElementById('dig_fecha_radicacion_sai'))},50)">
                   <div class="sai-fecha-preview" id="dig_fecha_preview"></div>
@@ -674,7 +678,7 @@
           <div class="bg-white border rounded-4 p-4">
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-list-ul me-2"></i>Listado Detallado</h6>
             <p id="rh_empty" class="text-center text-muted py-3 d-none">Sin gestiones registradas hoy.</p>
-            <div class="table-responsive"><table class="table table-sm align-middle mb-0" id="rh_tabla_detalle" style="display:none;"><thead><tr><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Solicitud</th><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Tipo</th><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Hora</th></tr></thead><tbody id="rh_tbody"></tbody></table></div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0" id="rh_tabla_detalle" style="display:none;"><thead><tr><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Solicitud</th><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Tipo</th><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Hora</th><th style="font-size:0.67rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:1px;padding:10px 14px;background:var(--bg-page);">Observaciones</th></tr></thead><tbody id="rh_tbody"></tbody></table></div>
           </div>
         </div>
       </div>

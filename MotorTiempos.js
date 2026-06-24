@@ -24,20 +24,25 @@
 // o como string "HH:mm".
 function _parsearHora(valor) {
   if (!valor && valor !== 0) return null;
+  if (typeof valor === 'string') {
+    const s = valor.trim().toLowerCase();
+    if (s.includes(':')) {
+      const esPM = s.includes('p.') || s.includes('pm');
+      const esAM = s.includes('a.') || s.includes('am');
+      const nums = s.replace(/[^0-9:]/g, '');
+      const p = nums.split(':');
+      let h = parseInt(p[0], 10);
+      const m = parseInt(p[1] || '0', 10);
+      if (esPM && h < 12) h += 12;
+      if (esAM && h === 12) h = 0;
+      return h * 60 + m;
+    }
+  }
   if (valor instanceof Date) {
-    // GAS creates time Dates with UTC hours matching the cell value (epoch Dec 30, 1899).
-    // Use getUTCHours/getUTCMinutes to avoid the historical LMT offset shift.
-    return valor.getUTCHours() * 60 + valor.getUTCMinutes();
+    return valor.getHours() * 60 + valor.getMinutes();
   }
   if (typeof valor === 'number') {
     return Math.round(valor * 24 * 60);
-  }
-  if (typeof valor === 'string') {
-    const s = valor.trim();
-    if (s.includes(':')) {
-      const p = s.split(':');
-      return parseInt(p[0], 10) * 60 + parseInt(p[1], 10);
-    }
   }
   return null;
 }
@@ -76,7 +81,7 @@ function _cargarConfigHoraria() {
   try {
     const ht = ss.getSheetByName('Turnos');
     if (ht && ht.getLastRow() > 1) {
-      const data = ht.getDataRange().getValues();
+      const data = ht.getDataRange().getDisplayValues();
       for (let i = 1; i < data.length; i++) {
         const r = data[i];
         const id = String(r[0] || '').trim();
@@ -87,9 +92,14 @@ function _cargarConfigHoraria() {
           const marcado = r[3 + d];
           if (!(marcado === true || String(marcado).toUpperCase() === 'TRUE' || marcado === 1)) continue;
           // Per-day hours: index 10 + d*2 = Ini, 11 + d*2 = Fin
-          const ini = _parsearHora(r[10 + d * 2]);
-          const fin = _parsearHora(r[11 + d * 2]);
-          if (ini === null || fin === null || ini >= fin) continue;
+          const iniRaw = r[10 + d * 2];
+          const finRaw = r[11 + d * 2];
+          const ini = _parsearHora(iniRaw);
+          const fin = _parsearHora(finRaw);
+          if (ini === null || fin === null || ini >= fin) {
+            Logger.log('[Turnos] SKIP turno=' + id + ' dia=' + d + ' | iniRaw=' + iniRaw + '(' + typeof iniRaw + ') → ' + ini + ' | finRaw=' + finRaw + '(' + typeof finRaw + ') → ' + fin);
+            continue;
+          }
           turnos.get(id).push({ diaSemana: DIAS_JS[d], ini, fin });
         }
       }
@@ -313,6 +323,15 @@ function calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista
     ' | analistaTurnos=' + config.analistaTurnos.size);
   const fnEquipo   = (d) => _horarioEquipo(d, config);
   const fnAnalista = (d) => _horarioAnalista(d, emailAnalista, config);
+
+  const asignaciones = config.analistaTurnos.get((emailAnalista || '').toLowerCase().trim()) || [];
+  Logger.log('[MotorTiempos] analista=' + emailAnalista + ' | asignaciones=' + JSON.stringify(asignaciones.map(a => ({ id: a.idTurno, desde: a.desde, hasta: a.hasta }))));
+  if (tAsignacion instanceof Date) {
+    const bloquesTest = fnAnalista(tAsignacion);
+    Logger.log('[MotorTiempos] bloques analista para dia asignacion=' + JSON.stringify(bloquesTest));
+    const bloquesEquipo = fnEquipo(tAsignacion);
+    Logger.log('[MotorTiempos] bloques equipo para dia asignacion=' + JSON.stringify(bloquesEquipo));
+  }
 
   const tRadOk = tRadicacion instanceof Date && !isNaN(tRadicacion.getTime());
   const tAsiOk = tAsignacion instanceof Date && !isNaN(tAsignacion.getTime());

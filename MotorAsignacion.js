@@ -17,16 +17,17 @@ const MAX_VIP_CONSECUTIVAS_UNIF = 2;
 const CATEGORIAS_ROTACION_UNIF = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ETIQUETAS_TIPO = {
-  nueva: 'Nuevas', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción',
+  digital: 'Digital', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción',
   reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR',
   biometriaFallida: 'Biometría Fallida'
 };
 
 const ORDEN_PRIORIDAD_MODOS = {
-  NUEVAS_PRIMERO:           ['nueva', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  DESAPLAZAMIENTO_PRIMERO:  ['desaplazamiento', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO:        ['induccion', 'nueva', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  REESTUDIOS_PRIMERO:       ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'desaplazamiento', 'induccion']
+  DIGITAL_PRIMERO:          ['digital', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  NUEVAS_PRIMERO:           ['digital', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  DESAPLAZAMIENTO_PRIMERO:  ['desaplazamiento', 'digital', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO:        ['induccion', 'digital', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  REESTUDIOS_PRIMERO:       ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'digital', 'desaplazamiento', 'induccion']
 };
 
 // ============================================================
@@ -93,13 +94,13 @@ function _parseDateUnif(dateStr) {
 // ============================================================
 
 function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
-  var conteoHoy = { nueva: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var conteoHoy = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ss.getSheetByName("solicitud");
   if (!hoja || hoja.getLastRow() < 2) return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente };
 
-  var data = hoja.getRange("A1:AL" + hoja.getLastRow()).getValues();
+  var data = hoja.getRange("A1:BG" + hoja.getLastRow()).getValues();
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var asignado = String(row[27]).trim().toLowerCase();
@@ -111,11 +112,9 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
     var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
     var estadoSinGuion = estadoNorm.replace(/_/g, ' ');
 
-    var tipo = 'nueva';
+    var tipo = 'digital';
     if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
-    else if (claseNorm.indexOf("INDUCCI") !== -1 || claseNorm === "IND") tipo = 'induccion';
-    else if (estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO') tipo = 'nueva';
-    else tipo = 'nueva';
+    else if (claseNorm === "INDUCCION") tipo = 'induccion';
 
     if (_cumpleHoyUnif(fechaAsig, ctx) || _cumpleHoyUnif(fechaFin, ctx)) conteoHoy[tipo]++;
     var tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
@@ -127,17 +126,21 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
   try {
     var hojaHist = ss.getSheetByName("Historico_Gestiones");
     if (hojaHist && hojaHist.getLastRow() > 1) {
-      var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 37).getValues();
+      var colsHist = Math.max(61, hojaHist.getLastColumn());
+      var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, colsHist).getValues();
       for (var j = 0; j < dataHist.length; j++) {
         var rh = dataHist[j];
         var asigH = String(rh[25]).trim().toLowerCase();
         if (asigH !== userEmail) continue;
-        var claseH = String(rh[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-        var estadoH = String(rh[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-        var estadoHSinGuion = estadoH.replace(/_/g, ' ');
-        var tipoH = 'nueva';
-        if (estadoHSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoH === 'APROBADO_PENDIENTE_BIOMETRIA') tipoH = 'desaplazamiento';
-        else if (claseH.indexOf("INDUCCI") !== -1 || claseH === "IND") tipoH = 'induccion';
+        var tipoH = String(rh[60] || '').trim();
+        if (!tipoH || !conteoHoy.hasOwnProperty(tipoH)) {
+          var claseH = String(rh[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          var estadoH = String(rh[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          var estadoHSinGuion = estadoH.replace(/_/g, ' ');
+          tipoH = 'digital';
+          if (estadoHSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoH === 'APROBADO_PENDIENTE_BIOMETRIA') tipoH = 'desaplazamiento';
+          else if (claseH === "INDUCCION") tipoH = 'induccion';
+        }
         if (_cumpleHoyUnif(rh[24], ctx) || _cumpleHoyUnif(rh[26], ctx)) conteoHoy[tipoH]++;
         var tieneAsigH = rh[24] instanceof Date || String(rh[24]).trim() !== "";
         var tieneFinH = rh[26] instanceof Date || String(rh[26]).trim() !== "";
@@ -181,18 +184,22 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
   try {
     var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
     if (hojaHistR && hojaHistR.getLastRow() > 1) {
-      var dataHistR = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, 14).getValues();
+      var colsHistR = Math.max(19, hojaHistR.getLastColumn());
+      var dataHistR = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, colsHistR).getValues();
       for (var j = 0; j < dataHistR.length; j++) {
         var rr = dataHistR[j];
         var asigHR = String(rr[6]).trim().toLowerCase();
         if (asigHR !== userEmail) continue;
-        var origenHR = String(rr[3]).toUpperCase().trim();
-        var tipoPHRNorm = String(rr[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-        var tipoHR = null;
-        if (tipoPHRNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
-        else if (origenHR === "CORREO" && tipoPHRNorm === "NUEVA") tipoHR = 'nuevaUar';
-        else if (origenHR === "CORREO" && tipoPHRNorm === "ADICIONAL") tipoHR = 'deudorUar';
-        else if (tipoPHRNorm === "REESTUDIO") tipoHR = 'reestudio';
+        var tipoHR = String(rr[18] || '').trim();
+        if (!tipoHR || !conteoHoy.hasOwnProperty(tipoHR)) {
+          var origenHR = String(rr[3]).toUpperCase().trim();
+          var tipoPHRNorm = String(rr[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          tipoHR = null;
+          if (tipoPHRNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
+          else if (origenHR === "CORREO" && tipoPHRNorm === "NUEVA") tipoHR = 'nuevaUar';
+          else if (origenHR === "CORREO" && tipoPHRNorm === "ADICIONAL") tipoHR = 'deudorUar';
+          else if (tipoPHRNorm === "REESTUDIO") tipoHR = 'reestudio';
+        }
         if (!tipoHR) continue;
         if (_cumpleHoyUnif(rr[8], ctx) || _cumpleHoyUnif(rr[9], ctx)) conteoHoy[tipoHR]++;
         var tieneAsigHR = rr[8] instanceof Date ? true : String(rr[8]).trim() !== "";
@@ -224,12 +231,12 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
     var esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
     if ((estadoNorm.indexOf("APROB") !== -1 && !esDesaplazamiento) || estadoNorm.indexOf("NEGAD") !== -1 || estadoNorm.indexOf("RECHAZ") !== -1 || estadoNorm.indexOf("APLAZ") !== -1) continue;
 
-    var esInduccion = claseNorm.indexOf("INDUCCI") !== -1 || claseNorm === "IND";
+    var esInduccion = claseNorm === "INDUCCION";
     var esNueva = estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO';
 
     if (!esNueva && !esDesaplazamiento && !esInduccion) continue;
 
-    var tipo = 'nueva';
+    var tipo = 'digital';
     if (esDesaplazamiento) tipo = 'desaplazamiento';
     else if (esInduccion) tipo = 'induccion';
 
@@ -241,8 +248,9 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
 
     if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
-    var reasignada = String(row[35]).trim().toUpperCase() === "REASIGNADA";
-    var esCRM = String(row[36] || "").toLowerCase().trim().indexOf("crm") === 0;
+    var reasignada = String(row[58]).trim().toUpperCase() === "REASIGNADA";
+    var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
+    var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';
 
     pendientes.push({
       base: 'PRINCIPAL',
@@ -250,7 +258,7 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
       rowData: row,
       tipo: tipo,
       reasignada: reasignada,
-      esCRM: esCRM,
+      esExterno: esExterno,
       polizaKey: _normalizarClaveUnif(row[1]),
       fechaOrd: _parseDateUnif(row[17])
     });
@@ -287,7 +295,7 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
       rowData: row,
       tipo: tipo,
       reasignada: false,
-      esCRM: false,
+      esExterno: false,
       polizaKey: _normalizarClaveUnif(row[1] || row[3]),
       fechaOrd: _parseDateUnif(row[0])
     });
@@ -356,10 +364,10 @@ function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
 function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solicitudesSheet, ss) {
   solicitudesSheet.getRange(lead.rowIndex, 27, 1, 5).setValues([[fechaHora, userEmail, "", "", nombreUsuario]]);
   solicitudesSheet.getRange(lead.rowIndex, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
-  solicitudesSheet.getRange(lead.rowIndex, 36).clearContent();
+  solicitudesSheet.getRange(lead.rowIndex, 59).clearContent();
   SpreadsheetApp.flush();
 
-  var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 38).getValues()[0];
+  var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 58).getValues()[0];
   var histRow = [
     s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
     s[16],s[17],s[18],s[19],s[20],s[21],
@@ -367,13 +375,19 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
     s[26],s[27],s[28],
     s[30],s[31],s[32],s[33],
     s[35],s[36],
-    '',0,0,0
+    '',0,0,0,
+    '','',
+    s[37],s[38],s[39],s[40],s[41],s[42],s[43],
+    s[44],s[45],s[46],s[47],s[48],s[49],s[50],
+    s[51],s[52],s[53],s[54],s[55],s[56],s[57],
+    lead.tipo
   ];
   var hojaHist = ss.getSheetByName("Historico_Gestiones");
   if (!hojaHist) hojaHist = ss.insertSheet("Historico_Gestiones");
   hojaHist.appendRow(histRow);
   hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
   solicitudesSheet.deleteRow(lead.rowIndex);
+  SpreadsheetApp.flush();
 }
 
 function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios) {
@@ -382,10 +396,12 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
   SpreadsheetApp.flush();
 
   var filaCompleta = reestudiosSheet.getRange(lead.rowIndex, 1, 1, 18).getValues()[0];
+  filaCompleta.push(lead.tipo);
   var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
   if (!hojaHistR) hojaHistR = ssReestudios.insertSheet("Historico_Gestiones");
   hojaHistR.appendRow(filaCompleta);
   reestudiosSheet.deleteRow(lead.rowIndex);
+  SpreadsheetApp.flush();
 }
 
 // ============================================================
@@ -438,7 +454,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var ctx = _buildFechaHoyFormats();
 
     // === CONTEO ===
-    var conteoHoyTotal = { nueva: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+    var conteoHoyTotal = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
     var capPendienteReal = 0;
 
     var refPrincipal = null;
@@ -494,9 +510,10 @@ function RequestLeadUnificado(equipoIdOverride) {
     } else if (equipoId === 'REESTUDIOS') {
       ordenPrioridad = ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'];
     } else {
-      var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
       if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
-      ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['NUEVAS_PRIMERO'];
+      if (prioridadGlobal === 'NUEVAS_PRIMERO') prioridadGlobal = 'DIGITAL_PRIMERO';
+      ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
     }
 
     var _tiposSeen = {};
@@ -531,8 +548,8 @@ function RequestLeadUnificado(equipoIdOverride) {
 
     pendientes.sort(function(a, b) {
       if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
-      if (a.esCRM && !b.esCRM) return -1;
-      if (!a.esCRM && b.esCRM) return 1;
+      if (a.esExterno && !b.esExterno) return -1;
+      if (!a.esExterno && b.esExterno) return 1;
       return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
     });
 
@@ -556,6 +573,12 @@ function RequestLeadUnificado(equipoIdOverride) {
     if (!leadSeleccionado) {
       return { success: false, message: "⚠️ Error interno: no se pudo seleccionar un caso." };
     }
+
+    // LOG DIAGNÓSTICO
+    var _reasCount = pendientes.filter(function(p){ return p.reasignada; }).length;
+    var _tiposPend = {};
+    pendientes.forEach(function(p){ _tiposPend[p.tipo] = (_tiposPend[p.tipo]||0)+1; });
+    Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionado: " + leadSeleccionado.tipo + " (reasig=" + leadSeleccionado.reasignada + ") | Orden tipos: " + JSON.stringify(_tiposConPendientes));
 
     // === ASIGNAR ===
     var fechaHora = new Date();

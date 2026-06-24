@@ -2,13 +2,14 @@ const MAX_VIP_CONSECUTIVAS = 2;
 const CATEGORIAS_ROTACION = ['mediana', 'grande', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
 const ORDEN_PRIORIDAD_POR_MODO = {
-  NUEVAS_PRIMERO:          ['nueva', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  DESAPLAZAMIENTO_PRIMERO: ['desaplazamiento', 'nueva', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
-  INDUCCION_PRIMERO:       ['induccion', 'nueva', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  DIGITAL_PRIMERO:         ['digital', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  NUEVAS_PRIMERO:          ['digital', 'desaplazamiento', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  DESAPLAZAMIENTO_PRIMERO: ['desaplazamiento', 'digital', 'induccion', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
+  INDUCCION_PRIMERO:       ['induccion', 'digital', 'desaplazamiento', 'biometriaFallida', 'reestudio', 'nuevaUar', 'deudorUar'],
 };
 
 // Para analistas del equipo REESTUDIOS, los casos propios (ORIGEN) siempre van primero
-const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'nueva', 'desaplazamiento', 'induccion'];
+const ORDEN_PRIORIDAD_REESTUDIOS = ['reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida', 'digital', 'desaplazamiento', 'induccion'];
 
 const ID_HOJA_REESTUDIOS_API = '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
 
@@ -85,11 +86,11 @@ function RequestLead() {
           || texto.includes(hoyFmt4) || texto.includes(hoyFmt5);
     }
 
-    let conteoHoy = { nueva: 0, desaplazamiento: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0, biometriaFallida: 0 };
+    let conteoHoy = { digital: 0, desaplazamiento: 0, induccion: 0, nuevaUar: 0, deudorUar: 0, reestudio: 0, biometriaFallida: 0 };
     let capPendienteReal = 0;
 
     // getValues() en lugar de getDisplayValues() para obtener Date reales en col 27/29
-    const dataSolicitudes = solicitudesSheet.getRange("A1:AL" + solicitudesSheet.getLastRow()).getValues();
+    const dataSolicitudes = solicitudesSheet.getRange("A1:BG" + solicitudesSheet.getLastRow()).getValues();
     for (let i = 1; i < dataSolicitudes.length; i++) {
       const row = dataSolicitudes[i];
       const asignado = String(row[27]).trim().toLowerCase();
@@ -101,9 +102,9 @@ function RequestLead() {
         const estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
 
-        let tipo = 'nueva';
+        let tipo = 'digital';
         if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
-        else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+        else if (claseNorm === "INDUCCION") tipo = 'induccion';
 
         if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) {
           conteoHoy[tipo]++;
@@ -118,19 +119,23 @@ function RequestLead() {
     try {
       const hojaHistD = ss.getSheetByName("Historico_Gestiones");
       if (hojaHistD && hojaHistD.getLastRow() > 1) {
-        const dataHistD = hojaHistD.getRange(2, 1, hojaHistD.getLastRow() - 1, 37).getValues();
+        const colsHistD = Math.max(61, hojaHistD.getLastColumn());
+        const dataHistD = hojaHistD.getRange(2, 1, hojaHistD.getLastRow() - 1, colsHistD).getValues();
         for (let i = 0; i < dataHistD.length; i++) {
           const row = dataHistD[i];
-          const asignado = String(row[25]).trim().toLowerCase(); // hist col 26: asignacion
+          const asignado = String(row[25]).trim().toLowerCase();
           if (asignado !== userEmail) continue;
-          const fechaAsig = row[24]; // hist col 25: fecha asignación
-          const fechaFin  = row[26]; // hist col 27: fecha fin gestión
-          const claseNorm  = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          const estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
-          let tipo = 'nueva';
-          if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
-          else if (claseNorm.includes("INDUCCI") || claseNorm === "IND") tipo = 'induccion';
+          const fechaAsig = row[24];
+          const fechaFin  = row[26];
+          let tipo = String(row[60] || '').trim();
+          if (!tipo || !conteoHoy.hasOwnProperty(tipo)) {
+            const claseNorm  = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            const estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
+            tipo = 'digital';
+            if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
+            else if (claseNorm === "INDUCCION") tipo = 'induccion';
+          }
           if (cumpleHoy(fechaAsig) || cumpleHoy(fechaFin)) conteoHoy[tipo]++;
           const tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
           const tieneFin  = fechaFin  instanceof Date || String(fechaFin).trim()  !== "";
@@ -212,12 +217,12 @@ function RequestLead() {
       const esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
       if ((estadoNorm.includes("APROB") && !esDesaplazamiento) || estadoNorm.includes("NEGAD") || estadoNorm.includes("RECHAZ") || estadoNorm.includes("APLAZ")) continue;
 
-      const esInduccion = claseNorm.includes("INDUCCI") || claseNorm === "IND";
+      const esInduccion = claseNorm === "INDUCCION";
       const esNueva = estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO';
 
       if (!esNueva && !esDesaplazamiento && !esInduccion) continue;
 
-      let tipo = 'nueva';
+      let tipo = 'digital';
       if (esDesaplazamiento) tipo = 'desaplazamiento';
       else if (esInduccion) tipo = 'induccion';
 
@@ -229,7 +234,7 @@ function RequestLead() {
 
       if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
-      const reasignada = String(row[35]).trim().toUpperCase() === "REASIGNADA";
+      const reasignada = String(row[58]).trim().toUpperCase() === "REASIGNADA";
       const esCRM = String(row[36] || "").toLowerCase().trim().startsWith("crm");
 
       pendientes.push({
@@ -276,7 +281,7 @@ function RequestLead() {
       });
     }
 
-    const _etiquetasTipo = { nueva: 'Nuevas', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR', biometriaFallida: 'Biometría Fallida' };
+    const _etiquetasTipo = { digital: 'Digital', desaplazamiento: 'Desaplazamiento', induccion: 'Inducción', reestudio: 'Reestudios', nuevaUar: 'Nueva UAR', deudorUar: 'Deudor UAR', biometriaFallida: 'Biometría Fallida' };
     const cuposLlenosHoy = Object.entries(cuotas)
       .filter(([tipo, lim]) => lim > 0 && conteoHoy[tipo] >= lim)
       .map(([tipo]) => `${_etiquetasTipo[tipo]} (${conteoHoy[tipo]}/${cuotas[tipo]})`);
@@ -309,9 +314,10 @@ function RequestLead() {
     if (equipoCupos === 'REESTUDIOS') {
       ordenPrioridad = ORDEN_PRIORIDAD_REESTUDIOS;
     } else {
-      let prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'NUEVAS_PRIMERO';
+      let prioridadGlobal = props.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
       if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
-      ordenPrioridad = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO'];
+      if (prioridadGlobal === 'NUEVAS_PRIMERO') prioridadGlobal = 'DIGITAL_PRIMERO';
+      ordenPrioridad = ORDEN_PRIORIDAD_POR_MODO[prioridadGlobal] || ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'];
     }
 
     const _tiposSeen = {};
@@ -411,6 +417,7 @@ function RequestLead() {
       let hojaHist = ss.getSheetByName("Historico_Gestiones");
       if (!hojaHist) hojaHist = ss.insertSheet("Historico_Gestiones");
       hojaHist.appendRow(histRow);
+      hojaHist.getRange(hojaHist.getLastRow(), 25).setNumberFormat("dd/MM/yyyy HH:mm:ss");
       hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
       solicitudesSheet.deleteRow(leadSeleccionado.rowIndex);
     } else {
