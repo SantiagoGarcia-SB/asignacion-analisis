@@ -628,7 +628,7 @@ function actualizarSolicitudesNuevasAPI() {
           const estadoExcluido = ESTADOS_EXCLUIR.has(estadoGeneral);
           const tipoExcluido   = TIPOS_EXCLUIR.has(tipoSolicitud);
 
-          if (estadoGeneral === "APROBADO" || estadoGeneral === "RECHAZADO") {
+          if (ESTADOS_EXCLUIR.has(estadoGeneral)) {
             const solId = String(item.consecutive || "").trim();
             if (solId) idsFinalizadas.add(solId);
           }
@@ -756,7 +756,7 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
 
     if (eliminadas > 0) {
       SpreadsheetApp.flush();
-      Logger.log(`🧹 ${eliminadas} solicitudes finalizadas eliminadas de la hoja (APROBADO/RECHAZADO).`);
+      Logger.log(`🧹 ${eliminadas} solicitudes finalizadas eliminadas de la hoja (APROBADO/RECHAZADO/CODEUDORES_REQUERIDOS).`);
     }
   } catch (err) {
     Logger.log("❌ Error eliminando solicitudes finalizadas: " + err.message);
