@@ -633,7 +633,11 @@ function actualizarSolicitudesNuevasAPI() {
             if (solId) idsFinalizadas.add(solId);
           }
 
-          if (estadoGeneral === "APROBADO_PENDIENTE_BIOMETRIA" && rc !== "500" && rc !== "503") {
+          if (estadoGeneral === "APROBADO_PENDIENTE_BIOMETRIA") {
+            return;
+          }
+
+          if (rc === "501") {
             return;
           }
 

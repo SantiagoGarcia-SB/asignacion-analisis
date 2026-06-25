@@ -3,6 +3,8 @@
 // OBSOLETA: biometría ahora usa Historico_Gestiones en ID_WAREHOUSE_USUARIOS
 // const ID_SHEET_GESTION = '1lT9BxWAKgo9xed9xaAbbFqna304TWNbzL3v2302ZvOQ';
 const ID_WAREHOUSE_USUARIOS = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0';
+const ID_SHEET_BIOMETRIA_PENDIENTE = '1gHW1RFMVd0h4HZr2xTrFnx-A5Pk_npJs-bAk8GOx2h0';
+const NOMBRE_HOJA_PENDIENTE_BIOMETRIA = 'pendiente_biometria';
 
 function getEndPointNewApiDate() { return PropertiesService.getScriptProperties().getProperty('endPointSaiNewApiDate'); }
 function getEndPointNewSai() { return PropertiesService.getScriptProperties().getProperty('endpointSaiNewApi'); }
@@ -516,4 +518,513 @@ function getDatosBiometria() {
     solicitudes: listaPendientes,
     stats: { hoy: conteoHoy, pendientes: listaPendientes.length }
   };
+}
+
+
+// ===================================================================
+// FLUJO BIOMETRÍA PENDIENTE (8am + 12pm)
+// ===================================================================
+
+function cicloBiometriaPendiente() {
+  Logger.log("=== INICIO cicloBiometriaPendiente ===");
+  _reconsultarPendientesBio();
+  _capturarNuevasBiometrias();
+  Logger.log("=== FIN cicloBiometriaPendiente ===");
+}
+
+function _consultarSaiIndividual(consecutivo) {
+  const baseUrl = getEndPointNewSai();
+  const keyFull_ = getKeyFull();
+  if (!baseUrl || !keyFull_) return null;
+
+  try {
+    var response = UrlFetchApp.fetch(baseUrl + consecutivo, {
+      method: "GET",
+      muteHttpExceptions: true,
+      headers: { "x-api-key": keyFull_, "Accept": "application/json" }
+    });
+    if (response.getResponseCode() !== 200) return null;
+    return JSON.parse(response.getContentText());
+  } catch (e) {
+    Logger.log("⚠️ Error consultando SAI para " + consecutivo + ": " + e.message);
+    return null;
+  }
+}
+
+function _homologarDatosApi(item) {
+  var mapaTipos = { "TS": "NUEVA", "AD": "ADICIONAL", "RSD": "REESTUDIO", "RE": "REESTUDIO", "RC": "REESTUDIO", "IND": "INDUCCION" };
+  var tipoOriginal = String(item.requestType || "").toUpperCase().trim();
+  var claseNormalizada = mapaTipos[tipoOriginal] || tipoOriginal;
+  var estadoGen = String(item.studyStatus || "").toUpperCase().trim();
+  if (estadoGen.includes("EN ESTUDIO") && claseNormalizada === "") {
+    claseNormalizada = "NUEVA";
+  }
+
+  var codeudores = [];
+  if (item.codebtors && Array.isArray(item.codebtors)) {
+    for (var ci = 0; ci < Math.min(item.codebtors.length, 3); ci++) {
+      var c = item.codebtors[ci];
+      codeudores.push({
+        nombre: c.name || "", documento: c.document || "", tipoDoc: c.documentType || "",
+        email: c.email || "", telefono: c.phone || "", estado: c.studyStatus || "",
+        resultado: c.resultDescription || "", resultCode: String(c.resultCode || "").trim()
+      });
+    }
+  }
+
+  return {
+    solicitud: item.consecutive,
+    poliza: item.policyNumber,
+    identificacionInquilino: item.evaluatedDocument || item.holderDocument,
+    tipoIdentificacion: item.evaluatedDocumentType || item.holderDocumentType,
+    nombreInquilino: item.tenantName,
+    correoInquilino: item.tenantEmail,
+    telefonoInquilino: item.tenantPhone,
+    ingresos: item.income,
+    fechaExpedicion: item.expeditionDate,
+    canon: item.monthlyRent,
+    cuota: item.managementFee,
+    direccionInmueble: item.address,
+    destinoInmueble: item.propertyUse,
+    ciudadInmueble: item.cityName,
+    nombreAsesor: item.executiveName,
+    correoAsesor: item.advisorEmail,
+    estadoGeneral: item.studyStatus,
+    fechaRadicacion: item.registrationDate,
+    fechaResultado: item.lastResultDate || item.lastMovementDate,
+    clase: claseNormalizada,
+    digitalUar: "No",
+    canal: String(item.channel || "").trim(),
+    codeudores: codeudores,
+    resultCode: String(item.resultCode || "").trim()
+  };
+}
+
+// PASO 1: Re-consultar pendientes (nuevo_estado_sai vacío)
+function _reconsultarPendientesBio() {
+  Logger.log("--- Paso 1: Re-consulta de pendientes ---");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 75).getValues();
+
+  var pendientes = [];
+  for (var i = 0; i < datos.length; i++) {
+    if (String(datos[i][62]).trim() !== "") continue;
+    var consecutivo = String(datos[i][0]).trim();
+    if (!consecutivo) continue;
+    pendientes.push({ fila: i + 2, consecutivo: consecutivo });
+  }
+
+  if (pendientes.length === 0) {
+    Logger.log("No hay pendientes sin re-consultar.");
+    return;
+  }
+
+  Logger.log(pendientes.length + " pendientes a re-consultar.");
+
+  var resultados = [];
+  for (var p = 0; p < pendientes.length; p++) {
+    var datosApi = _consultarSaiIndividual(pendientes[p].consecutivo);
+    resultados.push({ fila: pendientes[p].fila, consecutivo: pendientes[p].consecutivo, datosApi: datosApi });
+    Utilities.sleep(1000);
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para actualizar pendientes: " + e.message);
+    return;
+  }
+
+  try {
+    var solicitudesParaSolicitud = [];
+
+    for (var r = 0; r < resultados.length; r++) {
+      var res = resultados[r];
+      if (!res.datosApi) {
+        Logger.log("⚠️ Sin respuesta API para " + res.consecutivo);
+        continue;
+      }
+
+      var statusActual = String(res.datosApi.studyStatus || "").toUpperCase().trim();
+      hojaBio.getRange(res.fila, 63).setValue(statusActual);
+
+      if (statusActual === "APROBADO_PENDIENTE_BIOMETRIA") {
+        solicitudesParaSolicitud.push(_homologarDatosApi(res.datosApi));
+        Logger.log("✅ " + res.consecutivo + " sigue pendiente → enviando a solicitud");
+      } else {
+        Logger.log("🔄 " + res.consecutivo + " cambió a " + statusActual);
+      }
+    }
+
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+
+    if (solicitudesParaSolicitud.length > 0) {
+      procesarYGuardarLote(solicitudesParaSolicitud);
+      Logger.log("✅ " + solicitudesParaSolicitud.length + " solicitudes enviadas a hoja solicitud.");
+    }
+
+  } catch (e) {
+    Logger.log("❌ Error en _reconsultarPendientesBio: " + e.message);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+// PASO 2: Capturar nuevas biometrías desde la API
+function _capturarNuevasBiometrias() {
+  Logger.log("--- Paso 2: Captura de nuevas biometrías ---");
+
+  var keyFull_ = getKeyFull();
+  var endpointBase = getEndPointNewApiDate();
+  if (!keyFull_ || !endpointBase) {
+    Logger.log("❌ Faltan credenciales o endpoint.");
+    return;
+  }
+
+  var hoy = new Date();
+  var fechaInicio = new Date();
+  fechaInicio.setDate(hoy.getDate() - 3);
+  var sIni = formatDateCustom(fechaInicio);
+  var sFin = formatDateCustom(hoy);
+
+  var TIPOS_EXCLUIR = new Set(["AC"]);
+  var biometriasNuevas = [];
+  var paginaActual = 1;
+  var totalPaginas = 1;
+
+  try {
+    do {
+      var url = endpointBase + '?startDate=' + sIni + '&endDate=' + sFin + '&page=' + paginaActual + '&size=200';
+      Logger.log("[Biometría] Página " + paginaActual + " consultando...");
+
+      var response = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: { 'x-api-key': keyFull_, 'Accept': 'application/json' },
+        muteHttpExceptions: true
+      });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log("❌ API error HTTP " + response.getResponseCode());
+        break;
+      }
+
+      var json = JSON.parse(response.getContentText());
+      totalPaginas = json.totalPages || 1;
+      var contenido = json.content || [];
+
+      contenido.forEach(function(item) {
+        var esUar = (item.uar === true || String(item.uar).toLowerCase() === "true");
+        if (esUar) return;
+
+        var estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
+        var tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
+        var rc = String(item.resultCode || "").trim();
+
+        if (estadoGeneral !== "APROBADO_PENDIENTE_BIOMETRIA") return;
+        if (rc !== "500" && rc !== "503") return;
+        if (String(item.mainResultCode) !== "2") return;
+        if (TIPOS_EXCLUIR.has(tipoSolicitud)) return;
+
+        biometriasNuevas.push(_homologarDatosApi(item));
+      });
+
+      paginaActual++;
+      if (paginaActual <= totalPaginas) Utilities.sleep(2000);
+
+    } while (paginaActual <= totalPaginas);
+
+  } catch (e) {
+    Logger.log("❌ Error en consulta API biometrías: " + e.message);
+    return;
+  }
+
+  if (biometriasNuevas.length === 0) {
+    Logger.log("No se encontraron nuevas biometrías pendientes.");
+    return;
+  }
+
+  Logger.log(biometriasNuevas.length + " biometrías candidatas encontradas.");
+  _guardarLoteBiometriaPendiente(biometriasNuevas);
+}
+
+function _guardarLoteBiometriaPendiente(listaObjetos) {
+  if (!listaObjetos || listaObjetos.length === 0) return;
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para guardar biometrías: " + e.message);
+    return;
+  }
+
+  try {
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    if (!hojaBio) throw new Error("Hoja pendiente_biometria no encontrada.");
+
+    var setIdsBio = getSetDeIds(hojaBio);
+
+    var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+    var setIdsSol = hojaSol ? getSetDeIds(hojaSol) : new Set();
+
+    var filas = [];
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    var duplicados = 0;
+
+    listaObjetos.forEach(function(item) {
+      var solId = String(item.solicitud || "").trim();
+      if (!solId) return;
+
+      if (setIdsBio.has(solId) || setIdsSol.has(solId)) {
+        duplicados++;
+        return;
+      }
+
+      var est = String(item.estadoGeneral || "").toUpperCase();
+      var fila = new Array(75).fill("");
+
+      fila[0]  = solId;
+      fila[1]  = item.poliza || "";
+      fila[2]  = item.identificacionInquilino || "";
+      fila[3]  = item.tipoIdentificacion || "";
+      fila[4]  = item.nombreInquilino || "";
+      fila[5]  = item.correoInquilino || "";
+      fila[6]  = item.telefonoInquilino || "";
+      fila[7]  = item.ingresos != null ? item.ingresos : "";
+      fila[8]  = item.fechaExpedicion || "";
+      fila[9]  = item.canon != null ? item.canon : "";
+      fila[10] = item.cuota != null ? item.cuota : "";
+      fila[11] = item.direccionInmueble || "";
+      fila[12] = item.destinoInmueble || "";
+      fila[13] = item.ciudadInmueble || "";
+      fila[14] = item.nombreAsesor || "";
+      fila[15] = item.correoAsesor || "";
+      fila[16] = est;
+      fila[20] = item.clase || "";
+      fila[21] = item.digitalUar || "";
+      fila[36] = item.canal || "";
+
+      if (item.codeudores && item.codeudores.length > 0) {
+        for (var ci = 0; ci < Math.min(item.codeudores.length, 3); ci++) {
+          var base = 37 + (ci * 7);
+          var cod = item.codeudores[ci];
+          fila[base]     = cod.nombre || "";
+          fila[base + 1] = cod.documento || "";
+          fila[base + 2] = cod.tipoDoc || "";
+          fila[base + 3] = cod.email || "";
+          fila[base + 4] = cod.telefono || "";
+          fila[base + 5] = cod.estado || "";
+          fila[base + 6] = cod.resultado || "";
+        }
+      }
+
+      [item.fechaRadicacion, item.fechaResultado].forEach(function(f, idx) {
+        var valor = String(f || "").trim();
+        var resultado = valor;
+        if (valor && valor !== "En Proceso" && valor !== "null") {
+          try {
+            var fObj;
+            if (valor.includes("/")) {
+              var p = valor.split(/[\/\s:]/);
+              fObj = new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0, p[5] || 0);
+            } else {
+              fObj = new Date(valor);
+            }
+            if (!isNaN(fObj.getTime())) {
+              resultado = Utilities.formatDate(fObj, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+            }
+          } catch (e) {}
+        }
+        fila[17 + idx] = resultado;
+      });
+
+      fila[59] = ahora;  // fecha_consulta_sai
+
+      var destIdx = 0;
+      if (item.resultCode === "500" && destIdx < 4) {
+        var baseD = 63 + (destIdx * 3);
+        fila[baseD]     = "INQUILINO";
+        fila[baseD + 1] = String(item.nombreInquilino || "").split(" ")[0];
+        fila[baseD + 2] = String(item.telefonoInquilino || "").trim();
+        destIdx++;
+      }
+      if (item.codeudores) {
+        for (var cd = 0; cd < item.codeudores.length && destIdx < 4; cd++) {
+          if (item.codeudores[cd].resultCode === "500") {
+            var baseD2 = 63 + (destIdx * 3);
+            fila[baseD2]     = "CODEUDOR";
+            fila[baseD2 + 1] = String(item.codeudores[cd].nombre || "").split(" ")[0];
+            fila[baseD2 + 2] = String(item.codeudores[cd].telefono || "").trim();
+            destIdx++;
+          }
+        }
+      }
+
+      filas.push(fila);
+      setIdsBio.add(solId);
+    });
+
+    if (filas.length > 0) {
+      var rowInicio = hojaBio.getLastRow() + 1;
+      var rango = hojaBio.getRange(rowInicio, 1, filas.length, 75);
+      rango.setNumberFormat("@");
+      rango.setValues(filas);
+      SpreadsheetApp.flush();
+      Logger.log("✅ " + filas.length + " nuevas biometrías guardadas en pendiente_biometria. Duplicados: " + duplicados);
+
+      enviarBroadcastInfobip(filas, hojaBio, rowInicio);
+    } else {
+      Logger.log("No se guardaron biometrías nuevas. Duplicados: " + duplicados);
+    }
+
+  } catch (e) {
+    Logger.log("❌ Error guardando biometrías: " + e.message);
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function enviarBroadcastInfobip(filasBiometria, hojaBio, rowInicio) {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('INFOBIP_API_KEY');
+  var baseUrl = props.getProperty('INFOBIP_BASE_URL');
+  var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
+  var sender = props.getProperty('INFOBIP_SENDER');
+
+  if (!apiKey || !baseUrl || !templateName || !sender) {
+    Logger.log("⚠️ Infobip no configurado — faltan Script Properties. Broadcast no enviado.");
+    return;
+  }
+
+  var url = "https://" + baseUrl + "/whatsapp/1/message/template";
+  var enviados = 0;
+  var errores = 0;
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+  for (var i = 0; i < filasBiometria.length; i++) {
+    var fila = filasBiometria[i];
+    var solicitudId = String(fila[0] || "").trim();
+    var filaEnvioOk = false;
+
+    for (var d = 0; d < 4; d++) {
+      var base = 63 + (d * 3);
+      var rol = String(fila[base] || "").trim();
+      if (!rol) continue;
+      var nombre = String(fila[base + 1] || "").trim();
+      var telefono = String(fila[base + 2] || "").trim().replace(/\D/g, "");
+      if (!telefono || !nombre) continue;
+
+      if (telefono.length === 10 && telefono.charAt(0) === "3") {
+        telefono = "57" + telefono;
+      }
+
+      var payload = {
+        messages: [{
+          from: sender,
+          to: telefono,
+          content: {
+            templateName: templateName,
+            templateData: {
+              body: {
+                placeholders: [nombre, solicitudId]
+              }
+            },
+            language: "es_CO"
+          }
+        }]
+      };
+
+      try {
+        var response = UrlFetchApp.fetch(url, {
+          method: "POST",
+          contentType: "application/json",
+          headers: { "Authorization": "App " + apiKey },
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+
+        var code = response.getResponseCode();
+        if (code >= 200 && code < 300) {
+          enviados++;
+          filaEnvioOk = true;
+          Logger.log("✅ WA enviado → " + rol + ": " + nombre + " | Tel: " + telefono + " | Sol: " + solicitudId);
+        } else {
+          errores++;
+          Logger.log("❌ WA falló → " + telefono + " | HTTP " + code + " | " + response.getContentText());
+        }
+      } catch (e) {
+        errores++;
+        Logger.log("❌ Error WA → " + telefono + " | " + e.message);
+      }
+
+      Utilities.sleep(500);
+    }
+
+    if (hojaBio && rowInicio) {
+      var filaSheet = rowInicio + i;
+      var estado = filaEnvioOk ? "ENVIADO" : "ERROR";
+      hojaBio.getRange(filaSheet, 61).setValue(ahora);    // fecha_envio_brodcast
+      hojaBio.getRange(filaSheet, 62).setValue(estado);    // estado_brodcast
+    }
+  }
+
+  if (hojaBio) SpreadsheetApp.flush();
+  Logger.log("📱 Broadcast finalizado: " + enviados + " enviados, " + errores + " errores.");
+}
+
+function configurarInfobip() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('INFOBIP_API_KEY', 'cc0c476419eea6d179ad2136c13c0072-a919e025-1367-4775-bd25-7d69973a0df7');
+  props.setProperty('INFOBIP_BASE_URL', 'yrrzxg.api.infobip.com');
+  props.setProperty('INFOBIP_TEMPLATE_NAME', 'biometria_pendiente');
+  props.setProperty('INFOBIP_SENDER', '573148390322');
+  Logger.log("✅ Propiedades de Infobip configuradas correctamente.");
+}
+
+function testEnviarWhatsApp() {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('INFOBIP_API_KEY');
+  var baseUrl = props.getProperty('INFOBIP_BASE_URL');
+  var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
+  var sender = props.getProperty('INFOBIP_SENDER');
+
+  var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
+  var nombre = "Santiago";
+  var solicitud = "12345678";
+
+  var url = "https://" + baseUrl + "/whatsapp/1/message/template";
+  var payload = {
+    messages: [{
+      from: sender,
+      to: telefono,
+      content: {
+        templateName: templateName,
+        templateData: {
+          body: {
+            placeholders: [nombre, solicitud]
+          },
+        },
+        language: "es_CO"
+      }
+    }]
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method: "POST",
+    contentType: "application/json",
+    headers: { "Authorization": "App " + apiKey },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  Logger.log("HTTP " + response.getResponseCode());
+  Logger.log(response.getContentText());
 }

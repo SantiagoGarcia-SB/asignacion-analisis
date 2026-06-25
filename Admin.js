@@ -179,7 +179,7 @@ function obtenerDatosDashboard() {
   try {
     const hojaHistEnG = ss.getSheetByName("Historico_Gestiones");
     if (hojaHistEnG && hojaHistEnG.getLastRow() > 1) {
-      const colsEG = Math.max(31, hojaHistEnG.getLastColumn());
+      const colsEG = Math.max(61, hojaHistEnG.getLastColumn());
       const dataEG = hojaHistEnG.getRange(2, 1, hojaHistEnG.getLastRow() - 1, colsEG).getDisplayValues();
       for (let i = 0; i < dataEG.length; i++) {
         const solicitudId = String(dataEG[i][0] || "").trim();
@@ -190,8 +190,10 @@ function obtenerDatosDashboard() {
         const estadoH = String(dataEG[i][16] || "").toUpperCase();
         const polizaH = String(dataEG[i][1] || "");
         const asesorH = String(dataEG[i][27] || dataEG[i][25] || "N/A");
-        const camposEG = { estadoGeneral: String(dataEG[i][16] || ""), clase: String(dataEG[i][20] || "") };
-        const tipoVisual = _clasificarPorReglas(camposEG, tiposActivos) || 'digital';
+        const tipoGuardado = String(dataEG[i][60] || "").trim();
+        const tipoVisual = (tipoGuardado && res.desglose.enGestion[tipoGuardado] !== undefined)
+          ? tipoGuardado
+          : (_clasificarPorReglas({ estadoGeneral: String(dataEG[i][16] || ""), clase: String(dataEG[i][20] || "") }, tiposActivos) || 'digital');
         if (res.desglose.enGestion[tipoVisual] !== undefined) res.desglose.enGestion[tipoVisual]++;
         res.listaGestion.push({
           id: solicitudId,
@@ -213,7 +215,8 @@ function obtenerDatosDashboard() {
     const ssReestEG = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaHistReestEG = ssReestEG.getSheetByName("Historico_Gestiones");
     if (hojaHistReestEG && hojaHistReestEG.getLastRow() > 1) {
-      const dataREG = hojaHistReestEG.getRange(2, 1, hojaHistReestEG.getLastRow() - 1, 14).getDisplayValues();
+      const colsREG = Math.max(19, hojaHistReestEG.getLastColumn());
+      const dataREG = hojaHistReestEG.getRange(2, 1, hojaHistReestEG.getLastRow() - 1, colsREG).getDisplayValues();
       for (let i = 0; i < dataREG.length; i++) {
         const solicitud = String(dataREG[i][1] || "").trim();
         if (solicitud === "") continue;
@@ -223,8 +226,10 @@ function obtenerDatosDashboard() {
         const origen = String(dataREG[i][3] || "").trim();
         const tipoProceso = String(dataREG[i][4] || "");
         const nombreAnalista = String(dataREG[i][7] || "N/A");
-        const camposREG = { origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataREG[i][5] || "").trim() };
-        const tipoDesglose = _clasificarPorReglas(camposREG, tiposActivos) || 'reestudio';
+        const tipoGuardadoR = String(dataREG[i][18] || "").trim();
+        const tipoDesglose = (tipoGuardadoR && res.desglose.enGestion[tipoGuardadoR] !== undefined)
+          ? tipoGuardadoR
+          : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataREG[i][5] || "").trim() }, tiposActivos) || 'reestudio');
         res.reestudios.pendientes++;
         if (res.desglose.enGestion[tipoDesglose] !== undefined) res.desglose.enGestion[tipoDesglose]++;
         if (res.reestudios.listaPendientes.length < 50) {
@@ -249,7 +254,7 @@ function obtenerDatosDashboard() {
   try {
     const hojaHistDig = ss.getSheetByName("Historico_Gestiones");
     if (hojaHistDig && hojaHistDig.getLastRow() > 1) {
-      const colsNeeded = Math.max(31, hojaHistDig.getLastColumn());
+      const colsNeeded = Math.max(61, hojaHistDig.getLastColumn());
       const dataHist = hojaHistDig.getRange(2, 1, hojaHistDig.getLastRow() - 1, colsNeeded).getDisplayValues();
       for (let i = 0; i < dataHist.length; i++) {
         const fechaFinH = String(dataHist[i][26] || "").trim(); // col AA
@@ -259,8 +264,10 @@ function obtenerDatosDashboard() {
         const estadoH = String(dataHist[i][16] || "").toUpperCase();
         const asesorH = String(dataHist[i][27] || dataHist[i][25] || "N/A");
         const polizaH = String(dataHist[i][1] || "");
-        const camposGH = { estadoGeneral: String(dataHist[i][16] || ""), clase: String(dataHist[i][20] || "") };
-        const tipoVisual = _clasificarPorReglas(camposGH, tiposActivos) || 'digital';
+        const tipoGuardado = String(dataHist[i][60] || "").trim();
+        const tipoVisual = (tipoGuardado && res.desglose.gestionadasHoy[tipoGuardado] !== undefined)
+          ? tipoGuardado
+          : (_clasificarPorReglas({ estadoGeneral: String(dataHist[i][16] || ""), clase: String(dataHist[i][20] || "") }, tiposActivos) || 'digital');
         res.gestionadasHoyEquipo++;
         if (res.desglose.gestionadasHoy[tipoVisual] !== undefined) res.desglose.gestionadasHoy[tipoVisual]++;
         res.listaGestionadasHoy.push({ id: solicitudId, poliza: polizaH, estado: estadoH, asesor: asesorH, tipo: tipoVisual });
@@ -276,7 +283,8 @@ function obtenerDatosDashboard() {
     const ssReest2 = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaHistReest = ssReest2.getSheetByName("Historico_Gestiones");
     if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
-      const dataHistR = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, 14).getDisplayValues();
+      const colsHistR = Math.max(19, hojaHistReest.getLastColumn());
+      const dataHistR = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, colsHistR).getDisplayValues();
       for (let i = 0; i < dataHistR.length; i++) {
         const fechaFinR = String(dataHistR[i][9] || "").trim(); // col J
         if (fechaFinR === "" || !fechaFinR.includes(hoyStr)) continue;
@@ -286,8 +294,10 @@ function obtenerDatosDashboard() {
         const tipoProceso = String(dataHistR[i][4] || "");
         const nombreAnalista = String(dataHistR[i][7] || "N/A");
         const estadoGestion = String(dataHistR[i][10] || "").trim();
-        const camposGHR = { origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataHistR[i][5] || "").trim() };
-        const tipoDesglose = _clasificarPorReglas(camposGHR, tiposActivos) || 'reestudio';
+        const tipoGuardadoR = String(dataHistR[i][18] || "").trim();
+        const tipoDesglose = (tipoGuardadoR && res.desglose.gestionadasHoy[tipoGuardadoR] !== undefined)
+          ? tipoGuardadoR
+          : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataHistR[i][5] || "").trim() }, tiposActivos) || 'reestudio');
         res.reestudios.gestionadasHoy++;
         res.gestionadasHoyEquipo++;
         if (res.desglose.gestionadasHoy[tipoDesglose] !== undefined) res.desglose.gestionadasHoy[tipoDesglose]++;
@@ -298,6 +308,43 @@ function obtenerDatosDashboard() {
   } catch (e) {
     Logger.log("Aviso: Error leyendo Historico_Gestiones reestudios: " + e.message);
   }
+
+  try {
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    if (hojaBio && hojaBio.getLastRow() > 1) {
+      var dataBio = hojaBio.getRange(2, 1, hojaBio.getLastRow() - 1, 75).getDisplayValues();
+      var pendientesBio = 0;
+      var enviadasAsignar = 0;
+      var aprobadasSinGestion = 0;
+      var listaBio = [];
+      for (var b = 0; b < dataBio.length; b++) {
+        var nuevoEst = String(dataBio[b][62]).trim();
+        var estadoLabel = nuevoEst === "" ? "ESPERANDO RE-CONSULTA" : nuevoEst;
+        listaBio.push({
+          id: String(dataBio[b][0]).trim(),
+          poliza: String(dataBio[b][1]).trim(),
+          telefono: String(dataBio[b][6]).trim(),
+          estadoSai: estadoLabel,
+          fechaCaptura: String(dataBio[b][59]).trim()
+        });
+        if (nuevoEst === "") {
+          pendientesBio++;
+        } else if (nuevoEst === "APROBADO_PENDIENTE_BIOMETRIA") {
+          enviadasAsignar++;
+        } else {
+          aprobadasSinGestion++;
+        }
+      }
+      res.biometriaPendiente = { pendientes: pendientesBio, enviadasAsignar: enviadasAsignar, aprobadasSinGestion: aprobadasSinGestion, total: dataBio.length, lista: listaBio };
+    } else {
+      res.biometriaPendiente = { pendientes: 0, procesadas: 0, total: 0 };
+    }
+  } catch (e) {
+    Logger.log("Aviso: Error leyendo pendiente_biometria: " + e.message);
+    res.biometriaPendiente = { pendientes: 0, procesadas: 0, total: 0 };
+  }
+
   return res;
 }
 
