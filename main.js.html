@@ -90,6 +90,12 @@ function _programarAutoInactivo() {
         if (badge) badge.style.display = 'none';
         return;
       }
+
+      if (info.fueraTurno) {
+        _forzarInactivoPorFueraDeTurno(info);
+        return;
+      }
+
       if (badge && txt) {
         txt.textContent = (info.nombreTurno ? info.nombreTurno + ' — ' : '') + 'Hasta ' + info.horaFinStr;
         badge.style.display = 'block';
@@ -104,6 +110,24 @@ function _programarAutoInactivo() {
       }, msRestantes);
     })
     .obtenerInfoTurnoActual();
+}
+
+function _forzarInactivoPorFueraDeTurno(info) {
+  if (estadoGlobalAsesor === 'INACTIVO') return;
+  cambiarMiEstado('INACTIVO');
+  var mensaje = '';
+  if (info.razon === 'NO_APLICA_HOY') {
+    mensaje = 'Tu turno <b>' + (info.nombreTurno || '') + '</b> no aplica hoy.<br>Tu estado se cambió a <b>INACTIVO</b> automáticamente.';
+  } else {
+    mensaje = 'Tu turno <b>' + (info.nombreTurno || '') + '</b> inicia a las <b>' + info.horaIniStr + '</b>.<br>Tu estado se cambió a <b>INACTIVO</b> hasta que comience tu turno.';
+  }
+  Swal.fire({
+    icon: 'info',
+    title: 'Fuera de turno',
+    html: mensaje,
+    confirmButtonColor: '#253150',
+    confirmButtonText: 'Entendido'
+  });
 }
 
 function _forzarInactivoPorTurno(info) {
@@ -135,13 +159,15 @@ function _miniLoader(on) {
 
 $(document).ready(function () {
 
-  // Mostrar nombre en el loader inmediatamente
+  // Mostrar saludo en el loader
   google.script.run.withSuccessHandler(function(email) {
     if (email) {
       var prefijo = email.split('@')[0];
       var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+      var hora = new Date().getHours();
+      var saludo = hora < 12 ? 'Buenos días' : hora < 18 ? 'Buenas tardes' : 'Buenas noches';
       var el = document.getElementById('loader-nombre-usuario');
-      if (el) { el.textContent = 'Hola, ' + nombre; el.style.opacity = '1'; }
+      if (el) { el.textContent = saludo + ', ' + nombre; el.style.opacity = '1'; }
     }
   }).getEmailUsuario();
 
@@ -355,25 +381,6 @@ function cargarDatos() {
     })
     .obtenerGestionesHoyCruzadas();
 
-  // Verificar cupos del analista
-  google.script.run.withSuccessHandler(function(cuposRes) {
-    if (cuposRes && cuposRes.cumplido) {
-      var detalle = '<div style="text-align:left;margin:12px 0;">';
-      for (var r = 0; r < cuposRes.resumen.length; r++) {
-        var item = cuposRes.resumen[r];
-        if (item.limite > 0) detalle += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9;"><span>' + item.tipo + '</span><strong>' + item.usado + ' / ' + item.limite + '</strong></div>';
-      }
-      detalle += '</div>';
-      Swal.fire({
-        icon: 'success',
-        title: '🎉 ¡Cupos completados!',
-        html: '<p>Has cumplido con todos tus cupos asignados del día.</p>' + detalle + '<p class="fw-bold" style="margin-top:8px;">Total: ' + cuposRes.totalUsado + ' / ' + cuposRes.totalLimite + '</p>',
-        confirmButtonColor: '#253150',
-        confirmButtonText: 'Entendido'
-      });
-    }
-  }).verificarMisCupos();
-
   var _dataFetchFn = (window.__IS_UNIFIED_VIEW__) ? 'getUnifiedTableData' : 'getTableData';
   google.script.run
     .withSuccessHandler(function (response) {
@@ -437,6 +444,9 @@ function cargarDatos() {
             if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
             var det = document.getElementById('cuposDetalle');
             if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
+            if (cuposInfo.cumplido && typeof UX !== 'undefined') {
+              UX.showToast('Has cumplido todos tus cupos del día (' + cuposInfo.totalUsado + '/' + cuposInfo.totalLimite + ')', 'success');
+            }
           }
         }).verificarMisCupos();
       }
@@ -518,11 +528,40 @@ function cargarDatos() {
 function _normalizarFilasReestudios(filas) {
   if (!Array.isArray(filas)) return [['_header_rst']];
   var out = filas.map(function(o) {
-    // Si ya es un array (caso defensivo), devolverlo tal cual.
     if (Array.isArray(o)) return o;
+
+    if (o.fuente === 'DIGITAL') {
+      var fila = new Array(38).fill('');
+      fila[0]  = o.solicitud || '';
+      fila[1]  = o.poliza || '';
+      fila[2]  = o.identificacion || '';
+      fila[3]  = o.tipoIdentificacion || '';
+      fila[4]  = o.nombreInquilino || '';
+      fila[5]  = o.correoInquilino || '';
+      fila[6]  = o.telefonoInquilino || '';
+      fila[7]  = o.ingresos || '';
+      fila[8]  = o.fechaExpedicion || '';
+      fila[9]  = o.canon || '';
+      fila[10] = o.cuota || '';
+      fila[11] = o.direccionInmueble || '';
+      fila[12] = o.destinoInmueble || '';
+      fila[13] = o.ciudadInmueble || '';
+      fila[14] = o.nombreAsesor || '';
+      fila[15] = o.correoAsesor || '';
+      fila[16] = o.estadoGeneral || '';
+      fila[17] = o.fechaRadicacion || '';
+      fila[18] = o.fechaResultado || '';
+      fila[20] = o.clase || o.tipoProceso || '';
+      fila[23] = o.biometriaActual || '';
+      fila[26] = o.fechaAsignacion || '';
+      fila.push(o.categoriaScore || '');
+      fila.push(o.inmobiliaria || '');
+      return fila;
+    }
+
     var fila = new Array(38).fill('');
     fila[0]  = o.solicitud || '';
-    fila[1]  = o.poliza || o.origen || '';   // columna "Póliza/Origen" de la tabla
+    fila[1]  = o.poliza || o.origen || '';
     fila[2]  = o.linkDrive || '';
     fila[3]  = o.origen || '';
     fila[4]  = o.tipoProceso || '';
@@ -533,10 +572,9 @@ function _normalizarFilasReestudios(filas) {
     fila[17] = o.fechaRadicacion || '';
     fila[20] = o.tipoProceso || o.claseSolicitud || o.clase || '';
     fila[26] = o.fechaAsignacion || '';
-    fila.push('');                            // CategoriaScore
+    fila.push('');
     return fila;
   });
-  // renderizarTabla descarta la primera fila (cabecera); anteponemos un placeholder.
   return [['_header_rst']].concat(out);
 }
 
@@ -982,14 +1020,15 @@ function animarNumero(id, valorFinal) {
 }
 
 function cambiarMiEstado(nuevoEstado) {
-  estadoGlobalAsesor = nuevoEstado.toUpperCase(); 
-  
+  var estadoAnterior = estadoGlobalAsesor;
+  estadoGlobalAsesor = nuevoEstado.toUpperCase();
+
   const statusText = $('#currentStatusText');
   const statusDot = $('#statusDot');
   const card = $('#statusIndicatorCard');
 
   if (statusText.length) statusText.text(estadoGlobalAsesor);
-  
+
   if (estadoGlobalAsesor === 'ACTIVO') {
     statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
     card.css('border-color', '#22c55e');
@@ -997,10 +1036,9 @@ function cambiarMiEstado(nuevoEstado) {
   } else {
     statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
     card.css('border-color', '#e2e8f0');
-    if (estadoGlobalAsesor === 'INACTIVO') _detenerPollingTablaVacia();
+    _detenerPollingTablaVacia();
   }
 
-  var estadoAnterior = estadoGlobalAsesor;
   google.script.run
     .withSuccessHandler(function(response) {
       if (response && response.success) {
@@ -1020,10 +1058,15 @@ function cambiarMiEstado(nuevoEstado) {
           cargarDatos();
         }
       } else if (response && !response.success) {
-        estadoGlobalAsesor = 'INACTIVO';
-        if (statusText.length) statusText.text('INACTIVO');
-        statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
-        card.css('border-color', '#e2e8f0');
+        estadoGlobalAsesor = estadoAnterior;
+        if (statusText.length) statusText.text(estadoAnterior);
+        if (estadoAnterior === 'ACTIVO') {
+          statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
+          card.css('border-color', '#22c55e');
+        } else {
+          statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+          card.css('border-color', '#e2e8f0');
+        }
         Swal.fire({
           icon: 'warning',
           title: 'No permitido',
@@ -1290,6 +1333,9 @@ function detectarTipoCaso(rowData) {
   if (marcadorSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || marcador === 'APROBADO_PENDIENTE_BIOMETRIA') return 'desaplazamiento';
   var clase = String(rowData[20] || '').toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (clase === 'INDUCCION') return 'induccion';
+  var eq = window.__EQUIPO_CONFIG__;
+  if (eq && eq.modalTipo === 'REESTUDIO_SIMPLE') return 'reestudio';
+  if (eq && eq.modalTipo === 'BIOMETRIA_TIPIFICACION') return 'desaplazamiento';
   return 'digital';
 }
 
@@ -1548,6 +1594,17 @@ function poblarModalDig(fila) {
       selectEstadoDig.value = '';
     }
     if (aplaz) aplaz.classList.remove('d-none');
+    var motAplazEl = document.getElementById('dig_motivo_aplazamiento');
+    if (motAplazEl) {
+      if (motAplazEl.tagName === 'SELECT') {
+        motAplazEl.innerHTML = '<option value="Pendiente resultado lote" selected>Pendiente resultado lote</option>';
+      } else {
+        motAplazEl.value = 'Pendiente resultado lote';
+      }
+    }
+    if (typeof MotivoPicker !== 'undefined') {
+      try { MotivoPicker.setValue('dig_motivo_aplazamiento', 'Pendiente resultado lote'); } catch(e) {}
+    }
   } else {
     if (contBioDig) contBioDig.classList.remove('d-none');
     if (contFechaRadDig) contFechaRadDig.classList.remove('d-none');
@@ -1616,7 +1673,7 @@ function poblarModalBio(fila) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('bio_accordionResultados', res.resultados);
       } else {
-        accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#94a3b8;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
+        accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
       }
     }).getDataUniqueForSolicitud(solId);
   }
@@ -1673,7 +1730,7 @@ function poblarModalRst(fila) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('rst_accordionResultados', res.resultados);
       } else {
-        if (accEl) accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#94a3b8;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
+        if (accEl) accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
       }
     }).getDataUniqueForSolicitud(solIdLimpio);
   }
@@ -1795,6 +1852,7 @@ function manejarGuardarBiometria() {
   var resFinal = (document.getElementById('bio_resFinal').value || '').toUpperCase();
   var resLlamada = document.getElementById('bio_resLlamada').value || '';
   var motivoAplaz = '';
+  var motivoNeg = '';
 
   if (!resLlamada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Selecciona el resultado de la llamada.', confirmButtonColor: '#253150' }); return; }
   if (!resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.', confirmButtonColor: '#253150' }); return; }
@@ -1803,11 +1861,17 @@ function manejarGuardarBiometria() {
     motivoAplaz = selMotivo ? selMotivo.value : '';
     if (!motivoAplaz) { Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'Selecciona el motivo de aplazamiento.', confirmButtonColor: '#253150' }); return; }
   }
+  if (resFinal === 'NEGADA') {
+    var txtNeg = document.getElementById('bio_motivoNegacion');
+    motivoNeg = txtNeg ? (txtNeg.value || '').trim() : '';
+    if (!motivoNeg) { Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'Describe el motivo de negación.', confirmButtonColor: '#253150' }); return; }
+  }
 
   var datosForm = {
     resLlamada: resLlamada,
     resFinal: resFinal,
-    motivoAplazamiento: motivoAplaz
+    motivoAplazamiento: motivoAplaz,
+    motivoNegacion: motivoNeg
   };
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalBiometria', true); }
@@ -1848,7 +1912,7 @@ function manejarGuardarReestudio() {
 }
 
 function onGuardarExitoUnificado(r, modalId, solicitudId) {
-  if (r && (r.success !== false)) {
+  if (r && r.success === true) {
     var modalEl = document.getElementById(modalId);
     var inst = bootstrap.Modal.getInstance(modalEl);
     if (inst) inst.hide();
@@ -1877,16 +1941,19 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
 }
 
 function _dispararAutoAsignacion() {
+  if (_pollingEnCurso) return;
+  _pollingEnCurso = true;
   var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
   google.script.run
     .withSuccessHandler(function(res) {
+      _pollingEnCurso = false;
       yaSeIntentoAsignar = false;
       if (res && res.success && res.nueva) {
         if (typeof UX !== 'undefined' && UX.showToast) UX.showToast(res.message || 'Nuevo caso asignado', 'info');
         cargarDatos();
       }
     })
-    .withFailureHandler(function() { yaSeIntentoAsignar = false; })
+    .withFailureHandler(function() { _pollingEnCurso = false; yaSeIntentoAsignar = false; })
     [fnName]();
 }
 

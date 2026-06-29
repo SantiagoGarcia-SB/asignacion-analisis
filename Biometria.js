@@ -8,14 +8,6 @@ const NOMBRE_HOJA_PENDIENTE_BIOMETRIA = 'pendiente_biometria';
 
 function getEndPointNewApiDate() { return PropertiesService.getScriptProperties().getProperty('endPointSaiNewApiDate'); }
 function getEndPointNewSai() { return PropertiesService.getScriptProperties().getProperty('endpointSaiNewApi'); }
-function getKeyFull() { return PropertiesService.getScriptProperties().getProperty('KeyEndPointSaiFullProd'); }
-
-function formatDateCustom(date) {
-  const year = date.getFullYear();
-  const month = ("0" + (date.getMonth() + 1)).slice(-2);
-  const day = ("0" + date.getDate()).slice(-2);
-  return `${year}${month}${day}`;
-}
 
 // SUSPENDIDA: biometrías ahora se toman de la hoja "solicitud" (APROBADO_PENDIENTE_BIOMETRIA)
 function descargarBiometriasAPI() {
@@ -128,14 +120,13 @@ function limpiarBiometriasResueltas() {
 
     Logger.log("📋 " + bioIds.size + " biometrías pendientes a verificar contra SAI.");
 
-    const props = PropertiesService.getScriptProperties();
-    const endpointBase = props.getProperty('endPointSaiNewApiDate');
+    const endpointBase = getEndPointNewApiDate();
     const keyFull = getKeyFull();
     if (!endpointBase || !keyFull) { Logger.log("❌ Faltan credenciales API."); return; }
 
-    const hace3Dias = new Date();
-    hace3Dias.setDate(hace3Dias.getDate() - 3);
-    const sIni = formatDateCustom(hace3Dias);
+    const hace4Dias = new Date();
+    hace4Dias.setDate(hace4Dias.getDate() - 4);
+    const sIni = formatDateCustom(hace4Dias);
     const sFin = formatDateCustom(new Date());
 
     const estadosSai = new Map();
@@ -337,23 +328,23 @@ function autoAsignarBiometria() {
     candidatosParaAsignar.forEach(candidato => {
       const row = candidato.row;
 
-      const histRow = new Array(37).fill("");
+      const histRow = new Array(61).fill("");
       for (let c = 0; c < 22; c++) histRow[c] = row[c] !== undefined ? row[c] : "";
       histRow[24] = fechaAsignacion;
       histRow[25] = userEmail;
       histRow[27] = nombreAnalista;
       histRow[32] = row[36] || "";
-      // Para biometría: fechaDiligenciadaRadicación (col 34) = fechaAsignación
       histRow[33] = fechaAsignacion;
       histRow[34] = 0;
       histRow[35] = 0;
       histRow[36] = 0;
+      histRow[60] = 'desaplazamiento';
 
       filasHist.push(histRow);
       filasAEliminar.push(candidato.sheetRowIndex);
     });
 
-    hojaHist.getRange(lastRowHist + 1, 1, filasHist.length, 37).setValues(filasHist);
+    hojaHist.getRange(lastRowHist + 1, 1, filasHist.length, 61).setValues(filasHist);
 
     filasAEliminar.sort((a, b) => b - a).forEach(fila => {
       hojaSolicitud.deleteRow(fila);
@@ -371,7 +362,7 @@ function autoAsignarBiometria() {
 }
 
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
-  const lock = LockService.getUserLock();
+  const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
   } catch (e) {
@@ -400,6 +391,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", "dd/MM/yyyy");
         const resFinal = String(datosFormulario.resFinal || '').toUpperCase();
         const motivoAplaz = resFinal === 'APLAZADA' ? (datosFormulario.motivoAplazamiento || '') : '';
+        const motivoNeg = resFinal === 'NEGADA' ? (datosFormulario.motivoNegacion || '') : '';
 
         // Col Q (17): estado → resultado final
         hojaHist.getRange(filaReal, 17).setValue(resFinal);
@@ -412,7 +404,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         // Col AA (27): fecha fin gestión
         hojaHist.getRange(filaReal, 27).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss");
         // Col AC-AD (29-30): motivo aplazamiento, motivo negación
-        hojaHist.getRange(filaReal, 29, 1, 2).setValues([[motivoAplaz, '']]);
+        hojaHist.getRange(filaReal, 29, 1, 2).setValues([[motivoAplaz, motivoNeg]]);
         // Col AE (31): fecha solo día
         hojaHist.getRange(filaReal, 31).setValue(fechaSoloDia);
 
@@ -522,14 +514,137 @@ function getDatosBiometria() {
 
 
 // ===================================================================
-// FLUJO BIOMETRÍA PENDIENTE (8am + 12pm)
+// FLUJO BIOMETRÍA: Captura cada 10 min + Revisión 8am/12pm
 // ===================================================================
 
+// Trigger cada 10 min: captura nuevas biometrías de SAI
+function consultarBiometriasPeriodicaAPI() {
+  Logger.log("=== INICIO consultarBiometriasPeriodicaAPI ===");
+  _capturarNuevasBiometrias();
+  Logger.log("=== FIN consultarBiometriasPeriodicaAPI ===");
+}
+
+// Trigger 8am y 12pm: re-consulta pendientes, decide destino y envía WA pendientes
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
   _reconsultarPendientesBio();
-  _capturarNuevasBiometrias();
+  _enviarBroadcastPendientes();
   Logger.log("=== FIN cicloBiometriaPendiente ===");
+}
+
+function _enviarBroadcastPendientes() {
+  Logger.log("--- Envío de WA a biometrías sin broadcast ---");
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) return;
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) return;
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 75).getValues();
+  var filasPendientes = [];
+
+  for (var i = 0; i < datos.length; i++) {
+    var estadoBroadcast = String(datos[i][61]).trim();
+    if (estadoBroadcast === 'ENVIADO') continue;
+    var solicitudId = String(datos[i][0]).trim();
+    if (!solicitudId) continue;
+    filasPendientes.push({ fila: datos[i], filaSheet: i + 2 });
+  }
+
+  if (filasPendientes.length === 0) {
+    Logger.log("No hay biometrías pendientes de envío de WA.");
+    return;
+  }
+
+  Logger.log(filasPendientes.length + " biometrías sin WA enviado.");
+
+  var filasParaEnvio = filasPendientes.map(function(p) { return p.fila; });
+  var rowInicios = filasPendientes.map(function(p) { return p.filaSheet; });
+
+  enviarBroadcastInfobipConFilas(filasParaEnvio, hojaBio, rowInicios);
+}
+
+function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('INFOBIP_API_KEY');
+  var baseUrl = props.getProperty('INFOBIP_BASE_URL');
+  var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
+  var sender = props.getProperty('INFOBIP_SENDER');
+
+  if (!apiKey || !baseUrl || !templateName || !sender) {
+    Logger.log("⚠️ Infobip no configurado. Broadcast no enviado.");
+    return;
+  }
+
+  var url = "https://" + baseUrl + "/whatsapp/1/message/template";
+  var enviados = 0;
+  var errores = 0;
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+  for (var i = 0; i < filasBiometria.length; i++) {
+    var fila = filasBiometria[i];
+    var solicitudId = String(fila[0] || "").trim();
+    var filaEnvioOk = false;
+
+    for (var d = 0; d < 4; d++) {
+      var base = 63 + (d * 3);
+      var rol = String(fila[base] || "").trim();
+      if (!rol) continue;
+      var nombre = String(fila[base + 1] || "").trim();
+      var telefono = String(fila[base + 2] || "").trim().replace(/\D/g, "");
+      if (!telefono || !nombre) continue;
+
+      if (telefono.length === 10 && telefono.charAt(0) === "3") {
+        telefono = "57" + telefono;
+      }
+
+      var payload = {
+        messages: [{
+          from: sender,
+          to: telefono,
+          content: {
+            templateName: templateName,
+            templateData: { body: { placeholders: [nombre, solicitudId] } },
+            language: "es_CO"
+          }
+        }]
+      };
+
+      try {
+        var response = UrlFetchApp.fetch(url, {
+          method: "POST",
+          contentType: "application/json",
+          headers: { "Authorization": "App " + apiKey },
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+
+        var code = response.getResponseCode();
+        if (code >= 200 && code < 300) {
+          enviados++;
+          filaEnvioOk = true;
+          Logger.log("✅ WA enviado → " + rol + ": " + nombre + " | Tel: " + telefono + " | Sol: " + solicitudId);
+        } else {
+          errores++;
+          Logger.log("❌ WA falló → " + telefono + " | HTTP " + code);
+        }
+      } catch (e) {
+        errores++;
+        Logger.log("❌ Error WA → " + telefono + " | " + e.message);
+      }
+
+      Utilities.sleep(500);
+    }
+
+    var filaSheet = filasSheet[i];
+    var estado = filaEnvioOk ? "ENVIADO" : "ERROR";
+    hojaBio.getRange(filaSheet, 61).setValue(ahora);
+    hojaBio.getRange(filaSheet, 62).setValue(estado);
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log("📱 Broadcast finalizado: " + enviados + " enviados, " + errores + " errores.");
 }
 
 function _consultarSaiIndividual(consecutivo) {
@@ -654,11 +769,13 @@ function _reconsultarPendientesBio() {
       var statusActual = String(res.datosApi.studyStatus || "").toUpperCase().trim();
       hojaBio.getRange(res.fila, 63).setValue(statusActual);
 
-      if (statusActual === "APROBADO_PENDIENTE_BIOMETRIA") {
+      if (statusActual === "APROBADO") {
+        Logger.log("✅ " + res.consecutivo + " APROBADO → marcado en nuevo_estado_sai");
+      } else if (statusActual === "APROBADO_PENDIENTE_BIOMETRIA") {
         solicitudesParaSolicitud.push(_homologarDatosApi(res.datosApi));
-        Logger.log("✅ " + res.consecutivo + " sigue pendiente → enviando a solicitud");
+        Logger.log("🔄 " + res.consecutivo + " sigue pendiente biometría → enviando a cola de asignación");
       } else {
-        Logger.log("🔄 " + res.consecutivo + " cambió a " + statusActual);
+        Logger.log("🔄 " + res.consecutivo + " cambió a " + statusActual + " → sin acción");
       }
     }
 
@@ -879,7 +996,6 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
       SpreadsheetApp.flush();
       Logger.log("✅ " + filas.length + " nuevas biometrías guardadas en pendiente_biometria. Duplicados: " + duplicados);
 
-      enviarBroadcastInfobip(filas, hojaBio, rowInicio);
     } else {
       Logger.log("No se guardaron biometrías nuevas. Duplicados: " + duplicados);
     }
@@ -1027,4 +1143,214 @@ function testEnviarWhatsApp() {
 
   Logger.log("HTTP " + response.getResponseCode());
   Logger.log(response.getContentText());
+}
+
+function verificarAprobacionDesaplazamientos() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaHist = ss.getSheetByName("Historico_Gestiones");
+    if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
+
+    const lastRow = hojaHist.getLastRow();
+    if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
+
+    const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
+    const ahora = new Date();
+    const hoyDia = ahora.getDate();
+    const hoyMes = ahora.getMonth();
+    const hoyAnio = ahora.getFullYear();
+
+    var candidatos = [];
+    for (var i = 0; i < data.length; i++) {
+      var tipoAsignado = String(data[i][60]).trim().toLowerCase();
+      var fechaAsig = data[i][24];
+      var solicitudId = String(data[i][0]).trim();
+      var estadoActual = String(data[i][16]).toUpperCase().trim();
+
+      if (tipoAsignado !== 'desaplazamiento') continue;
+      if (!(fechaAsig instanceof Date)) continue;
+      if (fechaAsig.getDate() !== hoyDia || fechaAsig.getMonth() !== hoyMes || fechaAsig.getFullYear() !== hoyAnio) continue;
+      if (!solicitudId) continue;
+      if (estadoActual === 'APROBADO') continue;
+
+      candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
+    }
+
+    if (candidatos.length === 0) {
+      return { success: true, message: "No hay desaplazamientos pendientes de verificación hoy.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+    }
+
+    var endpoint = getEndPointNewSai();
+    var apiKey = getKeyFull();
+    if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
+
+    var totalActualizados = 0;
+    var detalles = [];
+
+    for (var j = 0; j < candidatos.length; j++) {
+      var c = candidatos[j];
+      try {
+        var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
+          method: "GET",
+          muteHttpExceptions: true,
+          headers: { "x-api-key": apiKey, "Accept": "application/json" }
+        });
+
+        if (response.getResponseCode() === 200) {
+          var jsonData = JSON.parse(response.getContentText());
+          var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
+
+          if (studyStatus === "APROBADO") {
+            hojaHist.getRange(c.filaReal, 17).setValue("APROBADO");
+            totalActualizados++;
+            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: "APROBADO" });
+          } else {
+            detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
+          }
+        } else {
+          detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
+        }
+      } catch (e) {
+        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
+      }
+
+      if (j < candidatos.length - 1) Utilities.sleep(2000);
+    }
+
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      message: "Verificación completada. " + totalActualizados + " de " + candidatos.length + " actualizados.",
+      totalRevisados: candidatos.length,
+      totalActualizados: totalActualizados,
+      detalles: detalles
+    };
+  } catch (error) {
+    return { success: false, message: "Error interno: " + error.toString() };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+function triggerVerificacionDesaplazamientos() {
+  try {
+    var resultado = verificarAprobacionDesaplazamientos();
+    Logger.log("Verificación desaplazamientos: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+  } catch (e) {
+    Logger.log("Error en trigger verificación desaplazamientos: " + e.message);
+  }
+}
+
+/**
+ * Verifica en SAI si las inducciones asignadas (tipoAsignado='induccion') ya cambiaron
+ * de estado. Si studyStatus cambió a APROBADO o RECHAZADO, actualiza estadoGeneral
+ * en Historico_Gestiones.
+ * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ */
+function verificarResultadoInducciones() {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    return { success: false, message: "No se pudo adquirir el lock." };
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaHist = ss.getSheetByName("Historico_Gestiones");
+    if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
+
+    const lastRow = hojaHist.getLastRow();
+    if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
+
+    const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
+    const ESTADOS_FINALES = new Set(["APROBADO", "RECHAZADO"]);
+
+    var candidatos = [];
+    for (var i = 0; i < data.length; i++) {
+      var tipoAsignado = String(data[i][60]).trim().toLowerCase();
+      var fechaFin = String(data[i][26]).trim();
+      var solicitudId = String(data[i][0]).trim();
+      var estadoActual = String(data[i][16]).toUpperCase().trim();
+
+      if (tipoAsignado !== 'induccion') continue;
+      if (fechaFin !== '') continue;
+      if (!solicitudId) continue;
+      if (ESTADOS_FINALES.has(estadoActual)) continue;
+
+      candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
+    }
+
+    if (candidatos.length === 0) {
+      return { success: true, message: "No hay inducciones pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+    }
+
+    var endpoint = getEndPointNewSai();
+    var apiKey = getKeyFull();
+    if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
+
+    var totalActualizados = 0;
+    var detalles = [];
+
+    for (var j = 0; j < candidatos.length; j++) {
+      var c = candidatos[j];
+      try {
+        var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
+          method: "GET",
+          muteHttpExceptions: true,
+          headers: { "x-api-key": apiKey, "Accept": "application/json" }
+        });
+
+        if (response.getResponseCode() === 200) {
+          var jsonData = JSON.parse(response.getContentText());
+          var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
+
+          if (ESTADOS_FINALES.has(studyStatus)) {
+            hojaHist.getRange(c.filaReal, 17).setValue(studyStatus);
+            totalActualizados++;
+            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
+          } else {
+            detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
+          }
+        } else {
+          detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
+        }
+      } catch (e) {
+        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
+      }
+
+      if (j < candidatos.length - 1) Utilities.sleep(2000);
+    }
+
+    SpreadsheetApp.flush();
+
+    return {
+      success: true,
+      message: "Verificación completada. " + totalActualizados + " de " + candidatos.length + " actualizados.",
+      totalRevisados: candidatos.length,
+      totalActualizados: totalActualizados,
+      detalles: detalles
+    };
+  } catch (error) {
+    return { success: false, message: "Error interno: " + error.toString() };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+function triggerVerificacionInducciones() {
+  try {
+    var resultado = verificarResultadoInducciones();
+    Logger.log("Verificación inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+  } catch (e) {
+    Logger.log("Error en trigger verificación inducciones: " + e.message);
+  }
 }

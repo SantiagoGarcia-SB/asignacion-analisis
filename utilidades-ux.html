@@ -290,7 +290,7 @@
 .activity-dot.negada { background: #ef4444; }
 .activity-dot.aplazada { background: #f59e0b; }
 .activity-dot.pendiente { background: #6366f1; }
-.activity-dot.default { background: #94a3b8; }
+.activity-dot.default { background: #A3A2A2; }
 .activity-content {
     flex: 1;
 }
@@ -469,7 +469,7 @@
 }
 .swal2-popup.swal-ux .swal2-html-container {
     font-size: 0.88rem !important;
-    color: #64748b !important;
+    color: #706F6F !important;
     line-height: 1.6 !important;
     padding: 8px 28px 24px !important;
     margin: 0 !important;
@@ -515,7 +515,7 @@
     border-radius: 0 0 20px 20px;
 }
 .swal2-popup.swal-ux .swal2-close {
-    color: #94a3b8 !important;
+    color: #A3A2A2 !important;
     font-size: 1.4rem !important;
     top: 14px !important;
     right: 14px !important;
@@ -555,7 +555,7 @@
 }
 .swal-ux-loader-sub {
     font-size: 0.8rem;
-    color: #94a3b8;
+    color: #A3A2A2;
     font-weight: 500;
 }
 
@@ -697,7 +697,7 @@ const UX = (function() {
             + '  <i class="bi bi-cloud-arrow-up-fill" style="color:white;font-size:1.6rem;animation:uxPulse 1.2s ease-in-out infinite;"></i>'
             + '</div>'
             + '<div style="font-weight:700;font-size:1.05rem;color:#253150;margin-bottom:4px;">Guardando gestión</div>'
-            + '<div style="color:#64748b;font-size:0.85rem;">Espera un momento por favor...</div>'
+            + '<div style="color:#706F6F;font-size:0.85rem;">Espera un momento por favor...</div>'
             + '<div style="margin-top:16px;width:120px;height:4px;background:#e2e8f0;border-radius:4px;overflow:hidden;">'
             + '  <div style="height:100%;width:30%;background:linear-gradient(90deg,#253150,#3b5998);border-radius:4px;animation:uxBarSlide 1.5s ease-in-out infinite;"></div>'
             + '</div>';
@@ -764,7 +764,7 @@ const UX = (function() {
     function showActivityModal() {
         Swal.fire({
             title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
-            html: '<div style="text-align:center;padding:20px;"><i class="bi bi-arrow-repeat" style="font-size:2rem;color:#94a3b8;animation:btnSpin 0.6s linear infinite;display:inline-block;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Cargando gestiones...</p></div>',
+            html: '<div style="text-align:center;padding:20px;"><i class="bi bi-arrow-repeat" style="font-size:2rem;color:#A3A2A2;animation:btnSpin 0.6s linear infinite;display:inline-block;"></i><p style="color:#706F6F;margin-top:10px;font-size:0.85rem;">Cargando gestiones...</p></div>',
             showConfirmButton: false,
             allowOutsideClick: false,
             width: 480,
@@ -775,16 +775,16 @@ const UX = (function() {
             .withSuccessHandler(function(gestiones) {
                 let htmlContent = '';
                 if (!gestiones || gestiones.length === 0) {
-                    htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#94a3b8;"></i><p style="color:#64748b;margin-top:10px;font-size:0.85rem;">Sin gestiones registradas hoy</p></div>`;
+                    htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-journal-text" style="font-size:2rem;color:#A3A2A2;"></i><p style="color:#706F6F;margin-top:10px;font-size:0.85rem;">Sin gestiones registradas hoy</p></div>`;
                 } else {
                     const items = gestiones.map(function(item) {
                         const dotColor = getDotColor(item.estado);
                         return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
-                            <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:40px;padding-top:2px;">${item.hora}</span>
+                            <span style="font-size:0.7rem;color:#A3A2A2;font-weight:700;min-width:40px;padding-top:2px;">${item.hora}</span>
                             <div style="width:10px;height:10px;border-radius:50%;background:${dotColor};margin-top:5px;flex-shrink:0;"></div>
                             <div style="flex:1;">
                                 <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.solicitud} → ${item.estado}</div>
-                                ${item.motivo ? `<div style="font-size:0.75rem;color:#64748b;">${item.motivo}</div>` : ''}
+                                ${item.motivo ? `<div style="font-size:0.75rem;color:#706F6F;">${item.motivo}</div>` : ''}
                             </div>
                         </div>`;
                     }).join('');
@@ -798,7 +798,7 @@ const UX = (function() {
                     if (aplazadas) summaryParts.push('⏸️ ' + aplazadas + ' aplazada' + (aplazadas > 1 ? 's' : ''));
 
                     htmlContent = `<div style="max-height:350px;overflow-y:auto;">${items}</div>
-                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${summaryParts.join(' · ')}</div>`;
+                        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#706F6F;font-weight:700;">${summaryParts.join(' · ')}</div>`;
                 }
                 Swal.fire({
                     title: '<i class="bi bi-check2-all me-2"></i>Mi Actividad del Día',
@@ -830,7 +830,7 @@ const UX = (function() {
         if (s.includes('NEGAD')) return '#ef4444';
         if (s.includes('APLAZ')) return '#f59e0b';
         if (s.includes('PENDIENTE')) return '#6366f1';
-        return '#94a3b8';
+        return '#A3A2A2';
     }
 
     // -- Keyboard shortcuts --
@@ -920,21 +920,21 @@ const UX = (function() {
         let htmlContent = '';
 
         if (pendingItems.length === 0) {
-            htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-check-all" style="font-size:2.5rem;color:#22c55e;"></i><p style="font-weight:800;margin-top:10px;color:#111827;">¡Todo al día!</p><p style="color:#64748b;font-size:0.85rem;">No tienes solicitudes pendientes por gestionar.</p></div>`;
+            htmlContent = `<div style="text-align:center;padding:20px;"><i class="bi bi-check-all" style="font-size:2.5rem;color:#22c55e;"></i><p style="font-weight:800;margin-top:10px;color:#111827;">¡Todo al día!</p><p style="color:#706F6F;font-size:0.85rem;">No tienes solicitudes pendientes por gestionar.</p></div>`;
         } else {
             let items = pendingItems.map((item, idx) => {
                 return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid #f1f5f9;">
-                    <span style="font-size:0.7rem;color:#94a3b8;font-weight:700;min-width:30px;padding-top:2px;">#${idx + 1}</span>
+                    <span style="font-size:0.7rem;color:#A3A2A2;font-weight:700;min-width:30px;padding-top:2px;">#${idx + 1}</span>
                     <div style="width:10px;height:10px;border-radius:50%;background:#6366f1;margin-top:5px;flex-shrink:0;"></div>
                     <div style="flex:1;">
                         <div style="font-size:0.85rem;font-weight:700;color:#111827;">Sol. ${item.id}</div>
-                        <div style="font-size:0.75rem;color:#64748b;">${item.tipo}${item.fecha ? ' · ' + item.fecha : ''}</div>
+                        <div style="font-size:0.75rem;color:#706F6F;">${item.tipo}${item.fecha ? ' · ' + item.fecha : ''}</div>
                     </div>
                 </div>`;
             }).join('');
 
             htmlContent = `<div style="max-height:350px;overflow-y:auto;">${items}</div>
-                <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#64748b;font-weight:700;">${pendingItems.length} solicitud${pendingItems.length > 1 ? 'es' : ''} pendiente${pendingItems.length > 1 ? 's' : ''}</div>`;
+                <div style="margin-top:12px;padding-top:10px;border-top:1px solid #e5e7eb;font-size:0.75rem;color:#706F6F;font-weight:700;">${pendingItems.length} solicitud${pendingItems.length > 1 ? 'es' : ''} pendiente${pendingItems.length > 1 ? 's' : ''}</div>`;
         }
 
         Swal.fire({
@@ -967,7 +967,7 @@ const UX = (function() {
         var bodyText = opts.html || opts.text || '';
 
         return Swal.fire({
-            html: iconHtml + (bodyText ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#64748b;line-height:1.6;font-weight:500;">' + bodyText + '</div>' : ''),
+            html: iconHtml + (bodyText ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#706F6F;line-height:1.6;font-weight:500;">' + bodyText + '</div>' : ''),
             title: opts.title || '',
             showConfirmButton: opts.showConfirmButton !== false,
             confirmButtonText: opts.confirmButtonText || 'Entendido',
@@ -1179,7 +1179,7 @@ const NotifSound = (function() {
             var body = opts.html || opts.text || '';
             if (opts.text) { body = '<span>' + body + '</span>'; delete opts.text; }
 
-            opts.html = iconBlock + (body ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#64748b;line-height:1.6;font-weight:500;">' + body + '</div>' : '');
+            opts.html = iconBlock + (body ? '<div style="padding:0 28px 4px;font-size:0.88rem;color:#706F6F;line-height:1.6;font-weight:500;">' + body + '</div>' : '');
             delete opts.icon;
             opts.confirmButtonColor = opts.confirmButtonColor || '#253150';
             opts.confirmButtonText = opts.confirmButtonText || 'Entendido';

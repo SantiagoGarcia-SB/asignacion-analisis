@@ -87,8 +87,10 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
 
   const defaults = {
     DIGITAL: { digital: 70, reestudio: 10, induccion: 8, desaplazamiento: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
+    CANONES_ALTOS: { digital: 70, reestudio: 10, induccion: 8, desaplazamiento: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
     DESAPLAZAMIENTO: { digital: 0, reestudio: 0, induccion: 0, desaplazamiento: 8, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 },
-    REESTUDIOS: { digital: 0, reestudio: 10, induccion: 2, desaplazamiento: 0, nuevaUar: 3, deudorUar: 2, biometriaFallida: 0 }
+    REESTUDIOS: { digital: 0, reestudio: 10, induccion: 2, desaplazamiento: 0, nuevaUar: 3, deudorUar: 2, biometriaFallida: 0 },
+    UAR: { digital: 0, reestudio: 3, induccion: 0, desaplazamiento: 0, nuevaUar: 5, deudorUar: 5, biometriaFallida: 0 }
   };
   const def = defaults[equipoNorm] || defaults.DIGITAL;
 
@@ -168,7 +170,12 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
     'BIOMETRIA': 'DESAPLAZAMIENTO',
     'DESAPLAZAMIENTO': 'DESAPLAZAMIENTO',
     'ANALISTA DESPLAZAMIENTO': 'DESAPLAZAMIENTO',
-    'REESTUDIOS': 'REESTUDIOS'
+    'REESTUDIOS': 'REESTUDIOS',
+    'UAR': 'UAR',
+    'ANALISTA UAR': 'UAR',
+    'CANONES ALTOS': 'CANONES_ALTOS',
+    'CANONES_ALTOS': 'CANONES_ALTOS',
+    'ESTUDIO CANON ALTO': 'CANONES_ALTOS'
   };
   var equipoId = mapeo[esp] || esp;
   var encontrado = equipos.find(function(e) { return e.id === equipoId; });
@@ -177,8 +184,10 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
     // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún
     var defaults = {
       'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
+      'CANONES_ALTOS': { id: 'CANONES_ALTOS', nombre: 'Cánones Altos', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 8000000, canonHasta: 0, canonTipos: ['digital'] },
       'DESAPLAZAMIENTO': { id: 'DESAPLAZAMIENTO', nombre: 'Desaplazamiento', icono: 'bi-fingerprint', colorHex: '#8b0a0e', activo: true, modalTipo: 'BIOMETRIA_TIPIFICACION', funcionGuardar: 'guardarGestionBiometria', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 99, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
-      'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] }
+      'REESTUDIOS': { id: 'REESTUDIOS', nombre: 'Reestudios', icono: 'bi-arrow-repeat', colorHex: '#198754', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
+      'UAR': { id: 'UAR', nombre: 'UAR', icono: 'bi-envelope', colorHex: '#6f42c1', activo: true, modalTipo: 'REESTUDIO_SIMPLE', funcionGuardar: 'guardarGestionReestudio', usarVipRotacion: false, usarScoreCategories: false, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] }
     };
     return defaults[equipoId] || defaults['DIGITAL'];
   }
@@ -1215,24 +1224,39 @@ function verificarTurnoActivo(userEmail, ss) {
     const finCol  = 11 + dIdx * 2;
 
     let horaFinStr = null;
+    let horaIniStr = null;
     let nombreTurno = '';
+    const iniCol = 10 + dIdx * 2;
     for (let i = 1; i < dataTurnos.length; i++) {
       if (String(dataTurnos[i][0]).trim() !== idTurnoActivo) continue;
-      // Si el turno no aplica hoy, no bloquear
-      if (!dataTurnos[i][boolCol]) return { ok: true };
-      horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
       nombreTurno = String(dataTurnos[i][1] || '').trim();
+      if (!dataTurnos[i][boolCol]) {
+        return {
+          ok: false,
+          message: '⏰ Tu turno (' + (nombreTurno || idTurnoActivo) + ') no aplica hoy. No puedes recibir casos.'
+        };
+      }
+      horaIniStr = String(dispTurnos[i][iniCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
       break;
     }
     if (!horaFinStr) return { ok: true };
 
+    let minIni = parseMin(horaIniStr);
     let minFin = parseMin(horaFinStr);
     if (minFin === null) return { ok: true };
+
+    if (minIni !== null && minActual < minIni) {
+      return {
+        ok: false,
+        message: '⏰ Tu turno (' + (nombreTurno || horaIniStr) + ') inicia a las ' + horaIniStr + '. Aún no puedes recibir casos.'
+      };
+    }
 
     if (minActual > minFin) {
       return {
         ok: false,
-        message: `⏰ Tu turno (${nombreTurno || horaFinStr}) finalizó a las ${horaFinStr}. No puedes recibir más casos por hoy.`
+        message: '⏰ Tu turno (' + (nombreTurno || horaFinStr) + ') finalizó a las ' + horaFinStr + '. No puedes recibir más casos por hoy.'
       };
     }
     return { ok: true };
@@ -1421,7 +1445,7 @@ function verificarMisCupos(equipo) {
 }
 
 function actualizarEstadoPropio(nuevoEstado) {
-  const lock = LockService.getUserLock();
+  const lock = LockService.getScriptLock();
   try {
     lock.waitLock(10000);
   } catch (e) {
@@ -1551,23 +1575,26 @@ function actualizarEstadoPropio(nuevoEstado) {
 function admin_sincronizarEstado(correoAsesor, nuevoEstado){
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
-  const hojaUsuarios = ss.getSheetByName("Usuarios")
-  const hojaHistorico = ss.getSheetByName("Historico_Estados")
 
-  const datos = hojaUsuarios.getDataRange().getValues()
-  const columnaCorreo = 2;
-  const columnaEstado = 5;
-  const columnaHistorial = 11;
+  try {
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaUsuarios = ss.getSheetByName("Usuarios");
+    const hojaHistorico = ss.getSheetByName("Historico_Estados");
 
-  let filaEncontrada = -1;
-  for(let i = 1; i <datos.length;i++){
-    if(datos[i][columnaCorreo]&&datos[i][columnaCorreo].toString().toLowerCase().trim() === correoAsesor.toLowerCase().trim()){
-      filaEncontrada = i + 1;
-      break;
+    const datos = hojaUsuarios.getDataRange().getValues();
+    const columnaCorreo = 2;
+    const columnaEstado = 5;
+    const columnaHistorial = 11;
+
+    let filaEncontrada = -1;
+    for(let i = 1; i < datos.length; i++){
+      if(datos[i][columnaCorreo] && datos[i][columnaCorreo].toString().toLowerCase().trim() === correoAsesor.toLowerCase().trim()){
+        filaEncontrada = i + 1;
+        break;
+      }
     }
-  }
-  if(filaEncontrada !== -1){
+    if(filaEncontrada === -1) return false;
+
     const estadoTextoPlano = nuevoEstado.toUpperCase();
     const ahora = new Date();
     const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
@@ -1641,11 +1668,10 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
     });
     celdaHistorial.setValue(JSON.stringify(historial));
     SpreadsheetApp.flush();
-    lock.releaseLock();
     return true;
+  } finally {
+    lock.releaseLock();
   }
-  lock.releaseLock();
-  return false;
 }
 
 function autoAsignarAlEntrar() {
@@ -1666,13 +1692,9 @@ function autoAsignarAlEntrar() {
   }
 
   try {
-    const resultado = RequestLead(); 
-    SpreadsheetApp.flush(); 
-
-    if (resultado && !resultado.includes("No hay") && !resultado.includes("error")) {
-      return { success: true, nueva: true, message: resultado };
-    }
-    return { success: false, nueva: false, message: resultado };
+    const resultado = autoAsignarDesdeEquipo();
+    SpreadsheetApp.flush();
+    return resultado;
   } catch (e) {
     return { success: false, message: e.toString() };
   }
@@ -1751,13 +1773,24 @@ function obtenerInfoTurnoActual() {
     const boolCol = 3 + dIdx;
     const finCol  = 11 + dIdx * 2;
 
+    const iniCol = 10 + dIdx * 2;
     for (let i = 1; i < dataTurnos.length; i++) {
       if (String(dataTurnos[i][0]).trim() !== idTurnoActivo) continue;
-      if (!dataTurnos[i][boolCol]) return { tieneTurno: false };
-      const horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
       const nombreTurno = String(dataTurnos[i][1] || '').trim();
+
+      if (!dataTurnos[i][boolCol]) {
+        return { tieneTurno: true, fueraTurno: true, razon: 'NO_APLICA_HOY', nombreTurno: nombreTurno, minutosRestantes: 0 };
+      }
+
+      const horaIniStr = String(dispTurnos[i][iniCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      const horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
+      const minIni = parseMin(horaIniStr);
       const minFin = parseMin(horaFinStr);
       if (minFin === null) return { tieneTurno: false };
+
+      if (minIni !== null && minActual < minIni) {
+        return { tieneTurno: true, fueraTurno: true, razon: 'ANTES_DE_TURNO', nombreTurno: nombreTurno, horaIniStr: horaIniStr, minutosRestantes: 0 };
+      }
 
       const minutosRestantes = minFin - minActual;
       return {

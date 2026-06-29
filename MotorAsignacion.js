@@ -75,12 +75,21 @@ function _parseDateUnif(dateStr) {
   if (!dateStr || String(dateStr).trim() === "") return 9999999999999;
   if (dateStr instanceof Date) return dateStr.getTime();
   try {
-    var parts = String(dateStr).trim().split(' ')[0].split(/[\/\-]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])).getTime();
+    var str = String(dateStr).trim();
+    var partes = str.split(' ');
+    var dateParts = partes[0].split(/[\/\-]/);
+    var horas = 0, mins = 0, segs = 0;
+    if (partes.length > 1) {
+      var timeParts = partes[1].split(':');
+      horas = parseInt(timeParts[0]) || 0;
+      mins = parseInt(timeParts[1]) || 0;
+      segs = parseInt(timeParts[2]) || 0;
+    }
+    if (dateParts.length === 3) {
+      if (dateParts[0].length === 4) {
+        return new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]), horas, mins, segs).getTime();
       }
-      return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).getTime();
+      return new Date(parseInt(dateParts[2]), parseInt(dateParts[1]) - 1, parseInt(dateParts[0]), horas, mins, segs).getTime();
     }
     var fallback = new Date(dateStr).getTime();
     return isNaN(fallback) ? 9999999999999 : fallback;
@@ -248,7 +257,7 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
 
     if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
 
-    var reasignada = String(row[58]).trim().toUpperCase() === "REASIGNADA";
+    var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
     var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';
 
@@ -548,8 +557,10 @@ function RequestLeadUnificado(equipoIdOverride) {
 
     pendientes.sort(function(a, b) {
       if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
-      if (a.esExterno && !b.esExterno) return -1;
-      if (!a.esExterno && b.esExterno) return 1;
+      if (a.tipo !== 'desaplazamiento' && b.tipo !== 'desaplazamiento') {
+        if (a.esExterno && !b.esExterno) return -1;
+        if (!a.esExterno && b.esExterno) return 1;
+      }
       return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
     });
 

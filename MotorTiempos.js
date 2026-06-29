@@ -244,7 +244,8 @@ function _horarioAnalista(fecha, email, config) {
     config.turnos.get(idTurnoVigente).forEach(b => {
       if (b.diaSemana === diaSemana) bloquesBase.push({ ini: b.ini, fin: b.fin });
     });
-  } else {
+  }
+  if (bloquesBase.length === 0) {
     bloquesBase = _horarioEquipo(fecha, config);
   }
 
@@ -286,7 +287,7 @@ function _minutosHabiles(tInicio, tFin, fnHorario) {
 function _parseFechaGAS(valor) {
   if (valor instanceof Date && !isNaN(valor.getTime())) return valor;
   if (!valor) return null;
-  const s = String(valor).trim();
+  const s = String(valor).trim().replace(/\s+/g, ' ').replace(/\s*:\s*/g, ':');
   if (!s) return null;
   // ISO: "2026-06-15 21:32" o "2026-06-15T21:32:00"
   let d = new Date(s.replace(' ', 'T'));

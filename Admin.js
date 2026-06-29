@@ -14,24 +14,6 @@ function verificarPermisoAdmin() {
   }
 }
 
-/**
- * Obtiene el email del usuario logueado.
- * @returns {string} Email del usuario.
- */
-function getEmailUsuario() {
-  return Session.getActiveUser().getEmail();
-}
-
-/**
- * Genera y sirve la interfaz del Panel de Control Principal.
- */
-function doGet(e) {
-  return HtmlService.createTemplateFromFile('AdminPanel')
-    .evaluate()
-    .setTitle('Panel de Control - Administración')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
 
 function _clasificarPorReglas(campos, tipos) {
   for (var i = 0; i < tipos.length; i++) {
@@ -502,23 +484,59 @@ function desasignarSolicitud(idSolicitud){
     verificarPermisoAdmin();
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const sheet = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
-    const data = sheet.getRange("A:A").getValues();
-    for(let i = 1; i < data.length; i++){
-      if(String(data[i][0]).trim() === String(idSolicitud).trim()){
-        const fila = i + 1;
-        sheet.getRange(fila, 27).clearContent();
-        sheet.getRange(fila, 28).clearContent();
-        sheet.getRange(fila, 31).clearContent();
-        sheet.getRange(fila, 59).setValue("REASIGNADA");
-        SpreadsheetApp.flush();
-        lock.releaseLock();
-        return { success: true, message: "Solicitud desasignada." };
+    try {
+      const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const sheet = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+      const idBuscado = String(idSolicitud).trim();
+
+      // 1. Buscar en hoja solicitud (casos legados sin migrar)
+      const data = sheet.getRange("A:A").getValues();
+      for(let i = 1; i < data.length; i++){
+        if(String(data[i][0]).trim() === idBuscado){
+          const fila = i + 1;
+          sheet.getRange(fila, 27).clearContent();
+          sheet.getRange(fila, 28).clearContent();
+          sheet.getRange(fila, 31).clearContent();
+          sheet.getRange(fila, 59).setValue("REASIGNADA");
+          SpreadsheetApp.flush();
+          return { success: true, message: "Solicitud desasignada." };
+        }
       }
+
+      // 2. Buscar en Historico_Gestiones (casos asignados con motor unificado)
+      const hojaHist = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHist && hojaHist.getLastRow() > 1) {
+        const lastRowH = hojaHist.getLastRow();
+        const numCols = Math.max(61, hojaHist.getLastColumn());
+        const dataH = hojaHist.getRange(2, 1, lastRowH - 1, numCols).getValues();
+        for (let i = 0; i < dataH.length; i++) {
+          const idMatch = String(dataH[i][0]).trim() === idBuscado;
+          const fechaFin = String(dataH[i][26]).trim();
+          if (idMatch && fechaFin === '') {
+            const filaH = i + 2;
+            const filaCompleta = hojaHist.getRange(filaH, 1, 1, numCols).getValues()[0];
+
+            var filaSol = new Array(59).fill('');
+            for (var c = 0; c < 22; c++) filaSol[c] = filaCompleta[c];
+            filaSol[23] = filaCompleta[22]; filaSol[24] = filaCompleta[23];
+            filaSol[35] = filaCompleta[31]; filaSol[36] = filaCompleta[32];
+            for (var ci = 0; ci < 21; ci++) filaSol[37 + ci] = filaCompleta[39 + ci] || '';
+            filaSol[26] = ''; filaSol[27] = ''; filaSol[28] = ''; filaSol[30] = '';
+            filaSol[58] = 'REASIGNADA';
+
+            sheet.appendRow(filaSol);
+            sheet.getRange(sheet.getLastRow(), 1, 1, filaSol.length).setNumberFormat("@");
+            hojaHist.deleteRow(filaH);
+            SpreadsheetApp.flush();
+            return { success: true, message: "Solicitud desasignada desde Historico_Gestiones y devuelta a cola." };
+          }
+        }
+      }
+
+      return { success: false, message: "No encontrada." };
+    } finally {
+      lock.releaseLock();
     }
-    lock.releaseLock();
-    return { success: false, message: "No encontrada." };
   } catch(e){ return { success: false, message: e.message }; }
 }
 
@@ -2414,4 +2432,13 @@ function admin_eliminarFestivo(fila) {
   hoja.deleteRow(fila);
   SpreadsheetApp.flush();
   return { success: true, message: 'Festivo eliminado.' };
+}
+
+function admin_verificarDesaplazamientos() {
+  try {
+    verificarPermisoAdmin();
+    return verificarAprobacionDesaplazamientos();
+  } catch (e) {
+    return { success: false, message: e.message || e.toString() };
+  }
 }

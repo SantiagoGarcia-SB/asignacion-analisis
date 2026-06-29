@@ -198,15 +198,15 @@ function test_C4_FallbackScriptProperty() {
 function test_D1_ModosPrioridad() {
   _seccion('D1. Modos de prioridad (con DIGITAL_PRIMERO)');
 
-  _assert('DIGITAL_PRIMERO primer tipo = digital', 'digital', ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'][0]);
+  _assert('DIGITAL_PRIMERO primer tipo = digital', 'digital', ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'][0]);
   _assert('NUEVAS_PRIMERO es alias de DIGITAL_PRIMERO',
-    JSON.stringify(ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO']),
-    JSON.stringify(ORDEN_PRIORIDAD_POR_MODO['NUEVAS_PRIMERO']));
-  _assert('DESAPLAZAMIENTO_PRIMERO primer tipo', 'desaplazamiento', ORDEN_PRIORIDAD_POR_MODO['DESAPLAZAMIENTO_PRIMERO'][0]);
-  _assert('INDUCCION_PRIMERO primer tipo', 'induccion', ORDEN_PRIORIDAD_POR_MODO['INDUCCION_PRIMERO'][0]);
+    JSON.stringify(ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO']),
+    JSON.stringify(ORDEN_PRIORIDAD_MODOS['NUEVAS_PRIMERO']));
+  _assert('DESAPLAZAMIENTO_PRIMERO primer tipo', 'desaplazamiento', ORDEN_PRIORIDAD_MODOS['DESAPLAZAMIENTO_PRIMERO'][0]);
+  _assert('INDUCCION_PRIMERO primer tipo', 'induccion', ORDEN_PRIORIDAD_MODOS['INDUCCION_PRIMERO'][0]);
 
-  _assert('REESTUDIOS primer tipo', 'reestudio', ORDEN_PRIORIDAD_REESTUDIOS[0]);
-  _assert('REESTUDIOS: digital va después', true, ORDEN_PRIORIDAD_REESTUDIOS.indexOf('digital') > 0);
+  _assert('REESTUDIOS primer tipo', 'reestudio', ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'][0]);
+  _assert('REESTUDIOS: digital va después', true, ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'].indexOf('digital') > 0);
 
   // MotorAsignacion.js
   _assert('Motor: DIGITAL_PRIMERO existe', true, 'DIGITAL_PRIMERO' in ORDEN_PRIORIDAD_MODOS);
@@ -233,7 +233,7 @@ function test_E1_SortingProporcional() {
   _seccion('E1. Sorting proporcional con tipo "digital"');
   var cuotas = { digital: 10, induccion: 4, desaplazamiento: 2 };
   var conteoHoy = { digital: 5, induccion: 1, desaplazamiento: 1 };
-  var ordenP = ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'];
+  var ordenP = ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
   var tipos = ['digital', 'induccion', 'desaplazamiento'];
   tipos.sort(function(a, b) {
     var rA = cuotas[a] > 0 ? conteoHoy[a] / cuotas[a] : 1;
@@ -251,11 +251,11 @@ function test_E2_DesempatePorModo() {
   var cuotas = { digital: 10, induccion: 4 };
   var conteoHoy = { digital: 5, induccion: 2 };
   var t1 = ['induccion', 'digital'];
-  t1.sort(function(a, b) { var rA = conteoHoy[a]/cuotas[a], rB = conteoHoy[b]/cuotas[b]; if (rA !== rB) return rA-rB; return ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'].indexOf(a) - ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'].indexOf(b); });
+  t1.sort(function(a, b) { var rA = conteoHoy[a]/cuotas[a], rB = conteoHoy[b]/cuotas[b]; if (rA !== rB) return rA-rB; return ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'].indexOf(a) - ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'].indexOf(b); });
   _assert('DIGITAL_PRIMERO + empate → digital', 'digital', t1[0]);
 
   var t2 = ['digital', 'induccion'];
-  t2.sort(function(a, b) { var rA = conteoHoy[a]/cuotas[a], rB = conteoHoy[b]/cuotas[b]; if (rA !== rB) return rA-rB; return ORDEN_PRIORIDAD_POR_MODO['INDUCCION_PRIMERO'].indexOf(a) - ORDEN_PRIORIDAD_POR_MODO['INDUCCION_PRIMERO'].indexOf(b); });
+  t2.sort(function(a, b) { var rA = conteoHoy[a]/cuotas[a], rB = conteoHoy[b]/cuotas[b]; if (rA !== rB) return rA-rB; return ORDEN_PRIORIDAD_MODOS['INDUCCION_PRIMERO'].indexOf(a) - ORDEN_PRIORIDAD_MODOS['INDUCCION_PRIMERO'].indexOf(b); });
   _assert('INDUCCION_PRIMERO + empate → induccion', 'induccion', t2[0]);
 }
 
@@ -310,7 +310,7 @@ function test_H1_SortingCompleto() {
   _seccion('H1. Sort completo: reasignada > externo > tipo > FIFO');
   var cuotas = { digital: 10, desaplazamiento: 5, induccion: 3 };
   var conteoHoy = { digital: 2, desaplazamiento: 2, induccion: 0 };
-  var ordenP = ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'];
+  var ordenP = ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
 
   var pend = [
     { id: 'A', tipo: 'digital', reasignada: false, esExterno: false, fechaOrd: new Date(2026,5,23,8,0).getTime() },
@@ -336,11 +336,9 @@ function test_H1_SortingCompleto() {
 
 function test_I1_Ruteo() {
   _seccion('I1. Ruteo autoAsignarDesdeEquipo');
-  var map = { DESAPLAZAMIENTO: 'autoAsignarBiometria', REESTUDIOS: 'RequestLeadReestudios', DIGITAL: 'RequestLead', CANONES_ALTOS: 'RequestLead', UAR: 'RequestLead' };
-  for (var id in map) {
-    var fn; switch (id) { case 'DESAPLAZAMIENTO': fn='autoAsignarBiometria'; break; case 'REESTUDIOS': fn='RequestLeadReestudios'; break; default: fn='RequestLead'; }
-    _assert(id + ' → ' + map[id], map[id], fn);
-  }
+  _assert('RequestLeadUnificado existe', true, typeof RequestLeadUnificado === 'function');
+  _assert('autoAsignarDesdeEquipo existe', true, typeof autoAsignarDesdeEquipo === 'function');
+  _assert('autoAsignarBiometria existe', true, typeof autoAsignarBiometria === 'function');
 }
 
 // ============================================================
@@ -372,11 +370,11 @@ function test_J2_MotorHelpers() {
 }
 
 function test_J3_ConsistenciaTipos() {
-  _seccion('J3. Consistencia tipos Motor vs ModeloAsignación');
-  _assert('ModeloAsig DIGITAL_PRIMERO[0] = digital', 'digital', ORDEN_PRIORIDAD_POR_MODO['DIGITAL_PRIMERO'][0]);
+  _seccion('J3. Consistencia tipos Motor Unificado');
   _assert('Motor DIGITAL_PRIMERO[0] = digital', 'digital', ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'][0]);
   _assert('Motor REESTUDIOS_PRIMERO tiene digital', true, ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'].indexOf('digital') !== -1);
-  _assert('ModeloAsig REESTUDIOS tiene digital', true, ORDEN_PRIORIDAD_REESTUDIOS.indexOf('digital') !== -1);
+  _assert('Motor DESAPLAZAMIENTO_PRIMERO[0]', 'desaplazamiento', ORDEN_PRIORIDAD_MODOS['DESAPLAZAMIENTO_PRIMERO'][0]);
+  _assert('Motor INDUCCION_PRIMERO[0]', 'induccion', ORDEN_PRIORIDAD_MODOS['INDUCCION_PRIMERO'][0]);
 }
 
 // ============================================================
@@ -384,11 +382,10 @@ function test_J3_ConsistenciaTipos() {
 // ============================================================
 
 function test_K1_Utilidades() {
-  _seccion('K1. Utilidades');
-  _assert('normalizarClave "01234"', '1234', normalizarClave('01234'));
-  _assert('normalizarClave null', '', normalizarClave(null));
-  _assert('parseDateCustom vacío', 9999999999999, parseDateCustom(''));
-  _assert('parseDateCustom DD/MM/YYYY', true, parseDateCustom('23/06/2026') < 9999999999999);
+  _seccion('K1. Utilidades (Motor Unificado)');
+  _assert('_normalizarClaveUnif "01234"', '1234', _normalizarClaveUnif('01234'));
+  _assert('_parseDateUnif vacío', 9999999999999, _parseDateUnif(''));
+  _assert('_parseDateUnif DD/MM/YYYY', true, _parseDateUnif('23/06/2026') < 9999999999999);
 }
 
 // ============================================================

@@ -2,9 +2,9 @@
  * ====================================================
  * MÓDULO REESTUDIOS - Backend para VistaUnificada.html (modal #modalReestudio)
  * ====================================================
- * Funciones: getReestudiosData, guardarGestionReestudio, getEmailUsuarioReestudios
- * 
- * El motor de asignación (RequestLeadReestudios) está en ModeloReestudios.js
+ * Funciones: getReestudiosData, guardarGestionReestudio
+ *
+ * El motor de asignación (RequestLeadUnificado) está en MotorAsignacion.js
  * 
  * Hoja fuente: "Solicitudes_Asignacion_Reestudios_UAR" en el spreadsheet ID_HOJA_REESTUDIOS
  * 
@@ -76,7 +76,7 @@ function getReestudiosData() {
       }
     }
 
-    // --- Casos asignados ya movidos a Historico_Gestiones (ModeloReestudios los mueve al asignar) ---
+    // --- Casos asignados ya movidos a Historico_Gestiones (MotorAsignacion los mueve al asignar) ---
     try {
       const hojaHistR = ssReestudios.getSheetByName('Historico_Gestiones');
       if (hojaHistR && hojaHistR.getLastRow() > 1) {
@@ -113,6 +113,27 @@ function getReestudiosData() {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones reestudios: ' + eHistR.toString());
     }
 
+    // --- Lookup score/inmobiliaria para casos DIGITAL ---
+    const mapaScoreR = new Map();
+    const mapaInmobiliariaR = new Map();
+    try {
+      const ssScore = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const hojaScore = ssScore.getSheetByName("score");
+      if (hojaScore) {
+        const dataScore = hojaScore.getDataRange().getDisplayValues();
+        for (let s = 1; s < dataScore.length; s++) {
+          let pol = String(dataScore[s][0]).trim();
+          let polNorm = pol.replace(/\D/g, '').replace(/^0+/, '');
+          let categoria = String(dataScore[s][2] || "").trim().toUpperCase();
+          let inmobiliaria = String(dataScore[s][3] || "").trim();
+          if (pol) { mapaScoreR.set(pol, categoria); mapaInmobiliariaR.set(pol, inmobiliaria); }
+          if (polNorm) { mapaScoreR.set(polNorm, categoria); mapaInmobiliariaR.set(polNorm, inmobiliaria); }
+        }
+      }
+    } catch (eScore) {
+      Logger.log('getReestudiosData - Error leyendo score: ' + eScore.toString());
+    }
+
     // --- Hoja principal (digitales, biometría, inducciones) ---
     try {
       const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -136,15 +157,15 @@ function getReestudiosData() {
               continue;
             }
 
+            var polD = String(fila[1]).trim();
+            var polDNorm = polD.replace(/\D/g, '').replace(/^0+/, '');
             listaPendientes.push({
               fuente: 'DIGITAL',
-              // Campos para la tabla
               origen: 'DIGITAL',
               tipoProceso: String(fila[20]).trim(),
               claseSolicitud: String(fila[4]).trim(),
-              // Identificación y datos básicos
               solicitud: String(fila[0]).trim(),
-              poliza: String(fila[1]).trim(),
+              poliza: polD,
               identificacion: String(fila[2]).trim(),
               tipoIdentificacion: String(fila[3]).trim(),
               nombreInquilino: String(fila[4]).trim(),
@@ -164,13 +185,75 @@ function getReestudiosData() {
               fechaResultado: String(fila[18]).trim(),
               clase: String(fila[20]).trim(),
               biometriaActual: String(fila[23]).trim(),
-              fechaAsignacion: fechaAsig
+              fechaAsignacion: fechaAsig,
+              categoriaScore: mapaScoreR.get(polD) || mapaScoreR.get(polDNorm) || '',
+              inmobiliaria: mapaInmobiliariaR.get(polD) || mapaInmobiliariaR.get(polDNorm) || ''
             });
           }
         }
       }
     } catch (eDigital) {
       Logger.log('getReestudiosData - Error leyendo digitales: ' + eDigital.toString());
+    }
+
+    // --- Historico_Gestiones principal (casos movidos al asignar desde solicitud) ---
+    try {
+      const ssPrincipal = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const hojaHistPrincipal = ssPrincipal.getSheetByName('Historico_Gestiones');
+      if (hojaHistPrincipal && hojaHistPrincipal.getLastRow() > 1) {
+        const lastRowHP = hojaHistPrincipal.getLastRow();
+        const colsHP = Math.max(61, hojaHistPrincipal.getLastColumn());
+        const dataHP = hojaHistPrincipal.getRange(2, 1, lastRowHP - 1, colsHP).getDisplayValues();
+        for (let i = 0; i < dataHP.length; i++) {
+          const fila = dataHP[i];
+          const asignado = String(fila[25]).trim().toLowerCase();
+          const fechaAsig = String(fila[24]).trim();
+          const fechaFin  = String(fila[26]).trim();
+
+          if (asignado !== userEmail) continue;
+          if (fechaAsig === '') continue;
+
+          if (fechaFin !== '') {
+            if (fechaFin.includes(hoyStr)) conteoHoy++;
+            continue;
+          }
+
+          var polHP = String(fila[1]).trim();
+          var polHPNorm = polHP.replace(/\D/g, '').replace(/^0+/, '');
+          listaPendientes.push({
+            fuente: 'DIGITAL',
+            origen: 'DIGITAL',
+            tipoProceso: String(fila[20]).trim(),
+            claseSolicitud: String(fila[4]).trim(),
+            solicitud: String(fila[0]).trim(),
+            poliza: polHP,
+            identificacion: String(fila[2]).trim(),
+            tipoIdentificacion: String(fila[3]).trim(),
+            nombreInquilino: String(fila[4]).trim(),
+            correoInquilino: String(fila[5]).trim(),
+            telefonoInquilino: String(fila[6]).trim(),
+            ingresos: String(fila[7]).trim(),
+            fechaExpedicion: String(fila[8]).trim(),
+            canon: String(fila[9]).trim(),
+            cuota: String(fila[10]).trim(),
+            direccionInmueble: String(fila[11]).trim(),
+            destinoInmueble: String(fila[12]).trim(),
+            ciudadInmueble: String(fila[13]).trim(),
+            nombreAsesor: String(fila[14]).trim(),
+            correoAsesor: String(fila[15]).trim(),
+            estadoGeneral: String(fila[16]).trim(),
+            fechaRadicacion: String(fila[17]).trim(),
+            fechaResultado: String(fila[18]).trim(),
+            clase: String(fila[20]).trim(),
+            biometriaActual: String(fila[22]).trim(),
+            fechaAsignacion: fechaAsig,
+            categoriaScore: mapaScoreR.get(polHP) || mapaScoreR.get(polHPNorm) || '',
+            inmobiliaria: mapaInmobiliariaR.get(polHP) || mapaInmobiliariaR.get(polHPNorm) || ''
+          });
+        }
+      }
+    } catch (eHistPrincipal) {
+      Logger.log('getReestudiosData - Error leyendo Historico_Gestiones principal: ' + eHistPrincipal.toString());
     }
 
     return {
@@ -186,7 +269,7 @@ function getReestudiosData() {
 
 /**
  * Guarda la gestión de un caso de reestudio.
- * Después de guardar, intenta auto-asignar un nuevo caso (via ModeloReestudios.js).
+ * Después de guardar, intenta auto-asignar un nuevo caso (via MotorAsignacion.js).
  * 
  * @param {Object} datos - { filaReal, estadoGestion, motivoAplazamiento, motivoNegacion, observaciones }
  */
@@ -196,7 +279,7 @@ function guardarGestionReestudio(datos) {
     return { success: false, message: "Identificador del caso no proporcionado." };
   }
 
-  const lock = LockService.getUserLock();
+  const lock = LockService.getScriptLock();
   try {
     lock.waitLock(15000);
   } catch (e) {
@@ -288,23 +371,3 @@ function guardarGestionReestudio(datos) {
   }
 }
 
-/**
- * Wrapper de RequestLead() que devuelve el mismo formato de objeto
- * que espera el frontend ({ success, nueva, message }).
- */
-function RequestLeadDigitalWrapped() {
-  try {
-    const result = RequestLead();
-    const isSuccess = typeof result === 'string' && result.includes('✅');
-    return { success: isSuccess, nueva: isSuccess, message: result || '' };
-  } catch (e) {
-    return { success: false, nueva: false, message: e.toString() };
-  }
-}
-
-/**
- * Retorna el email del usuario actual.
- */
-function getEmailUsuarioReestudios() {
-  return Session.getActiveUser().getEmail();
-}
