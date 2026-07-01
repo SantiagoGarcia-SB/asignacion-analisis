@@ -1106,6 +1106,55 @@ function guardarCambiosInternos(data) {
   };
 }
 
+// MIGRACIÓN ÚNICA — correr manualmente una sola vez desde el editor de Apps Script.
+// Normaliza filas históricas de Historico_Gestiones que quedaron con el vocabulario
+// femenino (APROBADA/APLAZADA/NEGADA/RECHAZADA) de antes de unificar con el vocabulario
+// masculino de SAI (APROBADO/APLAZADO/RECHAZADO). No toca la hoja "solicitud" (cola):
+// esa hoja solo contiene casos aún no gestionados, por lo que nunca tiene vocabulario viejo.
+function migrarVocabularioEstadoHistorico() {
+  const MAPA = { 'APROBADA': 'APROBADO', 'APLAZADA': 'APLAZADO', 'NEGADA': 'RECHAZADO', 'RECHAZADA': 'RECHAZADO' };
+
+  function normalizarColumna(hoja, col) {
+    const lastRow = hoja.getLastRow();
+    if (lastRow < 2) return 0;
+    const rango = hoja.getRange(2, col, lastRow - 1, 1);
+    const valores = rango.getValues();
+    let cambios = 0;
+    const nuevos = valores.map(function(fila) {
+      const actual = String(fila[0] || '').trim().toUpperCase();
+      const nuevo = MAPA[actual];
+      if (nuevo && nuevo !== fila[0]) { cambios++; return [nuevo]; }
+      return [fila[0]];
+    });
+    if (cambios > 0) rango.setValues(nuevos);
+    return cambios;
+  }
+
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); } catch (e) {
+    Logger.log('❌ Lock no disponible para migrar: ' + e.message);
+    return;
+  }
+
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const TARGET_SS_ID = props.getProperty('TARGET_SOLICITUDES_SS_ID') || TARGET_SOLICITUDES_SS_ID;
+    const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
+
+    const hojaPrincipal = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
+    const totalPrincipal = hojaPrincipal ? normalizarColumna(hojaPrincipal, 17) : 0;
+    SpreadsheetApp.flush();
+
+    const hojaReest = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
+    const totalReestudios = hojaReest ? normalizarColumna(hojaReest, 11) : 0;
+    SpreadsheetApp.flush();
+
+    Logger.log('✅ Migración de vocabulario completa. Principal: ' + totalPrincipal + ' filas corregidas. Reestudios: ' + totalReestudios + ' filas corregidas.');
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
 // ===================================================================
 // CASOS PENDIENTES DE VALIDACIÓN / EVIDENTE — RE-GESTIÓN
 // ===================================================================
