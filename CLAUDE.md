@@ -113,6 +113,22 @@ Two time-based triggers run server-side (configured in GAS triggers UI, not in c
 
 `calcularTiemposCaso()` in `MotorTiempos.js` is the active SLA engine. It calculates three metrics (minutos_cola, minutos_gestion, minutos_general) using per-analyst shifts from the `Turnos`, `Analistas_Turnos`, and `Horas_Extra` sheets. The legacy `calcularMinutosHabilesSLA()` in `Código.js` is deprecated.
 
+## Corporate Design System
+
+### Brand Colors (El Libertador)
+
+| Name | HEX | CSS Variable |
+|------|-----|--------------|
+| Rojo intenso | `#BD0F14` | `var(--color-primario)` |
+| Azul oscuro | `#253150` | `var(--color-secundario)` |
+| Gris medio | `#706F6F` | `var(--gris)` |
+
+**Rules:**
+- Always use `var(--color-primario)` for red — never `#dc2626`, `#ef4444`, or other generic reds.
+- Always use `var(--color-secundario)` or `var(--grad-azul)` for the primary blue.
+- Semantic state colors (green = approved, amber = delayed) are acceptable for status indicators only, never for brand elements.
+- The full gradient variables `--grad-azul` and `--grad-rojo` are defined in `estilos-compartidos.html` and must be used for headers/buttons that need a gradient feel.
+
 ## Key Conventions
 
 - **Concurrency:** Always use `LockService.getScriptLock()` with `waitLock(15000)` before writing to any shared sheet.

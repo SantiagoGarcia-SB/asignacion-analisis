@@ -189,8 +189,46 @@ $(document).ready(function () {
     var contNeg = $('#dig_contenedor_negacion');
     contAplaz.addClass('d-none');
     contNeg.addClass('d-none');
-    if (estado.indexOf('APLAZ') !== -1) { contAplaz.removeClass('d-none').hide().fadeIn(200); }
+    if (estado.indexOf('APLAZ') !== -1) {
+      contAplaz.removeClass('d-none').hide().fadeIn(200);
+      if (tipoSolicitudActual === 'induccion' && typeof MotivoPicker !== 'undefined') {
+        try { MotivoPicker.setValue('dig_motivo_aplazamiento', 'Pendiente resultado lote'); } catch(e) {}
+      }
+    }
     else if (estado.indexOf('NEGAD') !== -1) { contNeg.removeClass('d-none').hide().fadeIn(200); }
+    _validarFormDig();
+  });
+
+  // P2: Estado button group click (event delegation — works for all 3 modals)
+  $(document).on('click', '.estado-btn', function() {
+    var group = this.closest('.estado-btn-group');
+    if (!group) return;
+    var value = this.getAttribute('data-value');
+    group.querySelectorAll('.estado-btn').forEach(function(b) { b.classList.remove('active'); });
+    this.classList.add('active');
+    var sel = group.nextElementSibling;
+    if (sel && sel.tagName === 'SELECT') {
+      sel.value = value;
+      $(sel).trigger('change');
+    }
+  });
+
+  // P6: Real-time validation hooks
+  $('#dig_biometria').on('change', _validarFormDig);
+  $('#dig_fecha_radicacion_sai').on('input', _validarFormDig);
+  $('#dig_motivo_aplazamiento, #dig_motivo_negacion').on('change', _validarFormDig);
+  $('#bio_resLlamada, #bio_resFinal').on('change', _validarFormBio);
+  $('#bio_motivoAplazamiento').on('change', _validarFormBio);
+  $('#rst_estado_q').on('change', _validarFormRst);
+  $('#rst_poliza').on('input', _validarFormRst);
+  $('#rst_motivo_aplazamiento, #rst_motivo_negacion').on('change', _validarFormRst);
+
+  // Limpiar modo re-gestión si el analista cierra el modal sin guardar
+  document.getElementById('modalDigital').addEventListener('hidden.bs.modal', function() {
+    window._modoRegestion = null;
+  });
+  document.getElementById('modalReestudio').addEventListener('hidden.bs.modal', function() {
+    window._modoRegestion = null;
   });
 
 });
@@ -449,6 +487,14 @@ function cargarDatos() {
             }
           }
         }).verificarMisCupos();
+      }
+
+      // Cargar pendientes de validación/evidente
+      if (window.__IS_UNIFIED_VIEW__) {
+        google.script.run
+          .withSuccessHandler(function(pendientes) { actualizarBannerPendientes(pendientes || []); })
+          .withFailureHandler(function(e) { console.warn('obtenerCasosPendientesAnalista:', e); })
+          .obtenerCasosPendientesAnalista();
       }
 
       const tablaRealmenteVacia = registrosPendientes <= 0;
@@ -1333,9 +1379,6 @@ function detectarTipoCaso(rowData) {
   if (marcadorSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || marcador === 'APROBADO_PENDIENTE_BIOMETRIA') return 'desaplazamiento';
   var clase = String(rowData[20] || '').toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   if (clase === 'INDUCCION') return 'induccion';
-  var eq = window.__EQUIPO_CONFIG__;
-  if (eq && eq.modalTipo === 'REESTUDIO_SIMPLE') return 'reestudio';
-  if (eq && eq.modalTipo === 'BIOMETRIA_TIPIFICACION') return 'desaplazamiento';
   return 'digital';
 }
 
@@ -1487,7 +1530,7 @@ function _verificarAlertaScore(fila, polizaElId, polizaText) {
 
 function poblarModalDig(fila) {
   // Campos informativos: muestran "—" cuando no hay dato para evitar celdas en blanco.
-  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—'; };
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (!el) return; var v = (val !== undefined && val !== null) ? String(val).trim() : ''; el.innerHTML = v ? v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '<span class="nd-badge">Sin dato</span>'; };
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
   setTxt('dig_solicitud', fila[0]);
@@ -1583,35 +1626,24 @@ function poblarModalDig(fila) {
       tipoBadgeEl.innerHTML = '<span class="badge ms-1" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-size:0.62rem;border-radius:6px;padding:3px 8px;vertical-align:middle;"><i class="bi bi-laptop me-1"></i>Digital</span>';
     }
   }
+  _setHeaderTipo('modalDigital', esInduccion ? 'tipo-induccion' : (claseNorm.includes('REESTUDIO') ? 'tipo-reestudio-digital' : ''));
   var contFechaRadDig = document.getElementById('dig_contenedor_fecha_radicacion');
   if (esInduccion) {
     if (contBioDig) contBioDig.classList.add('d-none');
     if (contFechaRadDig) contFechaRadDig.classList.add('d-none');
     setVal('dig_biometria', 'No');
     setVal('dig_fecha_radicacion_sai', '');
-    if (selectEstadoDig) {
-      selectEstadoDig.innerHTML = '<option value="" selected disabled>Seleccione una opción</option><option value="APLAZADA">APLAZADA</option>';
-      selectEstadoDig.value = '';
-    }
-    if (aplaz) aplaz.classList.remove('d-none');
-    var motAplazEl = document.getElementById('dig_motivo_aplazamiento');
-    if (motAplazEl) {
-      if (motAplazEl.tagName === 'SELECT') {
-        motAplazEl.innerHTML = '<option value="Pendiente resultado lote" selected>Pendiente resultado lote</option>';
-      } else {
-        motAplazEl.value = 'Pendiente resultado lote';
-      }
-    }
-    if (typeof MotivoPicker !== 'undefined') {
-      try { MotivoPicker.setValue('dig_motivo_aplazamiento', 'Pendiente resultado lote'); } catch(e) {}
-    }
   } else {
     if (contBioDig) contBioDig.classList.remove('d-none');
     if (contFechaRadDig) contFechaRadDig.classList.remove('d-none');
-    if (selectEstadoDig && selectEstadoDig.options.length <= 2) {
-      selectEstadoDig.innerHTML = '<option value="" selected disabled>Seleccione una opción</option><option value="APROBADA">APROBADA</option><option value="APLAZADA">APLAZADA</option><option value="NEGADA">NEGADA</option><option value="PENDIENTE VALIDACION">PENDIENTE VALIDACION</option><option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>';
-    }
   }
+  if (selectEstadoDig) selectEstadoDig.value = '';
+  var btnGrupoDig = document.getElementById('dig_estado_btns');
+  if (btnGrupoDig) btnGrupoDig.querySelectorAll('.estado-btn').forEach(function(b) {
+    b.style.display = (esInduccion && b.getAttribute('data-value') !== 'APLAZADA') ? 'none' : '';
+    b.classList.remove('active');
+  });
+  _validarFormDig();
 
   var solId = String(fila[0]).trim();
   if (solId) {
@@ -1638,10 +1670,7 @@ function poblarModalBio(fila) {
   var dispEl = document.getElementById('bio_displaySol');
   if (dispEl) dispEl.textContent = solId;
 
-  var setTxt = function(id, val) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—';
-  };
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (!el) return; var v = (val !== undefined && val !== null) ? String(val).trim() : ''; el.innerHTML = v ? v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '<span class="nd-badge">Sin dato</span>'; };
 
   // Tab Información — mismos índices que el modal digital
   setTxt('bio_inquilino', fila[4]);
@@ -1664,6 +1693,10 @@ function poblarModalBio(fila) {
   }
   var contAplaz = document.getElementById('bio_contenedor_aplazamiento');
   if (contAplaz) contAplaz.classList.add('d-none');
+  var btnGrupoBio = document.getElementById('bio_resFinal_btns');
+  if (btnGrupoBio) btnGrupoBio.querySelectorAll('.estado-btn').forEach(function(b) { b.classList.remove('active'); });
+  _setHeaderTipo('modalBiometria', 'tipo-biometria');
+  _validarFormBio();
 
   // Tab Historial
   var accEl = document.getElementById('bio_accordionResultados');
@@ -1680,7 +1713,7 @@ function poblarModalBio(fila) {
 }
 
 function poblarModalRst(fila) {
-  var setTxt = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = (val !== undefined && val !== null && String(val).trim() !== '') ? val : '—'; };
+  var setTxt = function(id, val) { var el = document.getElementById(id); if (!el) return; var v = (val !== undefined && val !== null) ? String(val).trim() : ''; el.innerHTML = v ? v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '<span class="nd-badge">Sin dato</span>'; };
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
   var esAdaptada = String(fila[16] || '') === '__REESTUDIO__';
@@ -1702,15 +1735,12 @@ function poblarModalRst(fila) {
   var linkDrive = fila[2] || '';
   var driveLink = document.getElementById('rst_linkDrive');
   var driveContainer = document.getElementById('rst_driveContainer');
-  var driveBtnHeader = document.getElementById('rst_btnDrive');
   if (linkDrive && linkDrive.startsWith('http')) {
     if (driveLink) { driveLink.href = linkDrive; driveLink.classList.remove('d-none'); driveLink.style.display = 'flex'; }
     if (driveContainer) driveContainer.style.display = '';
-    if (driveBtnHeader) { driveBtnHeader.href = linkDrive; driveBtnHeader.classList.remove('d-none'); }
   } else {
     if (driveLink) { driveLink.classList.add('d-none'); driveLink.style.display = 'none'; }
     if (driveContainer) driveContainer.style.display = 'none';
-    if (driveBtnHeader) driveBtnHeader.classList.add('d-none');
   }
 
   var aplaz = document.getElementById('rst_contenedor_aplazamiento');
@@ -1721,6 +1751,10 @@ function poblarModalRst(fila) {
     MotivoPicker.reset('rst_motivo_aplazamiento');
     MotivoPicker.reset('rst_motivo_negacion');
   }
+  var btnGrupoRst = document.getElementById('rst_estado_btns');
+  if (btnGrupoRst) btnGrupoRst.querySelectorAll('.estado-btn').forEach(function(b) { b.classList.remove('active'); });
+  _setHeaderTipo('modalReestudio', 'tipo-reestudio');
+  _validarFormRst();
 
   var accEl = document.getElementById('rst_accordionResultados');
   if (accEl && solicitudId) {
@@ -1801,18 +1835,71 @@ function _validarFechaSaiAnteDeGuardar(inputId) {
   return true;
 }
 
+function _setHeaderTipo(modalId, tipoClass) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var header = modal.querySelector('.modal-header-inner');
+  if (!header) return;
+  header.classList.remove('tipo-induccion', 'tipo-reestudio-digital', 'tipo-reestudio', 'tipo-biometria');
+  if (tipoClass) header.classList.add(tipoClass);
+}
+
+function _validarFormDig() {
+  var btn = document.getElementById('dig_btnGuardar');
+  if (!btn) return;
+  var estado = (document.getElementById('dig_estado_q').value || '').toUpperCase();
+  if (!estado) { btn.disabled = true; return; }
+  var esInd = (tipoSolicitudActual === 'induccion');
+  if (!esInd) {
+    if (!(document.getElementById('dig_biometria').value || '')) { btn.disabled = true; return; }
+    var fechaVal = (document.getElementById('dig_fecha_radicacion_sai').value || '').trim();
+    if (!fechaVal) { btn.disabled = true; return; }
+    if (typeof _parseFechaSaiInput === 'function') {
+      var fechaParsed = _parseFechaSaiInput(fechaVal);
+      if (!fechaParsed || fechaParsed.getTime() > Date.now()) { btn.disabled = true; return; }
+    }
+  }
+  if (estado.indexOf('APLAZ') !== -1) {
+    if (!(document.getElementById('dig_motivo_aplazamiento').value || '')) { btn.disabled = true; return; }
+  }
+  if (estado.indexOf('NEGAD') !== -1 || estado.indexOf('RECHAZ') !== -1) {
+    if (!(document.getElementById('dig_motivo_negacion').value || '')) { btn.disabled = true; return; }
+  }
+  btn.disabled = false;
+}
+
+function _validarFormBio() {
+  var btn = document.getElementById('bio_btnGuardar');
+  if (!btn) return;
+  if (!(document.getElementById('bio_resLlamada').value || '')) { btn.disabled = true; return; }
+  var resFinal = (document.getElementById('bio_resFinal').value || '').toUpperCase();
+  if (!resFinal) { btn.disabled = true; return; }
+  if (resFinal === 'APLAZADA') {
+    if (!(document.getElementById('bio_motivoAplazamiento').value || '')) { btn.disabled = true; return; }
+  }
+  btn.disabled = false;
+}
+
+function _validarFormRst() {
+  var btn = document.getElementById('rst_btnGuardar');
+  if (!btn) return;
+  if (!(document.getElementById('rst_estado_q').value || '')) { btn.disabled = true; return; }
+  if (!((document.getElementById('rst_poliza').value || '')).trim()) { btn.disabled = true; return; }
+  var estadoU = (document.getElementById('rst_estado_q').value || '').toUpperCase();
+  if (estadoU.indexOf('APLAZ') !== -1) {
+    if (!(document.getElementById('rst_motivo_aplazamiento').value || '')) { btn.disabled = true; return; }
+  }
+  if (estadoU.indexOf('NEGAD') !== -1 || estadoU.indexOf('RECHAZ') !== -1) {
+    if (!(document.getElementById('rst_motivo_negacion').value || '')) { btn.disabled = true; return; }
+  }
+  btn.disabled = false;
+}
+
 function manejarGuardarDigital() {
   var btn = document.getElementById('dig_btnGuardar');
   var solId = btn.getAttribute('data-solicitud-id');
   var estado = document.getElementById('dig_estado_q').value;
   if (!estado) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
-
-  var esInduccionDig = (tipoSolicitudActual === 'induccion');
-  var biometriaVal = document.getElementById('dig_biometria').value || '';
-  if (!esInduccionDig && !biometriaVal) {
-    Swal.fire({ icon: 'warning', title: 'Biometría requerida', text: 'Indica el resultado de biometría antes de guardar.' });
-    return;
-  }
 
   var estadoUpperDig = estado.toUpperCase();
   var motivoAplazDig = document.getElementById('dig_motivo_aplazamiento') ? document.getElementById('dig_motivo_aplazamiento').value : '';
@@ -1823,6 +1910,44 @@ function manejarGuardarDigital() {
   }
   if ((estadoUpperDig.indexOf('NEGAD') !== -1 || estadoUpperDig.indexOf('RECHAZ') !== -1) && !motivoNegDig) {
     Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' });
+    return;
+  }
+
+  // RE-GESTIÓN: llamar función especializada sin requerir biometría ni fecha SAI
+  if (window._modoRegestion) {
+    var rgData = {
+      solicitudId:         window._modoRegestion.solicitudId,
+      tipoHoja:            window._modoRegestion.tipoHoja,
+      estado_q:            estado,
+      motivo_aplazamiento: motivoAplazDig,
+      motivo_negacion:     motivoNegDig
+    };
+    if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalDigital', true); }
+    google.script.run
+      .withSuccessHandler(function(r) {
+        window._modoRegestion = null;
+        if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); }
+        if (r && r.success) {
+          bootstrap.Modal.getInstance(document.getElementById('modalDigital')).hide();
+          if (typeof UX !== 'undefined') UX.showToast('Re-gestión guardada exitosamente', 'success');
+          cargarDatos();
+        } else {
+          Swal.fire({ icon: 'error', title: 'Error', text: r.message || 'Error al guardar.' });
+        }
+      })
+      .withFailureHandler(function(e) {
+        window._modoRegestion = null;
+        if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); }
+        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+      })
+      .regestionarCasoPendiente(rgData);
+    return;
+  }
+
+  var esInduccionDig = (tipoSolicitudActual === 'induccion');
+  var biometriaVal = document.getElementById('dig_biometria').value || '';
+  if (!esInduccionDig && !biometriaVal) {
+    Swal.fire({ icon: 'warning', title: 'Biometría requerida', text: 'Indica el resultado de biometría antes de guardar.' });
     return;
   }
   if (!esInduccionDig && !_validarFechaSaiAnteDeGuardar('dig_fecha_radicacion_sai')) return;
@@ -1884,24 +2009,60 @@ function manejarGuardarBiometria() {
 
 function manejarGuardarReestudio() {
   var btn = document.getElementById('rst_btnGuardar');
+  var estadoGestion = document.getElementById('rst_estado_q').value || '';
+  var motivoAplazamiento = document.getElementById('rst_motivo_aplazamiento') ? document.getElementById('rst_motivo_aplazamiento').value : '';
+  var motivoNegacion     = document.getElementById('rst_motivo_negacion')     ? document.getElementById('rst_motivo_negacion').value     : '';
+
+  if (!estadoGestion) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
+  var estadoUpperRst = estadoGestion.toUpperCase();
+  if (estadoUpperRst.indexOf('APLAZ') !== -1 && !motivoAplazamiento) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de aplazamiento es obligatorio.' }); return;
+  }
+  if ((estadoUpperRst.indexOf('NEGAD') !== -1 || estadoUpperRst.indexOf('RECHAZ') !== -1) && !motivoNegacion) {
+    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' }); return;
+  }
+
+  // RE-GESTIÓN: sin requerir póliza, llama función especializada
+  if (window._modoRegestion) {
+    var rgData = {
+      solicitudId:         window._modoRegestion.solicitudId,
+      tipoHoja:            window._modoRegestion.tipoHoja,
+      estado_q:            estadoGestion,
+      motivo_aplazamiento: motivoAplazamiento,
+      motivo_negacion:     motivoNegacion
+    };
+    if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalReestudio', true); }
+    google.script.run
+      .withSuccessHandler(function(r) {
+        window._modoRegestion = null;
+        if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); }
+        if (r && r.success) {
+          bootstrap.Modal.getInstance(document.getElementById('modalReestudio')).hide();
+          if (typeof UX !== 'undefined') UX.showToast('Re-gestión guardada exitosamente', 'success');
+          cargarDatos();
+        } else {
+          Swal.fire({ icon: 'error', title: 'Error', text: r.message || 'Error al guardar.' });
+        }
+      })
+      .withFailureHandler(function(e) {
+        window._modoRegestion = null;
+        if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); }
+        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+      })
+      .regestionarCasoPendiente(rgData);
+    return;
+  }
+
   var datos = {
     solicitudId: document.getElementById('rst_solicitud_id').value,
     poliza: document.getElementById('rst_poliza').value || '',
-    estadoGestion: document.getElementById('rst_estado_q').value || '',
-    motivoAplazamiento: document.getElementById('rst_motivo_aplazamiento') ? document.getElementById('rst_motivo_aplazamiento').value : '',
-    motivoNegacion: document.getElementById('rst_motivo_negacion') ? document.getElementById('rst_motivo_negacion').value : '',
+    estadoGestion: estadoGestion,
+    motivoAplazamiento: motivoAplazamiento,
+    motivoNegacion: motivoNegacion,
     observaciones: document.getElementById('rst_observaciones').value || '',
     fuente: 'REESTUDIO'
   };
-  if (!datos.estadoGestion) { Swal.fire({ icon: 'warning', title: 'Estado requerido', text: 'Selecciona un estado final.' }); return; }
   if (!datos.poliza || !String(datos.poliza).trim()) { Swal.fire({ icon: 'warning', title: 'Póliza requerida', text: 'El campo Póliza es obligatorio.' }); return; }
-  var estadoUpperRst = datos.estadoGestion.toUpperCase();
-  if (estadoUpperRst.indexOf('APLAZ') !== -1 && !datos.motivoAplazamiento) {
-    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de aplazamiento es obligatorio.' }); return;
-  }
-  if ((estadoUpperRst.indexOf('NEGAD') !== -1 || estadoUpperRst.indexOf('RECHAZ') !== -1) && !datos.motivoNegacion) {
-    Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'El motivo de negación es obligatorio.' }); return;
-  }
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalReestudio', true); }
 
@@ -2090,10 +2251,19 @@ function abrirResumenHoy() {
             var obsCell = obsText
               ? '<a href="javascript:void(0)" class="rh-obs-toggle" data-target="rh_obs_' + idx + '" style="font-size:0.75rem;font-weight:600;color:#4338ca;text-decoration:none;"><i class="bi bi-chat-left-text me-1"></i>Ver comentario</a>'
               : '<span class="text-muted" style="font-size:0.75rem;">—</span>';
+            var resUpper = (item.resultado || '').toUpperCase();
+            var resStyle = 'background:#f1f5f9;color:#64748b;';
+            if (resUpper.indexOf('APROB') !== -1) resStyle = 'background:#dcfce7;color:#15803d;';
+            else if (resUpper.indexOf('APLAZ') !== -1) resStyle = 'background:#fef3c7;color:#b45309;';
+            else if (resUpper.indexOf('NEGAD') !== -1 || resUpper.indexOf('RECHAZ') !== -1) resStyle = 'background:#fee2e2;color:#BD0F14;';
+            else if (resUpper.indexOf('PENDIENTE') !== -1) resStyle = 'background:#eff6ff;color:#2563eb;';
+            var resCell = item.resultado
+              ? '<span style="font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:8px;' + resStyle + '">' + item.resultado + '</span>'
+              : '<span class="text-muted" style="font-size:0.75rem;">—</span>';
             var obsRow = obsText
-              ? '<tr id="rh_obs_' + idx + '" style="display:none;"><td colspan="4" style="padding:8px 14px 12px 14px;background:#f8fafc;border-top:none;"><div style="font-size:0.8rem;color:#334155;line-height:1.5;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;white-space:pre-wrap;word-break:break-word;">' + obsText.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></td></tr>'
+              ? '<tr id="rh_obs_' + idx + '" style="display:none;"><td colspan="5" style="padding:8px 14px 12px 14px;background:#f8fafc;border-top:none;"><div style="font-size:0.8rem;color:#334155;line-height:1.5;padding:8px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;white-space:pre-wrap;word-break:break-word;">' + obsText.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></td></tr>'
               : '';
-            tbody.append('<tr><td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fBadge + '</td><td style="padding:10px 14px;font-size:0.875rem;">' + item.tipo + '</td><td style="padding:10px 14px;"><span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td><td style="padding:10px 14px;">' + obsCell + '</td></tr>' + obsRow);
+            tbody.append('<tr><td style="padding:10px 14px;font-size:0.875rem;" class="fw-bold text-primary">' + item.solicitud + fBadge + '</td><td style="padding:10px 14px;font-size:0.875rem;">' + item.tipo + '</td><td style="padding:10px 14px;"><span style="font-size:0.85rem;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(37,49,80,0.07);color:var(--color-secundario);"><i class="bi bi-clock me-1"></i>' + item.horaGestion + '</span></td><td style="padding:10px 14px;">' + resCell + '</td><td style="padding:10px 14px;">' + obsCell + '</td></tr>' + obsRow);
           });
           tbody.on('click', '.rh-obs-toggle', function(e) {
             e.preventDefault();
@@ -2153,6 +2323,102 @@ function abrirResumenHoy() {
       body.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-inbox" style="font-size:2rem;"></i><p class="mt-2">Sin gestiones hoy.</p></div>';
     })
     .obtenerDetalleGestionesHoy();
+}
+
+// ============================================================
+// LÓGICA DE RE-GESTIÓN (PEND. VALIDACIÓN / EVIDENTE)
+// ============================================================
+
+var _rgPendientes = [];
+var _rgCasoActual = null;
+var _rgMotivoPickers = {};
+
+function actualizarBannerPendientes(lista) {
+  _rgPendientes = lista || [];
+  var banner = document.getElementById('bannerPendValidacion');
+  var msg    = document.getElementById('pendValidacionMensaje');
+  if (!banner) return;
+  if (_rgPendientes.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = '';
+  var pv = _rgPendientes.filter(function(c) { return c.estadoQ === 'PENDIENTE VALIDACIÓN'; }).length;
+  var pe = _rgPendientes.filter(function(c) { return c.estadoQ === 'PENDIENTE EVIDENTE'; }).length;
+  var partes = [];
+  if (pv) partes.push(pv + ' pend. validación');
+  if (pe) partes.push(pe + ' pend. evidente');
+  if (msg) msg.textContent = partes.join(' · ');
+}
+
+function abrirModalRegestion() {
+  rgVolverLista();
+  document.getElementById('rg_loading').classList.remove('d-none');
+  document.getElementById('rg_lista_wrap').classList.add('d-none');
+  document.getElementById('rg_empty').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('modalRegestion')).show();
+
+  google.script.run
+    .withSuccessHandler(function(lista) {
+      _rgPendientes = lista || [];
+      actualizarBannerPendientes(_rgPendientes);
+      _rgRenderLista();
+    })
+    .withFailureHandler(function(e) {
+      console.error('abrirModalRegestion:', e);
+      document.getElementById('rg_loading').classList.add('d-none');
+      document.getElementById('rg_empty').classList.remove('d-none');
+    })
+    .obtenerCasosPendientesAnalista();
+}
+
+function _rgRenderLista() {
+  document.getElementById('rg_loading').classList.add('d-none');
+  if (_rgPendientes.length === 0) {
+    document.getElementById('rg_empty').classList.remove('d-none');
+    return;
+  }
+  var tbody = document.getElementById('rg_tbody');
+  var rows = _rgPendientes.map(function(c, i) {
+    var estadoBadge = c.estadoQ === 'PENDIENTE VALIDACIÓN'
+      ? '<span style="font-size:0.7rem;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-weight:700;">PEND. VALIDACIÓN</span>'
+      : '<span style="font-size:0.7rem;background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:6px;font-weight:700;">PEND. EVIDENTE</span>';
+    var nombre = c.nombreInquilino || '<span class="text-muted">—</span>';
+    return '<tr>'
+      + '<td class="fw-bold text-primary" style="font-size:0.85rem;">' + (c.solicitudId || '—') + '</td>'
+      + '<td style="font-size:0.82rem;">' + nombre + '</td>'
+      + '<td style="font-size:0.82rem;">' + (c.clase || '—') + ' <small class="text-muted">(' + c.tipoHoja + ')</small></td>'
+      + '<td>' + estadoBadge + '</td>'
+      + '<td style="font-size:0.78rem;color:#706F6F;">' + (c.fechaGestion || '—') + '</td>'
+      + '<td><button class="btn btn-sm fw-bold" style="background:#d97706;color:#fff;border-radius:7px;border:none;font-size:0.75rem;" onclick="_rgAbrirForm(' + i + ')"><i class="bi bi-pencil-fill me-1"></i>Gestionar</button></td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = rows.join('');
+  document.getElementById('rg_lista_wrap').classList.remove('d-none');
+}
+
+function _rgAbrirForm(idx) {
+  var caso = _rgPendientes[idx];
+  if (!caso || !caso.filaCompleta) return;
+
+  window._modoRegestion = { solicitudId: caso.solicitudId, tipoHoja: caso.tipoHoja };
+
+  var modalRg = bootstrap.Modal.getInstance(document.getElementById('modalRegestion'));
+  if (modalRg) modalRg.hide();
+
+  if (caso.tipoHoja === 'REESTUDIO') {
+    poblarModalRst(caso.filaCompleta);
+    new bootstrap.Modal(document.getElementById('modalReestudio')).show();
+  } else {
+    tipoSolicitudActual = caso.clase.toLowerCase().includes('reestudio') ? 'reestudio' : 'digital';
+    poblarModalDig(caso.filaCompleta);
+    document.getElementById('dig_btnGuardar').setAttribute('data-solicitud-id', caso.solicitudId);
+    new bootstrap.Modal(document.getElementById('modalDigital')).show();
+  }
+}
+
+function rgVolverLista() {
+  _rgCasoActual = null;
 }
 
 </script>

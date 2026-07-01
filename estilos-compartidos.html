@@ -761,6 +761,45 @@
       border-radius: 50%;
     }
 
+    /* N/D badge — empty field indicator */
+    .nd-badge {
+      display: inline-block;
+      background: #f1f5f9;
+      color: #9ca3af;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+    }
+
+    /* P1: Header color by case type */
+    .modal-header-inner.tipo-induccion { background: linear-gradient(135deg, #78350f 0%, #92400e 60%, #b45309 100%); }
+    .modal-header-inner.tipo-reestudio-digital,
+    .modal-header-inner.tipo-reestudio { background: linear-gradient(135deg, #312e81 0%, #3730a3 60%, #4338ca 100%); }
+    .modal-header-inner.tipo-biometria { background: linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%); }
+
+    /* P2: Estado button group */
+    .estado-btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+    .estado-btn {
+      flex: 1 1 0; min-width: 90px; padding: 9px 8px;
+      border-radius: 10px; border: 2px solid #e5e7eb;
+      background: var(--bg-card); font-weight: 700; font-size: 0.75rem;
+      cursor: pointer; transition: all 0.15s ease;
+      color: var(--text-muted); text-align: center; line-height: 1.2;
+    }
+    .estado-btn:hover:not(.active) { border-color: #9ca3af; background: var(--bg-page); }
+    .estado-btn.active[data-value="APROBADA"] { background: #dcfce7; color: #16a34a; border-color: #16a34a; }
+    .estado-btn.active[data-value="APLAZADA"] { background: #fef3c7; color: #d97706; border-color: #d97706; }
+    .estado-btn.active[data-value="NEGADA"] { background: #fee2e2; color: #BD0F14; border-color: #BD0F14; }
+    .estado-btn.active[data-value^="PENDIENTE"] { background: #eff6ff; color: #2563eb; border-color: #2563eb; }
+
+    /* P6: Guardar button disabled state */
+    #dig_btnGuardar:disabled, #bio_btnGuardar:disabled, #rst_btnGuardar:disabled {
+      opacity: 0.45; cursor: not-allowed;
+    }
+
     .nav-tabs-modern {
       background: var(--border);
       padding: 4px !important;

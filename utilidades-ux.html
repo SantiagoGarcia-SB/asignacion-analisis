@@ -1246,6 +1246,7 @@ const MotivoPicker = (function() {
             textInput.value = label;
             clearBtn.style.display = 'flex';
             dropdown.classList.remove('mp-open');
+            select.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         function clear() {
@@ -1253,6 +1254,7 @@ const MotivoPicker = (function() {
             textInput.value = '';
             clearBtn.style.display = 'none';
             dropdown.classList.remove('mp-open');
+            select.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         entry._pick  = pick;

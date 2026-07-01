@@ -1105,6 +1105,239 @@ function guardarCambiosInternos(data) {
     disparaAsignacion: disparaAsignacion
   };
 }
+
+// ===================================================================
+// CASOS PENDIENTES DE VALIDACIÓN / EVIDENTE — RE-GESTIÓN
+// ===================================================================
+
+function obtenerFilaCasoPendiente(solicitudId, tipoHoja) {
+  const props     = PropertiesService.getScriptProperties();
+  const TARGET_SS_ID = props.getProperty('TARGET_SOLICITUDES_SS_ID') || TARGET_SOLICITUDES_SS_ID;
+  const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
+  const ESTADOS_PEND = ['PENDIENTE VALIDACIÓN', 'PENDIENTE EVIDENTE'];
+  const solId = String(solicitudId).trim();
+
+  if (tipoHoja === 'DIGITAL') {
+    const hoja = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
+    if (!hoja || hoja.getLastRow() < 2) return null;
+    const ncols = Math.max(60, hoja.getLastColumn());
+    const data  = hoja.getRange(2, 1, hoja.getLastRow() - 1, ncols).getDisplayValues();
+    for (let i = 0; i < data.length; i++) {
+      const h = data[i];
+      if (String(h[0]).trim() !== solId) continue;
+      if (!ESTADOS_PEND.includes(String(h[16]).trim().toUpperCase())) continue;
+      // Mismo mapeo que histToSol en getUnifiedTableData
+      const s = new Array(58).fill('');
+      for (let j = 0; j <= 21; j++) s[j] = h[j];
+      s[23] = h[22]; s[24] = h[23];
+      s[26] = h[24]; s[27] = h[25]; s[28] = h[26];
+      s[30] = h[27]; s[31] = h[28]; s[32] = h[29]; s[33] = h[30];
+      s[35] = h[31]; s[36] = h[32];
+      for (let j = 0; j < 21; j++) s[37 + j] = h[39 + j] !== undefined ? h[39 + j] : '';
+      s.push(''); // CategoriaScore placeholder
+      return s;
+    }
+  } else {
+    const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
+    if (!hojaR || hojaR.getLastRow() < 2) return null;
+    const data = hojaR.getRange(2, 1, hojaR.getLastRow() - 1, 18).getDisplayValues();
+    for (let i = 0; i < data.length; i++) {
+      const fila = data[i];
+      if (String(fila[1]).trim() !== solId) continue;
+      if (!ESTADOS_PEND.includes(String(fila[10]).trim().toUpperCase())) continue;
+      const tipoProc = String(fila[4]).trim();
+      const claseR   = String(fila[5]).trim();
+      const fechaAsi = String(fila[8]).trim();
+      const asignado = String(fila[6]).trim();
+      const filaAd   = new Array(37).fill('');
+      filaAd[0]  = String(fila[1]).trim();
+      filaAd[2]  = String(fila[2]).trim();
+      filaAd[3]  = String(fila[3]).trim();
+      filaAd[4]  = tipoProc;
+      filaAd[5]  = claseR;
+      filaAd[8]  = fechaAsi;
+      filaAd[16] = '__REESTUDIO__';
+      filaAd[17] = String(fila[0]).trim();
+      filaAd[20] = tipoProc || claseR;
+      filaAd[26] = fechaAsi;
+      filaAd[27] = asignado;
+      filaAd[28] = '';
+      filaAd[30] = String(fila[7]).trim();
+      filaAd.push('');
+      return filaAd;
+    }
+  }
+  return null;
+}
+
+function obtenerCasosPendientesAnalista() {
+  const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  const ESTADOS_PEND = ['PENDIENTE VALIDACIÓN', 'PENDIENTE EVIDENTE'];
+  const props = PropertiesService.getScriptProperties();
+  const TARGET_SS_ID = props.getProperty('TARGET_SOLICITUDES_SS_ID') || TARGET_SOLICITUDES_SS_ID;
+  const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
+  const resultado = [];
+
+  // Digital: Historico_Gestiones principal
+  try {
+    const hoja = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
+    if (hoja && hoja.getLastRow() > 1) {
+      const ncols = Math.max(60, hoja.getLastColumn());
+      const data  = hoja.getRange(2, 1, hoja.getLastRow() - 1, ncols).getDisplayValues();
+      for (let i = 0; i < data.length; i++) {
+        const h       = data[i];
+        const email   = String(h[25]).toLowerCase().trim();  // col 26 = email analista
+        const estadoQ = String(h[16]).trim().toUpperCase(); // col 17 = estado_q
+        if (email !== userEmail) continue;
+        if (!ESTADOS_PEND.includes(estadoQ)) continue;
+        // Mapeo histToSol para que poblarModalDig reciba la fila en formato correcto
+        const s = new Array(58).fill('');
+        for (let j = 0; j <= 21; j++) s[j] = h[j];
+        s[23] = h[22]; s[24] = h[23];
+        s[26] = h[24]; s[27] = h[25]; s[28] = h[26];
+        s[30] = h[27]; s[31] = h[28]; s[32] = h[29]; s[33] = h[30];
+        s[35] = h[31]; s[36] = h[32];
+        for (let j = 0; j < 21; j++) s[37 + j] = h[39 + j] !== undefined ? h[39 + j] : '';
+        s.push('');
+        resultado.push({
+          solicitudId:        String(h[0]).trim(),
+          nombreInquilino:    String(h[4]).trim(),
+          canon:              String(h[9]).trim(),
+          clase:              String(h[20]).trim(),
+          estadoQ:            estadoQ,
+          fechaGestion:       String(h[26]).trim(),
+          tipoHoja:           'DIGITAL',
+          filaCompleta:       s
+        });
+      }
+    }
+  } catch(e) { Logger.log('obtenerCasosPendientes digital: ' + e.message); }
+
+  // Reestudio: Historico_Gestiones de la hoja de reestudios
+  try {
+    const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
+    if (hojaR && hojaR.getLastRow() > 1) {
+      const data = hojaR.getRange(2, 1, hojaR.getLastRow() - 1, 18).getDisplayValues();
+      for (let i = 0; i < data.length; i++) {
+        const fila    = data[i];
+        const email   = String(fila[6]).toLowerCase().trim();  // col 7
+        const estadoQ = String(fila[10]).trim().toUpperCase(); // col 11
+        if (email !== userEmail) continue;
+        if (!ESTADOS_PEND.includes(estadoQ)) continue;
+        const tipoProc = String(fila[4]).trim();
+        const claseR   = String(fila[5]).trim();
+        const fechaAsi = String(fila[8]).trim();
+        const filaAd   = new Array(37).fill('');
+        filaAd[0]  = String(fila[1]).trim();
+        filaAd[2]  = String(fila[2]).trim();
+        filaAd[3]  = String(fila[3]).trim();
+        filaAd[4]  = tipoProc;
+        filaAd[5]  = claseR;
+        filaAd[8]  = fechaAsi;
+        filaAd[16] = '__REESTUDIO__';
+        filaAd[17] = String(fila[0]).trim();
+        filaAd[20] = tipoProc || claseR;
+        filaAd[26] = fechaAsi;
+        filaAd[27] = String(fila[6]).trim();
+        filaAd[28] = '';
+        filaAd[30] = String(fila[7]).trim();
+        filaAd.push('');
+        resultado.push({
+          solicitudId:        String(fila[1]).trim(),
+          nombreInquilino:    '',
+          canon:              '',
+          clase:              tipoProc || claseR,
+          estadoQ:            estadoQ,
+          fechaGestion:       String(fila[9]).trim(),
+          tipoHoja:           'REESTUDIO',
+          filaCompleta:       filaAd
+        });
+      }
+    }
+  } catch(e) { Logger.log('obtenerCasosPendientes reestudio: ' + e.message); }
+
+  return resultado;
+}
+
+function regestionarCasoPendiente(data) {
+  if (!data || !data.solicitudId) return { success: false, message: 'ID no proporcionado.' };
+
+  const ESTADOS_PEND = ['PENDIENTE VALIDACIÓN', 'PENDIENTE EVIDENTE'];
+  const estado_q = String(data.estado_q || '').trim().toUpperCase();
+  let motivo_aplazamiento = (data.motivo_aplazamiento || '').trim();
+  let motivo_negacion     = (data.motivo_negacion || '').trim();
+
+  if (estado_q.includes('APLAZ')) {
+    motivo_negacion = '';
+    if (!motivo_aplazamiento) return { success: false, message: 'El motivo de aplazamiento es obligatorio.' };
+  } else if (estado_q.includes('NEGAD') || estado_q.includes('RECHAZ')) {
+    motivo_aplazamiento = '';
+    if (!motivo_negacion) return { success: false, message: 'El motivo de negación es obligatorio.' };
+  } else {
+    motivo_aplazamiento = ''; motivo_negacion = '';
+  }
+
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(15000); }
+  catch(e) { return { success: false, message: 'Sistema ocupado. Intenta de nuevo.' }; }
+
+  const props      = PropertiesService.getScriptProperties();
+  const TARGET_SS_ID = props.getProperty('TARGET_SOLICITUDES_SS_ID') || TARGET_SOLICITUDES_SS_ID;
+  const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
+
+  try {
+    const ahora    = new Date();
+    const solId    = String(data.solicitudId).trim();
+    const tipoHoja = String(data.tipoHoja || 'DIGITAL');
+    const esFinal  = !estado_q.includes('PENDIENTE');
+
+    if (tipoHoja === 'DIGITAL') {
+      const hoja = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
+      if (!hoja) return { success: false, message: 'Hoja no encontrada.' };
+
+      const dataH = hoja.getRange(2, 1, hoja.getLastRow() - 1, 17).getValues();
+      let targetRow = -1;
+      for (let i = 0; i < dataH.length; i++) {
+        if (String(dataH[i][0]).trim() === solId && ESTADOS_PEND.includes(String(dataH[i][16]).trim().toUpperCase())) {
+          targetRow = i + 2; break;
+        }
+      }
+      if (targetRow === -1) return { success: false, message: 'Caso no encontrado en estado pendiente.' };
+
+      hoja.getRange(targetRow, 17).setValue(estado_q);
+      hoja.getRange(targetRow, 29, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
+      if (esFinal) hoja.getRange(targetRow, 27).setValue(ahora).setNumberFormat('dd/mm/yyyy HH:mm:ss');
+      SpreadsheetApp.flush();
+
+    } else {
+      const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
+      if (!hojaR) return { success: false, message: 'Hoja de reestudios no encontrada.' };
+
+      const dataHR = hojaR.getRange(2, 1, hojaR.getLastRow() - 1, 11).getValues();
+      let targetRowR = -1;
+      for (let i = 0; i < dataHR.length; i++) {
+        if (String(dataHR[i][1]).trim() === solId && ESTADOS_PEND.includes(String(dataHR[i][10]).trim().toUpperCase())) {
+          targetRowR = i + 2; break;
+        }
+      }
+      if (targetRowR === -1) return { success: false, message: 'Caso no encontrado en estado pendiente.' };
+
+      hojaR.getRange(targetRowR, 11).setValue(estado_q);
+      hojaR.getRange(targetRowR, 12).setValue(motivo_aplazamiento);
+      hojaR.getRange(targetRowR, 13).setValue(motivo_negacion);
+      if (esFinal) hojaR.getRange(targetRowR, 10).setValue(ahora).setNumberFormat('dd/mm/yyyy HH:mm:ss');
+      SpreadsheetApp.flush();
+    }
+
+    return { success: true, message: 'Re-gestión guardada exitosamente.' };
+
+  } catch(e) {
+    return { success: false, message: 'Error: ' + e.message };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
 function getEmailUsuario() {
   return Session.getActiveUser().getEmail();
 }
@@ -2002,6 +2235,7 @@ function obtenerDetalleGestionesHoy() {
               tipo: tipoLabels[tipoId] || tipoId,
               horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
               fuente: 'DIGITAL',
+              resultado: String(dataHDet[i][16] || '').trim(),
               observaciones: String(dataHDet[i][23] || '').trim()
             });
           }
@@ -2032,6 +2266,7 @@ function obtenerDetalleGestionesHoy() {
               tipo: tipoLabelR,
               horaGestion: partes.length > 1 ? partes[1].substring(0, 5) : '',
               fuente: 'REESTUDIO',
+              resultado: String(data[i][10] || '').trim(),
               observaciones: String(data[i][13] || '').trim()
             });
           }
