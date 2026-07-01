@@ -269,7 +269,8 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
       reasignada: reasignada,
       esExterno: esExterno,
       polizaKey: _normalizarClaveUnif(row[1]),
-      fechaOrd: _parseDateUnif(row[17])
+      // desaplazamiento se ordena por fechaResultado (última actualización de SAI), no por fechaRadicacion
+      fechaOrd: _parseDateUnif(tipo === 'desaplazamiento' ? row[18] : row[17])
     });
   }
   return pendientes;

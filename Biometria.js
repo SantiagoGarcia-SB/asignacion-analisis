@@ -524,45 +524,14 @@ function consultarBiometriasPeriodicaAPI() {
   Logger.log("=== FIN consultarBiometriasPeriodicaAPI ===");
 }
 
-// Trigger 8am y 12pm: re-consulta pendientes, decide destino y envía WA pendientes
+// Trigger 8am y 12pm: revisa cada pendiente contra SAI.
+// Primer contacto (fase vacía) → se envía WhatsApp, dando oportunidad de auto-resolución.
+// Segundo contacto (ya tenía WhatsApp y sigue pendiente) → se escala a la cola de asignación (llamada).
+// Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
-  _reconsultarPendientesBio();
-  _enviarBroadcastPendientes();
+  _procesarCortePendientes();
   Logger.log("=== FIN cicloBiometriaPendiente ===");
-}
-
-function _enviarBroadcastPendientes() {
-  Logger.log("--- Envío de WA a biometrías sin broadcast ---");
-  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) return;
-
-  var lastRow = hojaBio.getLastRow();
-  if (lastRow < 2) return;
-
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 75).getValues();
-  var filasPendientes = [];
-
-  for (var i = 0; i < datos.length; i++) {
-    var estadoBroadcast = String(datos[i][61]).trim();
-    if (estadoBroadcast === 'ENVIADO') continue;
-    var solicitudId = String(datos[i][0]).trim();
-    if (!solicitudId) continue;
-    filasPendientes.push({ fila: datos[i], filaSheet: i + 2 });
-  }
-
-  if (filasPendientes.length === 0) {
-    Logger.log("No hay biometrías pendientes de envío de WA.");
-    return;
-  }
-
-  Logger.log(filasPendientes.length + " biometrías sin WA enviado.");
-
-  var filasParaEnvio = filasPendientes.map(function(p) { return p.fila; });
-  var rowInicios = filasPendientes.map(function(p) { return p.filaSheet; });
-
-  enviarBroadcastInfobipConFilas(filasParaEnvio, hojaBio, rowInicios);
 }
 
 function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
@@ -715,9 +684,11 @@ function _homologarDatosApi(item) {
   };
 }
 
-// PASO 1: Re-consultar pendientes (nuevo_estado_sai vacío)
-function _reconsultarPendientesBio() {
-  Logger.log("--- Paso 1: Re-consulta de pendientes ---");
+// Columna 76 (índice 75): fase_seguimiento_biometria
+// "" = aún sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
+// "ESCALADA" = ya se envió a asignación (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
+function _procesarCortePendientes() {
+  Logger.log("--- Corte de revisión de pendientes de biometría ---");
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -726,71 +697,201 @@ function _reconsultarPendientesBio() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 75).getValues();
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
 
   var pendientes = [];
   for (var i = 0; i < datos.length; i++) {
-    if (String(datos[i][62]).trim() !== "") continue;
+    var fase = String(datos[i][75]).trim();
+    if (fase === "RESUELTA" || fase === "ESCALADA") continue;
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
-    pendientes.push({ fila: i + 2, consecutivo: consecutivo });
+    pendientes.push({ fila: i + 2, consecutivo: consecutivo, fase: fase, datosFila: datos[i] });
   }
 
   if (pendientes.length === 0) {
-    Logger.log("No hay pendientes sin re-consultar.");
+    Logger.log("No hay pendientes por procesar en este corte.");
     return;
   }
 
-  Logger.log(pendientes.length + " pendientes a re-consultar.");
+  Logger.log(pendientes.length + " pendientes a revisar en este corte.");
 
   var resultados = [];
   for (var p = 0; p < pendientes.length; p++) {
     var datosApi = _consultarSaiIndividual(pendientes[p].consecutivo);
-    resultados.push({ fila: pendientes[p].fila, consecutivo: pendientes[p].consecutivo, datosApi: datosApi });
+    resultados.push({ item: pendientes[p], datosApi: datosApi });
     Utilities.sleep(1000);
   }
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para actualizar pendientes: " + e.message);
+    Logger.log("❌ Lock no disponible para procesar corte de pendientes: " + e.message);
     return;
   }
 
   try {
-    var solicitudesParaSolicitud = [];
+    var solicitudesParaAsignar = [];
+    var rowsParaWA = [];
+    var filasParaWA = [];
 
     for (var r = 0; r < resultados.length; r++) {
-      var res = resultados[r];
-      if (!res.datosApi) {
-        Logger.log("⚠️ Sin respuesta API para " + res.consecutivo);
+      var item = resultados[r].item;
+      var datosApi = resultados[r].datosApi;
+
+      if (!datosApi) {
+        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
         continue;
       }
 
-      var statusActual = String(res.datosApi.studyStatus || "").toUpperCase().trim();
-      hojaBio.getRange(res.fila, 63).setValue(statusActual);
+      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+      hojaBio.getRange(item.fila, 63).setValue(statusActual); // nuevo_estado_sai
 
-      if (statusActual === "APROBADO") {
-        Logger.log("✅ " + res.consecutivo + " APROBADO → marcado en nuevo_estado_sai");
-      } else if (statusActual === "APROBADO_PENDIENTE_BIOMETRIA") {
-        solicitudesParaSolicitud.push(_homologarDatosApi(res.datosApi));
-        Logger.log("🔄 " + res.consecutivo + " sigue pendiente biometría → enviando a cola de asignación");
+      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+        hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
+        Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
+        continue;
+      }
+
+      if (item.fase === "") {
+        rowsParaWA.push(item.datosFila);
+        filasParaWA.push(item.fila);
+        hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
+        Logger.log("📲 " + item.consecutivo + " sigue pendiente → primer contacto (WhatsApp).");
       } else {
-        Logger.log("🔄 " + res.consecutivo + " cambió a " + statusActual + " → sin acción");
+        solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
+        hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
+        Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
       }
     }
 
     SpreadsheetApp.flush();
     lock.releaseLock();
 
-    if (solicitudesParaSolicitud.length > 0) {
-      procesarYGuardarLote(solicitudesParaSolicitud);
-      Logger.log("✅ " + solicitudesParaSolicitud.length + " solicitudes enviadas a hoja solicitud.");
+    if (rowsParaWA.length > 0) {
+      enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);
+    }
+
+    if (solicitudesParaAsignar.length > 0) {
+      procesarYGuardarLote(solicitudesParaAsignar);
+      Logger.log("✅ " + solicitudesParaAsignar.length + " solicitudes escaladas a la cola de asignación.");
     }
 
   } catch (e) {
-    Logger.log("❌ Error en _reconsultarPendientesBio: " + e.message);
+    Logger.log("❌ Error en _procesarCortePendientes: " + e.message);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+// MIGRACIÓN ÚNICA — correr manualmente una sola vez al desplegar la columna 76.
+// Bajo la lógica anterior, consultar y asignar pasaban juntos en la misma corrida.
+// Para las filas de HOY (WhatsApp recién enviado el mismo día), todavía se puede
+// deshacer: si la solicitud sigue en la cola "solicitud" (ningún analista la ha
+// tomado aún), se saca de la cola y se deja en WA_ENVIADO para que espere el
+// próximo corte, como debía ser desde el principio. Si ya no está en la cola
+// (un analista ya la tomó) o es de un corte anterior a hoy, ya no es seguro
+// deshacerlo y se deja como ESCALADA.
+function migrarFaseSeguimientoBiometriaExistente() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var hoyStr = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para migrar: " + e.message);
+    return;
+  }
+
+  try {
+    var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+    var idsEnCola = hojaSol ? getSetDeIds(hojaSol) : new Set();
+
+    var recuperadas = 0, escaladasDejadas = 0, resueltas = 0;
+
+    for (var i = 0; i < datos.length; i++) {
+      var faseActual = String(datos[i][75]).trim();
+      if (faseActual !== "") continue; // ya migrada, o ya la tocó el nuevo flujo
+
+      var nuevoEstadoSai = String(datos[i][62]).trim().toUpperCase();
+      if (!nuevoEstadoSai) continue; // nunca se re-consultó → se queda "", es correcto
+
+      if (nuevoEstadoSai !== "APROBADO_PENDIENTE_BIOMETRIA") {
+        hojaBio.getRange(i + 2, 76).setValue("RESUELTA");
+        resueltas++;
+        continue;
+      }
+
+      var solId = String(datos[i][0]).trim();
+      var fechaWA = datos[i][60]; // fecha_envio_brodcast
+      var fechaWAStr = fechaWA instanceof Date ? Utilities.formatDate(fechaWA, "GMT-5", "yyyy-MM-dd") : String(fechaWA || "").slice(0, 10);
+      var esDeHoy = fechaWAStr === hoyStr;
+
+      if (esDeHoy && solId && idsEnCola.has(solId)) {
+        _eliminarSolicitudDeCola(hojaSol, solId);
+        hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
+        recuperadas++;
+      } else {
+        hojaBio.getRange(i + 2, 76).setValue("ESCALADA");
+        escaladasDejadas++;
+      }
+    }
+
+    SpreadsheetApp.flush();
+    Logger.log("✅ Migración completada — recuperadas de la cola: " + recuperadas + " | dejadas como escaladas: " + escaladasDejadas + " | resueltas: " + resueltas);
+
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+// CORRECCIÓN ÚNICA — correr una sola vez, después de migrarFaseSeguimientoBiometriaExistente().
+// Bajo la lógica anterior, el envío de WhatsApp era independiente de la re-consulta a SAI
+// (se le mandaba a cualquiera sin estado_brodcast=ENVIADO, sin importar nuevo_estado_sai).
+// Por eso hay filas que ya recibieron WhatsApp pero la migración las dejó con fase vacía
+// (porque nunca se les llenó nuevo_estado_sai). Sin esta corrección, el próximo corte las
+// trataría como "nunca contactadas" y les mandaría un segundo WhatsApp en vez de escalarlas.
+function corregirFaseParaBroadcastsPrevios() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var corregidas = 0;
+
+  for (var i = 0; i < datos.length; i++) {
+    var fase = String(datos[i][75]).trim();
+    if (fase !== "") continue; // solo las que la migración dejó sin tocar
+
+    var estadoBroadcast = String(datos[i][61]).trim().toUpperCase(); // estado_brodcast
+    if (estadoBroadcast !== "ENVIADO") continue; // nunca recibió WhatsApp, se deja como está (correcto)
+
+    hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
+    corregidas++;
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log("✅ Corrección aplicada: " + corregidas + " filas marcadas WA_ENVIADO (ya habían recibido WhatsApp bajo la lógica anterior).");
+}
+
+function _eliminarSolicitudDeCola(hojaSol, solId) {
+  if (!hojaSol) return;
+  var lastRow = hojaSol.getLastRow();
+  if (lastRow < 2) return;
+  var ids = hojaSol.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]).trim() === solId) {
+      hojaSol.deleteRow(i + 2);
+      return;
+    }
   }
 }
 
@@ -905,7 +1006,7 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
       }
 
       var est = String(item.estadoGeneral || "").toUpperCase();
-      var fila = new Array(75).fill("");
+      var fila = new Array(76).fill(""); // índice 75 = fase_seguimiento_biometria, arranca vacía
 
       fila[0]  = solId;
       fila[1]  = item.poliza || "";
@@ -990,7 +1091,7 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
 
     if (filas.length > 0) {
       var rowInicio = hojaBio.getLastRow() + 1;
-      var rango = hojaBio.getRange(rowInicio, 1, filas.length, 75);
+      var rango = hojaBio.getRange(rowInicio, 1, filas.length, 76);
       rango.setNumberFormat("@");
       rango.setValues(filas);
       SpreadsheetApp.flush();
