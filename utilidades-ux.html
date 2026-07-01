@@ -790,7 +790,7 @@ const UX = (function() {
                     }).join('');
 
                     const aprobadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APROB'); }).length;
-                    const negadas   = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('NEGAD'); }).length;
+                    const negadas   = gestiones.filter(function(l) { var e = l.estado.toUpperCase(); return e.includes('NEGAD') || e.includes('RECHAZ'); }).length;
                     const aplazadas = gestiones.filter(function(l) { return l.estado.toUpperCase().includes('APLAZ'); }).length;
                     const summaryParts = [];
                     if (aprobadas) summaryParts.push('✅ ' + aprobadas + ' aprobada' + (aprobadas > 1 ? 's' : ''));
@@ -827,7 +827,7 @@ const UX = (function() {
     function getDotColor(estado) {
         const s = (estado || '').toUpperCase();
         if (s.includes('APROB')) return '#22c55e';
-        if (s.includes('NEGAD')) return '#ef4444';
+        if (s.includes('NEGAD') || s.includes('RECHAZ')) return '#ef4444';
         if (s.includes('APLAZ')) return '#f59e0b';
         if (s.includes('PENDIENTE')) return '#6366f1';
         return '#A3A2A2';

@@ -308,19 +308,19 @@
                   </select>
                 </div>
                 <div class="col-12 gestion-group">
-                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del estudio. Al elegir APLAZADA o NEGADA deberás indicar el motivo correspondiente." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del estudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo correspondiente." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <div class="estado-btn-group" id="dig_estado_btns">
-                    <button type="button" class="estado-btn" data-value="APROBADA"><i class="bi bi-check-circle me-1"></i>APROBADA</button>
-                    <button type="button" class="estado-btn" data-value="APLAZADA"><i class="bi bi-pause-circle me-1"></i>APLAZADA</button>
-                    <button type="button" class="estado-btn" data-value="NEGADA"><i class="bi bi-x-circle me-1"></i>NEGADA</button>
+                    <button type="button" class="estado-btn" data-value="APROBADO"><i class="bi bi-check-circle me-1"></i>APROBADO</button>
+                    <button type="button" class="estado-btn" data-value="APLAZADO"><i class="bi bi-pause-circle me-1"></i>APLAZADO</button>
+                    <button type="button" class="estado-btn" data-value="RECHAZADO"><i class="bi bi-x-circle me-1"></i>RECHAZADO</button>
                     <button type="button" class="estado-btn" data-value="PENDIENTE VALIDACIÓN"><i class="bi bi-clock me-1"></i>PEND. VALIDACIÓN</button>
                     <button type="button" class="estado-btn" data-value="PENDIENTE EVIDENTE"><i class="bi bi-eye me-1"></i>PEND. EVIDENTE</button>
                   </div>
                   <select id="dig_estado_q" class="d-none">
                     <option value="" selected></option>
-                    <option value="APROBADA">APROBADA</option>
-                    <option value="APLAZADA">APLAZADA</option>
-                    <option value="NEGADA">NEGADA</option>
+                    <option value="APROBADO">APROBADO</option>
+                    <option value="APLAZADO">APLAZADO</option>
+                    <option value="RECHAZADO">RECHAZADO</option>
                     <option value="PENDIENTE VALIDACIÓN">PENDIENTE VALIDACIÓN</option>
                     <option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>
                   </select>
@@ -435,15 +435,15 @@
                 <div class="col-md-6">
                   <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Resultado Final <span class="text-danger">*</span></label>
                   <div class="estado-btn-group" id="bio_resFinal_btns">
-                    <button type="button" class="estado-btn" data-value="APROBADA"><i class="bi bi-check-circle me-1"></i>APROBADA</button>
-                    <button type="button" class="estado-btn" data-value="APLAZADA"><i class="bi bi-pause-circle me-1"></i>APLAZADA</button>
-                    <button type="button" class="estado-btn" data-value="NEGADA"><i class="bi bi-x-circle me-1"></i>NEGADA</button>
+                    <button type="button" class="estado-btn" data-value="APROBADO"><i class="bi bi-check-circle me-1"></i>APROBADO</button>
+                    <button type="button" class="estado-btn" data-value="APLAZADO"><i class="bi bi-pause-circle me-1"></i>APLAZADO</button>
+                    <button type="button" class="estado-btn" data-value="RECHAZADO"><i class="bi bi-x-circle me-1"></i>RECHAZADO</button>
                   </div>
                   <select id="bio_resFinal" class="d-none" onchange="bioActualizarMotivo()">
                     <option value="" selected></option>
-                    <option value="APLAZADA">APLAZADA</option>
-                    <option value="APROBADA">APROBADA</option>
-                    <option value="NEGADA">NEGADA</option>
+                    <option value="APLAZADO">APLAZADO</option>
+                    <option value="APROBADO">APROBADO</option>
+                    <option value="RECHAZADO">RECHAZADO</option>
                   </select>
                 </div>
                 <div class="col-md-6 d-none" id="bio_contenedor_aplazamiento">
@@ -553,19 +553,19 @@
               <div class="row g-3">
                 <div class="col-md-6 gestion-group"><label class="gestion-label"><i class="bi bi-shield-check me-1"></i>Póliza<i class="bi bi-question-circle-fill" title="Número de póliza resultante del reestudio. Respeta los ceros a la izquierda si los tiene." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><input type="text" inputmode="numeric" id="rst_poliza" class="form-control gestion-select" placeholder="Ej: 483" autocomplete="off"></div>
                 <div class="col-md-6 gestion-group">
-                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del reestudio. Al elegir APLAZADA o NEGADA deberás indicar el motivo." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del reestudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <div class="estado-btn-group" id="rst_estado_btns">
-                    <button type="button" class="estado-btn" data-value="APROBADA"><i class="bi bi-check-circle me-1"></i>APROBADA</button>
-                    <button type="button" class="estado-btn" data-value="APLAZADA"><i class="bi bi-pause-circle me-1"></i>APLAZADA</button>
-                    <button type="button" class="estado-btn" data-value="NEGADA"><i class="bi bi-x-circle me-1"></i>NEGADA</button>
+                    <button type="button" class="estado-btn" data-value="APROBADO"><i class="bi bi-check-circle me-1"></i>APROBADO</button>
+                    <button type="button" class="estado-btn" data-value="APLAZADO"><i class="bi bi-pause-circle me-1"></i>APLAZADO</button>
+                    <button type="button" class="estado-btn" data-value="RECHAZADO"><i class="bi bi-x-circle me-1"></i>RECHAZADO</button>
                     <button type="button" class="estado-btn" data-value="PENDIENTE VALIDACIÓN"><i class="bi bi-clock me-1"></i>PEND. VALIDACIÓN</button>
                     <button type="button" class="estado-btn" data-value="PENDIENTE EVIDENTE"><i class="bi bi-eye me-1"></i>PEND. EVIDENTE</button>
                   </div>
                   <select id="rst_estado_q" class="d-none" onchange="rstActualizarCamposGestion()">
                     <option value="" selected></option>
-                    <option value="APROBADA">APROBADA</option>
-                    <option value="APLAZADA">APLAZADA</option>
-                    <option value="NEGADA">NEGADA</option>
+                    <option value="APROBADO">APROBADO</option>
+                    <option value="APLAZADO">APLAZADO</option>
+                    <option value="RECHAZADO">RECHAZADO</option>
                     <option value="PENDIENTE VALIDACIÓN">PENDIENTE VALIDACIÓN</option>
                     <option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>
                   </select>
@@ -1045,8 +1045,8 @@ function rstActualizarCamposGestion() {
   var estado = document.getElementById('rst_estado_q').value;
   var aplaz = document.getElementById('rst_contenedor_aplazamiento');
   var neg = document.getElementById('rst_contenedor_negacion');
-  if (aplaz) aplaz.classList.toggle('d-none', estado !== 'APLAZADA');
-  if (neg) neg.classList.toggle('d-none', estado !== 'NEGADA');
+  if (aplaz) aplaz.classList.toggle('d-none', estado !== 'APLAZADO');
+  if (neg) neg.classList.toggle('d-none', estado !== 'RECHAZADO');
 }
 
 // Particles.js
@@ -1075,7 +1075,7 @@ function bioActualizarMotivo() {
   var contAplaz = document.getElementById('bio_contenedor_aplazamiento');
   var contNeg = document.getElementById('bio_contenedor_negacion');
   if (contAplaz) {
-    if (estado === 'APLAZADA') {
+    if (estado === 'APLAZADO') {
       contAplaz.classList.remove('d-none');
     } else {
       contAplaz.classList.add('d-none');
@@ -1084,7 +1084,7 @@ function bioActualizarMotivo() {
     }
   }
   if (contNeg) {
-    if (estado === 'NEGADA') {
+    if (estado === 'RECHAZADO') {
       contNeg.classList.remove('d-none');
     } else {
       contNeg.classList.add('d-none');

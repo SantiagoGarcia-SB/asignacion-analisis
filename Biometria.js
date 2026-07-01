@@ -390,8 +390,8 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const ahora = new Date();
         const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", "dd/MM/yyyy");
         const resFinal = String(datosFormulario.resFinal || '').toUpperCase();
-        const motivoAplaz = resFinal === 'APLAZADA' ? (datosFormulario.motivoAplazamiento || '') : '';
-        const motivoNeg = resFinal === 'NEGADA' ? (datosFormulario.motivoNegacion || '') : '';
+        const motivoAplaz = resFinal === 'APLAZADO' ? (datosFormulario.motivoAplazamiento || '') : '';
+        const motivoNeg = resFinal === 'RECHAZADO' ? (datosFormulario.motivoNegacion || '') : '';
 
         // Col Q (17): estado → resultado final
         hojaHist.getRange(filaReal, 17).setValue(resFinal);
@@ -526,8 +526,11 @@ function consultarBiometriasPeriodicaAPI() {
 
 // Trigger 8am y 12pm: revisa cada pendiente contra SAI.
 // Primer contacto (fase vacía) → se envía WhatsApp, dando oportunidad de auto-resolución.
+//   Solo si ya pasaron >=4h desde fecha_resultado (cuando radicación le mandó su propio WA al
+//   aplazar por biometría); si no, se espera al corte siguiente para no duplicar el mensaje.
 // Segundo contacto (ya tenía WhatsApp y sigue pendiente) → se escala a la cola de asignación (llamada).
 // Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
+var VENTANA_HORAS_WA_BIOMETRIA = 4;
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
   _procesarCortePendientes();
@@ -752,6 +755,14 @@ function _procesarCortePendientes() {
       }
 
       if (item.fase === "") {
+        var fechaResultado = _parseFechaGAS(item.datosFila[18]); // fecha_resultado
+        var horasDesdeResultado = fechaResultado ? (Date.now() - fechaResultado.getTime()) / 3600000 : null;
+
+        if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) {
+          Logger.log("⏳ " + item.consecutivo + " resultado hace " + horasDesdeResultado.toFixed(1) + "h (<" + VENTANA_HORAS_WA_BIOMETRIA + "h) → se espera al próximo corte para no duplicar el WA de radicación.");
+          continue;
+        }
+
         rowsParaWA.push(item.datosFila);
         filasParaWA.push(item.fila);
         hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
@@ -1246,6 +1257,18 @@ function testEnviarWhatsApp() {
   Logger.log(response.getContentText());
 }
 
+// Vocabulario de la columna "estado" de gestión: SAI y los formularios manuales
+// ya hablan ambos en masculino (APROBADO/APLAZADO/RECHAZADO), así que no hace
+// falta traducir nada al escribir el resultado de SAI.
+var ESTADOS_FINALES_GESTION = new Set(['APROBADO', 'RECHAZADO']);
+var VENTANA_DIAS_VERIFICACION_SAI = 3;
+
+/**
+ * Verifica contra SAI el resultado real de cualquier caso del Historico_Gestiones
+ * principal (digital, canones_altos, desaplazamiento, induccion) que un analista
+ * dejó sin resolución definitiva (aplazado, negado con motivo pendiente, etc.).
+ * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ */
 function verificarAprobacionDesaplazamientos() {
   const lock = LockService.getScriptLock();
   try {
@@ -1263,29 +1286,25 @@ function verificarAprobacionDesaplazamientos() {
     if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
 
     const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
-    const ahora = new Date();
-    const hoyDia = ahora.getDate();
-    const hoyMes = ahora.getMonth();
-    const hoyAnio = ahora.getFullYear();
+    const limiteFecha = new Date();
+    limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
 
     var candidatos = [];
     for (var i = 0; i < data.length; i++) {
-      var tipoAsignado = String(data[i][60]).trim().toLowerCase();
       var fechaAsig = data[i][24];
       var solicitudId = String(data[i][0]).trim();
       var estadoActual = String(data[i][16]).toUpperCase().trim();
 
-      if (tipoAsignado !== 'desaplazamiento') continue;
       if (!(fechaAsig instanceof Date)) continue;
-      if (fechaAsig.getDate() !== hoyDia || fechaAsig.getMonth() !== hoyMes || fechaAsig.getFullYear() !== hoyAnio) continue;
+      if (fechaAsig < limiteFecha) continue;
       if (!solicitudId) continue;
-      if (estadoActual === 'APROBADO') continue;
+      if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
 
       candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
     }
 
     if (candidatos.length === 0) {
-      return { success: true, message: "No hay desaplazamientos pendientes de verificación hoy.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+      return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
     }
 
     var endpoint = getEndPointNewSai();
@@ -1308,10 +1327,10 @@ function verificarAprobacionDesaplazamientos() {
           var jsonData = JSON.parse(response.getContentText());
           var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
 
-          if (studyStatus === "APROBADO") {
-            hojaHist.getRange(c.filaReal, 17).setValue("APROBADO");
+          if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
+            hojaHist.getRange(c.filaReal, 17).setValue(studyStatus);
             totalActualizados++;
-            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: "APROBADO" });
+            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
           } else {
             detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
           }
@@ -1351,47 +1370,67 @@ function triggerVerificacionDesaplazamientos() {
 }
 
 /**
- * Verifica en SAI si las inducciones asignadas (tipoAsignado='induccion') ya cambiaron
- * de estado. Si studyStatus cambió a APROBADO o RECHAZADO, actualiza estadoGeneral
- * en Historico_Gestiones.
- * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` (vive en el mismo
+ * Historico_Gestiones principal). Se mantiene este nombre por si sigue enganchado
+ * a un trigger propio en la UI de Apps Script.
  */
 function verificarResultadoInducciones() {
+  return verificarAprobacionDesaplazamientos();
+}
+
+function triggerVerificacionInducciones() {
+  try {
+    var resultado = verificarResultadoInducciones();
+    Logger.log("Verificación inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+  } catch (e) {
+    Logger.log("Error en trigger verificación inducciones: " + e.message);
+  }
+}
+
+/**
+ * Verifica contra SAI el resultado real de los casos de reestudio/nuevaUar/deudorUar
+ * que un analista dejó sin resolución definitiva. Estos tipos viven en una hoja de
+ * cálculo distinta (ID_HOJA_REESTUDIOS), con su propio esquema de columnas:
+ * solicitudId en B (2), fechaAsignacion en I (9), estadoGestion en K (11).
+ * Requiere un trigger de tiempo propio (agregar manualmente en la UI de Apps Script,
+ * 16:00-17:00, apuntando a triggerVerificacionReestudiosUar).
+ */
+function verificarAprobacionReestudiosUar() {
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
   } catch (e) {
-    return { success: false, message: "No se pudo adquirir el lock." };
+    return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
   }
 
   try {
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const ss = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaHist = ss.getSheetByName("Historico_Gestiones");
     if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
 
     const lastRow = hojaHist.getLastRow();
     if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
 
-    const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
-    const ESTADOS_FINALES = new Set(["APROBADO", "RECHAZADO"]);
+    const data = hojaHist.getRange(2, 1, lastRow - 1, 11).getValues();
+    const limiteFecha = new Date();
+    limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
 
     var candidatos = [];
     for (var i = 0; i < data.length; i++) {
-      var tipoAsignado = String(data[i][60]).trim().toLowerCase();
-      var fechaFin = String(data[i][26]).trim();
-      var solicitudId = String(data[i][0]).trim();
-      var estadoActual = String(data[i][16]).toUpperCase().trim();
+      var solicitudId = String(data[i][1]).trim();
+      var fechaAsig = data[i][8];
+      var estadoActual = String(data[i][10]).toUpperCase().trim();
 
-      if (tipoAsignado !== 'induccion') continue;
-      if (fechaFin !== '') continue;
+      if (!(fechaAsig instanceof Date)) continue;
+      if (fechaAsig < limiteFecha) continue;
       if (!solicitudId) continue;
-      if (ESTADOS_FINALES.has(estadoActual)) continue;
+      if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
 
       candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
     }
 
     if (candidatos.length === 0) {
-      return { success: true, message: "No hay inducciones pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+      return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
     }
 
     var endpoint = getEndPointNewSai();
@@ -1414,8 +1453,8 @@ function verificarResultadoInducciones() {
           var jsonData = JSON.parse(response.getContentText());
           var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
 
-          if (ESTADOS_FINALES.has(studyStatus)) {
-            hojaHist.getRange(c.filaReal, 17).setValue(studyStatus);
+          if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
+            hojaHist.getRange(c.filaReal, 11).setValue(studyStatus);
             totalActualizados++;
             detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
           } else {
@@ -1447,11 +1486,11 @@ function verificarResultadoInducciones() {
   }
 }
 
-function triggerVerificacionInducciones() {
+function triggerVerificacionReestudiosUar() {
   try {
-    var resultado = verificarResultadoInducciones();
-    Logger.log("Verificación inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+    var resultado = verificarAprobacionReestudiosUar();
+    Logger.log("Verificación reestudios/UAR: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
   } catch (e) {
-    Logger.log("Error en trigger verificación inducciones: " + e.message);
+    Logger.log("Error en trigger verificación reestudios/UAR: " + e.message);
   }
 }

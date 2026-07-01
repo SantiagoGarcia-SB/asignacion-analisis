@@ -289,7 +289,7 @@ function actualizarCamposGestion() {
 
 /**
  * Ajusta los campos del formulario de gestión según el tipo de solicitud.
- * Para inducciones: oculta biometría, limita estado final a APLAZADA y motivo a "Pendiente resultado lote".
+ * Para inducciones: oculta biometría, limita estado final a APLAZADO y motivo a "Pendiente resultado lote".
  */
 function ajustarCamposPorTipoSolicitud() {
   const contBiometria = $('#contenedor_biometria');
@@ -305,10 +305,10 @@ function ajustarCamposPorTipoSolicitud() {
     $('#d_biometria').val('No');
     $('#d_fecha_radicacion_sai').val('');
 
-    // Estado Final: solo APLAZADA
+    // Estado Final: solo APLAZADO
     selectEstado.html(`
       <option value="" selected disabled>Seleccione una opción</option>
-      <option value="APLAZADA">APLAZADA</option>
+      <option value="APLAZADO">APLAZADO</option>
     `);
 
     // Motivo Aplazamiento: solo "Pendiente resultado lote"
@@ -328,9 +328,9 @@ function ajustarCamposPorTipoSolicitud() {
     // Restaurar Estado Final completo
     selectEstado.html(`
       <option value="" selected disabled>Seleccione una opción</option>
-      <option value="APROBADA">APROBADA</option>
-      <option value="APLAZADA">APLAZADA</option>
-      <option value="NEGADA">NEGADA</option>
+      <option value="APROBADO">APROBADO</option>
+      <option value="APLAZADO">APLAZADO</option>
+      <option value="RECHAZADO">RECHAZADO</option>
       <option value="PENDIENTE VALIDACIÓN">PENDIENTE VALIDACIÓN</option>
       <option value="PENDIENTE EVIDENTE">PENDIENTE EVIDENTE</option>
     `);
@@ -1610,7 +1610,7 @@ function poblarModalDig(fila) {
   if (neg) neg.classList.add('d-none');
   var estadoPrecargado = (fila[16] || '').toUpperCase();
   if (estadoPrecargado.indexOf('APLAZ') !== -1 && aplaz) aplaz.classList.remove('d-none');
-  else if (estadoPrecargado.indexOf('NEGAD') !== -1 && neg) neg.classList.remove('d-none');
+  else if ((estadoPrecargado.indexOf('NEGAD') !== -1 || estadoPrecargado.indexOf('RECHAZ') !== -1) && neg) neg.classList.remove('d-none');
 
   var claseNorm = String(fila[20] || '').toUpperCase();
   var selectEstadoDig = document.getElementById('dig_estado_q');
@@ -1640,7 +1640,7 @@ function poblarModalDig(fila) {
   if (selectEstadoDig) selectEstadoDig.value = '';
   var btnGrupoDig = document.getElementById('dig_estado_btns');
   if (btnGrupoDig) btnGrupoDig.querySelectorAll('.estado-btn').forEach(function(b) {
-    b.style.display = (esInduccion && b.getAttribute('data-value') !== 'APLAZADA') ? 'none' : '';
+    b.style.display = (esInduccion && b.getAttribute('data-value') !== 'APLAZADO') ? 'none' : '';
     b.classList.remove('active');
   });
   _validarFormDig();
@@ -1874,7 +1874,7 @@ function _validarFormBio() {
   if (!(document.getElementById('bio_resLlamada').value || '')) { btn.disabled = true; return; }
   var resFinal = (document.getElementById('bio_resFinal').value || '').toUpperCase();
   if (!resFinal) { btn.disabled = true; return; }
-  if (resFinal === 'APLAZADA') {
+  if (resFinal.indexOf('APLAZ') !== -1) {
     if (!(document.getElementById('bio_motivoAplazamiento').value || '')) { btn.disabled = true; return; }
   }
   btn.disabled = false;
@@ -1981,12 +1981,12 @@ function manejarGuardarBiometria() {
 
   if (!resLlamada) { Swal.fire({ icon: 'warning', title: 'Campo requerido', text: 'Selecciona el resultado de la llamada.', confirmButtonColor: '#253150' }); return; }
   if (!resFinal) { Swal.fire({ icon: 'warning', title: 'Resultado requerido', text: 'Selecciona un resultado final.', confirmButtonColor: '#253150' }); return; }
-  if (resFinal === 'APLAZADA') {
+  if (resFinal === 'APLAZADO') {
     var selMotivo = document.getElementById('bio_motivoAplazamiento');
     motivoAplaz = selMotivo ? selMotivo.value : '';
     if (!motivoAplaz) { Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'Selecciona el motivo de aplazamiento.', confirmButtonColor: '#253150' }); return; }
   }
-  if (resFinal === 'NEGADA') {
+  if (resFinal === 'RECHAZADO') {
     var txtNeg = document.getElementById('bio_motivoNegacion');
     motivoNeg = txtNeg ? (txtNeg.value || '').trim() : '';
     if (!motivoNeg) { Swal.fire({ icon: 'warning', title: 'Motivo requerido', text: 'Describe el motivo de negación.', confirmButtonColor: '#253150' }); return; }
