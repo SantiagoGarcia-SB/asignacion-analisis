@@ -514,8 +514,11 @@ function getDatosBiometria() {
 
 
 // ===================================================================
-// FLUJO BIOMETRÍA: Captura cada 10 min + Revisión 8am/12pm
+// FLUJO BIOMETRÍA: Captura cada 10 min + Primer contacto cada hora + Escalación 8am/12pm
 // ===================================================================
+// Columna 76 (índice 75) de pendiente_biometria: fase_seguimiento_biometria
+// "" = aún sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
+// "ESCALADA" = ya se envió a asignación (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
 
 // Trigger cada 10 min: captura nuevas biometrías de SAI
 function consultarBiometriasPeriodicaAPI() {
@@ -524,13 +527,22 @@ function consultarBiometriasPeriodicaAPI() {
   Logger.log("=== FIN consultarBiometriasPeriodicaAPI ===");
 }
 
-// Trigger 8am y 12pm: revisa cada pendiente contra SAI.
-// Primer contacto (fase vacía) → se envía WhatsApp, dando oportunidad de auto-resolución.
-//   Solo si ya pasaron >=4h desde fecha_resultado (cuando radicación le mandó su propio WA al
-//   aplazar por biometría); si no, se espera al corte siguiente para no duplicar el mensaje.
-// Segundo contacto (ya tenía WhatsApp y sigue pendiente) → se escala a la cola de asignación (llamada).
-// Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
+// Trigger cada hora: primer contacto (fase vacía) → si ya pasaron >=4h desde fecha_resultado
+// (cuando radicación le mandó su propio WA al aplazar por biometría) y SAI sigue diciendo
+// pendiente, se envía WhatsApp y se marca WA_ENVIADO. Corre independiente del corte de
+// escalación para que el WA salga apenas se cumple la ventana, sin esperar al corte fijo
+// siguiente — así casos de un día quedan con WA_ENVIADO listos para escalar desde el
+// primer corte del día siguiente (8am).
 var VENTANA_HORAS_WA_BIOMETRIA = 4;
+function cicloPrimerContactoBiometria() {
+  Logger.log("=== INICIO cicloPrimerContactoBiometria ===");
+  _enviarPrimerContactoBiometria();
+  Logger.log("=== FIN cicloPrimerContactoBiometria ===");
+}
+
+// Trigger 8am y 12pm: escala a la cola de asignación (llamada) los pendientes que ya
+// están en fase WA_ENVIADO (segundo contacto) y SAI sigue diciendo pendiente.
+// Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
   _procesarCortePendientes();
@@ -687,11 +699,10 @@ function _homologarDatosApi(item) {
   };
 }
 
-// Columna 76 (índice 75): fase_seguimiento_biometria
-// "" = aún sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
-// "ESCALADA" = ya se envió a asignación (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
-function _procesarCortePendientes() {
-  Logger.log("--- Corte de revisión de pendientes de biometría ---");
+// Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
+// cumplieron la ventana de 4h desde fecha_resultado y siguen pendientes en SAI.
+function _enviarPrimerContactoBiometria() {
+  Logger.log("--- Primer contacto: evaluación de pendientes en fase vacía ---");
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -702,37 +713,41 @@ function _procesarCortePendientes() {
 
   var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
 
-  var pendientes = [];
+  var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
     var fase = String(datos[i][75]).trim();
-    if (fase === "RESUELTA" || fase === "ESCALADA") continue;
+    if (fase !== "") continue; // solo primer contacto: fase vacía
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
-    pendientes.push({ fila: i + 2, consecutivo: consecutivo, fase: fase, datosFila: datos[i] });
+
+    var fechaResultado = _parseFechaGAS(datos[i][18]); // fecha_resultado
+    var horasDesdeResultado = fechaResultado ? (Date.now() - fechaResultado.getTime()) / 3600000 : null;
+    if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) continue; // aún no cumple ventana
+
+    candidatos.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
   }
 
-  if (pendientes.length === 0) {
-    Logger.log("No hay pendientes por procesar en este corte.");
+  if (candidatos.length === 0) {
+    Logger.log("No hay candidatos a primer contacto en esta corrida.");
     return;
   }
 
-  Logger.log(pendientes.length + " pendientes a revisar en este corte.");
+  Logger.log(candidatos.length + " candidatos a primer contacto a verificar.");
 
   var resultados = [];
-  for (var p = 0; p < pendientes.length; p++) {
-    var datosApi = _consultarSaiIndividual(pendientes[p].consecutivo);
-    resultados.push({ item: pendientes[p], datosApi: datosApi });
+  for (var p = 0; p < candidatos.length; p++) {
+    var datosApi = _consultarSaiIndividual(candidatos[p].consecutivo);
+    resultados.push({ item: candidatos[p], datosApi: datosApi });
     Utilities.sleep(1000);
   }
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para procesar corte de pendientes: " + e.message);
+    Logger.log("❌ Lock no disponible para primer contacto de biometría: " + e.message);
     return;
   }
 
   try {
-    var solicitudesParaAsignar = [];
     var rowsParaWA = [];
     var filasParaWA = [];
 
@@ -754,24 +769,10 @@ function _procesarCortePendientes() {
         continue;
       }
 
-      if (item.fase === "") {
-        var fechaResultado = _parseFechaGAS(item.datosFila[18]); // fecha_resultado
-        var horasDesdeResultado = fechaResultado ? (Date.now() - fechaResultado.getTime()) / 3600000 : null;
-
-        if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) {
-          Logger.log("⏳ " + item.consecutivo + " resultado hace " + horasDesdeResultado.toFixed(1) + "h (<" + VENTANA_HORAS_WA_BIOMETRIA + "h) → se espera al próximo corte para no duplicar el WA de radicación.");
-          continue;
-        }
-
-        rowsParaWA.push(item.datosFila);
-        filasParaWA.push(item.fila);
-        hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
-        Logger.log("📲 " + item.consecutivo + " sigue pendiente → primer contacto (WhatsApp).");
-      } else {
-        solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
-        hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
-        Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
-      }
+      rowsParaWA.push(item.datosFila);
+      filasParaWA.push(item.fila);
+      hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
+      Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
     }
 
     SpreadsheetApp.flush();
@@ -780,6 +781,84 @@ function _procesarCortePendientes() {
     if (rowsParaWA.length > 0) {
       enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);
     }
+  } catch (e) {
+    Logger.log("❌ Error en _enviarPrimerContactoBiometria: " + e.message);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+// Escalación: pendientes que ya están en fase WA_ENVIADO (segundo contacto) y siguen
+// pendientes en SAI se escalan a la cola de asignación (llamada).
+function _procesarCortePendientes() {
+  Logger.log("--- Corte de escalación de pendientes de biometría ---");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+
+  var pendientes = [];
+  for (var i = 0; i < datos.length; i++) {
+    var fase = String(datos[i][75]).trim();
+    if (fase !== "WA_ENVIADO") continue; // este corte solo escala casos que ya tuvieron su oportunidad por WhatsApp
+    var consecutivo = String(datos[i][0]).trim();
+    if (!consecutivo) continue;
+    pendientes.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
+  }
+
+  if (pendientes.length === 0) {
+    Logger.log("No hay pendientes por escalar en este corte.");
+    return;
+  }
+
+  Logger.log(pendientes.length + " pendientes a escalar en este corte.");
+
+  var resultados = [];
+  for (var p = 0; p < pendientes.length; p++) {
+    var datosApi = _consultarSaiIndividual(pendientes[p].consecutivo);
+    resultados.push({ item: pendientes[p], datosApi: datosApi });
+    Utilities.sleep(1000);
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para procesar corte de pendientes: " + e.message);
+    return;
+  }
+
+  try {
+    var solicitudesParaAsignar = [];
+
+    for (var r = 0; r < resultados.length; r++) {
+      var item = resultados[r].item;
+      var datosApi = resultados[r].datosApi;
+
+      if (!datosApi) {
+        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+        continue;
+      }
+
+      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+      hojaBio.getRange(item.fila, 63).setValue(statusActual); // nuevo_estado_sai
+
+      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+        hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
+        Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
+        continue;
+      }
+
+      solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
+      hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
+      Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
+    }
+
+    SpreadsheetApp.flush();
+    lock.releaseLock();
 
     if (solicitudesParaAsignar.length > 0) {
       procesarYGuardarLote(solicitudesParaAsignar);
