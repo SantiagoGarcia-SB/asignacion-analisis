@@ -519,6 +519,25 @@ function getDatosBiometria() {
 // Columna 76 (índice 75) de pendiente_biometria: fase_seguimiento_biometria
 // "" = aún sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
 // "ESCALADA" = ya se envió a asignación (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
+// Columna 77 (índice 76): fecha_actualizacion_fase — se sobrescribe con la fecha/hora exacta
+// cada vez que fase_seguimiento_biometria cambia de valor. Requiere correr una vez
+// agregarColumnaFechaActualizacionFase() para crear el encabezado en la hoja.
+var COL_FECHA_ACTUALIZACION_FASE = 77;
+
+// EJECUTAR UNA SOLA VEZ desde el editor de Apps Script para crear el encabezado.
+function agregarColumnaFechaActualizacionFase() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var encabezadoActual = hojaBio.getRange(1, COL_FECHA_ACTUALIZACION_FASE).getValue();
+  if (String(encabezadoActual).trim() !== "") {
+    Logger.log("La columna " + COL_FECHA_ACTUALIZACION_FASE + " ya tiene encabezado: " + encabezadoActual);
+    return;
+  }
+  hojaBio.getRange(1, COL_FECHA_ACTUALIZACION_FASE).setValue("fecha_actualizacion_fase");
+  Logger.log("✅ Encabezado 'fecha_actualizacion_fase' creado en columna " + COL_FECHA_ACTUALIZACION_FASE + ".");
+}
 
 // Trigger cada 10 min: captura nuevas biometrías de SAI
 function consultarBiometriasPeriodicaAPI() {
@@ -750,6 +769,7 @@ function _enviarPrimerContactoBiometria() {
   try {
     var rowsParaWA = [];
     var filasParaWA = [];
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
 
     for (var r = 0; r < resultados.length; r++) {
       var item = resultados[r].item;
@@ -765,6 +785,7 @@ function _enviarPrimerContactoBiometria() {
 
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
+        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
         Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
         continue;
       }
@@ -772,6 +793,7 @@ function _enviarPrimerContactoBiometria() {
       rowsParaWA.push(item.datosFila);
       filasParaWA.push(item.fila);
       hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
+      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
       Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
     }
 
@@ -833,6 +855,7 @@ function _procesarCortePendientes() {
 
   try {
     var solicitudesParaAsignar = [];
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
 
     for (var r = 0; r < resultados.length; r++) {
       var item = resultados[r].item;
@@ -848,12 +871,14 @@ function _procesarCortePendientes() {
 
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
+        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
         Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
         continue;
       }
 
       solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
       hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
+      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
       Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
     }
 
@@ -890,6 +915,7 @@ function migrarFaseSeguimientoBiometriaExistente() {
 
   var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
   var hoyStr = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
@@ -913,6 +939,7 @@ function migrarFaseSeguimientoBiometriaExistente() {
 
       if (nuevoEstadoSai !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(i + 2, 76).setValue("RESUELTA");
+        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
         resueltas++;
         continue;
       }
@@ -925,9 +952,11 @@ function migrarFaseSeguimientoBiometriaExistente() {
       if (esDeHoy && solId && idsEnCola.has(solId)) {
         _eliminarSolicitudDeCola(hojaSol, solId);
         hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
+        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
         recuperadas++;
       } else {
         hojaBio.getRange(i + 2, 76).setValue("ESCALADA");
+        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
         escaladasDejadas++;
       }
     }
@@ -955,6 +984,7 @@ function corregirFaseParaBroadcastsPrevios() {
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
   var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
   var corregidas = 0;
 
   for (var i = 0; i < datos.length; i++) {
@@ -965,11 +995,117 @@ function corregirFaseParaBroadcastsPrevios() {
     if (estadoBroadcast !== "ENVIADO") continue; // nunca recibió WhatsApp, se deja como está (correcto)
 
     hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
+    hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
     corregidas++;
   }
 
   SpreadsheetApp.flush();
   Logger.log("✅ Corrección aplicada: " + corregidas + " filas marcadas WA_ENVIADO (ya habían recibido WhatsApp bajo la lógica anterior).");
+}
+
+// BACKFILL ÚNICO — correr una sola vez, después de agregarColumnaFechaActualizacionFase(),
+// para poblar fecha_actualizacion_fase en filas que ya tenían fase asignada antes de que
+// existiera la columna. No existe un registro exacto de cuándo cambió cada fase en el pasado
+// (esa es justamente la brecha que esta columna cierra hacia adelante), así que se usa el
+// mejor proxy disponible por caso:
+// - WA_ENVIADO → fecha_envio_brodcast (mismo evento, exacto).
+// - ESCALADA   → fecha de asignación del caso en Historico_Gestiones (aproximada: el caso
+//                pudo escalar un poco antes de que un analista lo tomara).
+// - RESUELTA / cualquier otro valor → no hay ningún dato confiable, se deja vacía.
+function backfillFechaActualizacionFase() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var actuales = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+  // Mapa solId → fechaAsig desde Historico_Gestiones, para aproximar ESCALADA.
+  var mapaFechaAsignacion = new Map();
+  try {
+    var ssHist = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+    var hojaHist = ssHist.getSheetByName("Historico_Gestiones");
+    if (hojaHist && hojaHist.getLastRow() > 1) {
+      var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 25).getValues();
+      for (var h = 0; h < dataHist.length; h++) {
+        var solIdHist = String(dataHist[h][0]).trim();
+        var fechaAsig = dataHist[h][24]; // columna 25: fechaAsig
+        if (solIdHist && fechaAsig) mapaFechaAsignacion.set(solIdHist, fechaAsig);
+      }
+    }
+  } catch (e) {
+    Logger.log("⚠️ No se pudo leer Historico_Gestiones para aproximar ESCALADA: " + e.message);
+  }
+
+  var actualizaciones = [];
+  var contadorWA = 0, contadorEscalada = 0;
+  var sinDatoWA = 0, sinDatoEscalada = 0, sinDatoOtraFase = 0;
+
+  for (var i = 0; i < datos.length; i++) {
+    var yaTiene = String(actuales[i][0]).trim();
+    if (yaTiene !== "") continue; // ya tiene fecha (cambio reciente, ya cubierto por el flujo nuevo)
+
+    var fase = String(datos[i][75]).trim();
+    if (fase === "") continue; // nunca contactado, no aplica
+
+    if (fase === "WA_ENVIADO") {
+      var fechaWA = datos[i][60]; // fecha_envio_brodcast
+      if (fechaWA) {
+        var valorWA = fechaWA instanceof Date ? Utilities.formatDate(fechaWA, "GMT-5", "yyyy-MM-dd HH:mm:ss") : String(fechaWA);
+        actualizaciones.push({ fila: i + 2, valor: valorWA });
+        contadorWA++;
+      } else {
+        sinDatoWA++;
+      }
+      continue;
+    }
+
+    if (fase === "ESCALADA") {
+      var solId = String(datos[i][0]).trim();
+      var fechaAsigEnc = mapaFechaAsignacion.get(solId);
+      if (fechaAsigEnc) {
+        var valorEsc = fechaAsigEnc instanceof Date ? Utilities.formatDate(fechaAsigEnc, "GMT-5", "yyyy-MM-dd HH:mm:ss") : String(fechaAsigEnc);
+        actualizaciones.push({ fila: i + 2, valor: valorEsc });
+        contadorEscalada++;
+      } else {
+        sinDatoEscalada++;
+      }
+      continue;
+    }
+
+    sinDatoOtraFase++; // RESUELTA u otro valor: sin dato confiable disponible
+  }
+
+  Logger.log("Diagnóstico — filas con fase pero sin fecha_actualizacion_fase previa: " +
+    "WA_ENVIADO sin fecha_envio_brodcast: " + sinDatoWA +
+    " | ESCALADA sin match en Historico_Gestiones: " + sinDatoEscalada +
+    " | RESUELTA/otro (esperado, sin proxy): " + sinDatoOtraFase +
+    " | filas leídas en Historico_Gestiones: " + mapaFechaAsignacion.size);
+
+  if (actualizaciones.length === 0) {
+    Logger.log("No hay filas para backfill (o ya todas tienen fecha_actualizacion_fase).");
+    return;
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para backfill: " + e.message);
+    return;
+  }
+
+  try {
+    actualizaciones.forEach(function(u) {
+      hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(u.valor);
+    });
+    SpreadsheetApp.flush();
+    Logger.log("✅ Backfill completado — WA_ENVIADO: " + contadorWA + " | ESCALADA (aproximada): " + contadorEscalada +
+      " | sin dato disponible: " + (sinDatoWA + sinDatoEscalada + sinDatoOtraFase));
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
 }
 
 function _eliminarSolicitudDeCola(hojaSol, solId) {
