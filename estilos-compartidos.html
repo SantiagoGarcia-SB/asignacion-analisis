@@ -413,7 +413,25 @@
       width: 48px;
       height: 48px;
       object-fit: contain;
-      filter: brightness(0) invert(1);
+    }
+
+    .l-avatar-dot {
+      position: absolute;
+      top: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #e64a5f;
+      box-shadow: 0 0 0 3px rgba(11, 15, 25, 0.6), 0 0 12px rgba(230, 74, 95, 0.7);
+      animation: lDotBlink 1.6s infinite;
+      z-index: 4;
+    }
+
+    @keyframes lDotBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
     }
 
     .l-orbit-dot {
@@ -473,27 +491,29 @@
       width: 0%;
       background: linear-gradient(90deg, var(--color-secundario), var(--color-primario), #ff6b6b);
       border-radius: 99px;
-      animation: lBarFill 2.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+      transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
       box-shadow: 0 0 12px rgba(189, 15, 20, 0.5);
     }
 
-    @keyframes lBarFill {
-      0% {
-        width: 0%;
-      }
-
-      30% {
-        width: 35%;
-      }
-
-      60% {
-        width: 70%;
-      }
-
-      100% {
-        width: 95%;
-      }
+    /* Indicador de pasos reales (Acceso → Datos → Panel) */
+    .l-steps { display: flex; gap: 20px; align-items: center; }
+    .l-step-item { display: flex; flex-direction: column; align-items: center; gap: 6px; animation: lStepFade 0.5s ease both; }
+    .l-step-item:nth-child(1) { animation-delay: 0.2s; }
+    .l-step-item:nth-child(3) { animation-delay: 0.5s; }
+    .l-step-item:nth-child(5) { animation-delay: 0.8s; }
+    @keyframes lStepFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .l-step-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.9rem; border: 1px solid rgba(255, 255, 255, 0.1);
     }
+    .l-step-icon.done  { background: rgba(189, 15, 20, 0.25); color: #f87171; }
+    .l-step-icon.prog  { background: rgba(37, 49, 80, 0.4); color: #93c5fd; }
+    .l-step-icon.prog i { display: inline-block; animation: lSpin 1s linear infinite; }
+    .l-step-icon.pend  { background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.35); }
+    .l-step-icon.error { background: rgba(189, 15, 20, 0.35); color: #fca5a5; border-color: rgba(252, 165, 165, 0.4); }
+    .l-step-lbl { font-size: 0.62rem; color: rgba(255, 255, 255, 0.4); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .l-step-sep { color: rgba(255, 255, 255, 0.15); font-size: 0.8rem; margin-top: -14px; }
 
     /* Cards*/
     .card-metrica {

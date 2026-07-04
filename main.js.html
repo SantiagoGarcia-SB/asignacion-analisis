@@ -8,6 +8,48 @@ let yaSeIntentoAsignar = false;
 let estadoGlobalAsesor = "INACTIVO";
 let tipoSolicitudActual = "";
 let cargaInicialHecha = false;
+
+// Splash real de 3 pasos: Acceso (obtenerMiEstadoActual) → Datos (getTableData/getUnifiedTableData)
+// → Panel (DataTable initComplete). Cada paso se marca cuando su función real resuelve, no en un
+// timer — si algo falla se muestra el error en el mismo componente en vez de dejarlo girando.
+function _loaderSetPaso(n) {
+  for (var i = 1; i <= 3; i++) {
+    var icon = document.getElementById('lStepIcon' + i);
+    if (!icon) continue;
+    icon.classList.remove('done', 'prog', 'pend', 'error');
+    icon.classList.add(i < n ? 'done' : (i === n ? 'prog' : 'pend'));
+    var iconTag = icon.querySelector('i');
+    if (iconTag) {
+      if (i < n) iconTag.className = 'bi bi-check-lg';
+      else if (i === 1) iconTag.className = 'bi bi-shield-check';
+      else if (i === 2) iconTag.className = 'bi bi-arrow-repeat';
+      else iconTag.className = 'bi bi-grid';
+    }
+  }
+  var bar = document.getElementById('lBarFill');
+  if (bar) bar.style.width = (Math.min(n, 3) / 3 * 100) + '%';
+}
+
+function _loaderError(mensaje) {
+  var icon = document.getElementById('lStepIcon1');
+  if (icon) {
+    icon.classList.remove('prog', 'pend', 'done');
+    icon.classList.add('error');
+    var iconTag = icon.querySelector('i');
+    if (iconTag) iconTag.className = 'bi bi-x-lg';
+  }
+  var errEl = document.getElementById('loader-error');
+  if (errEl) { errEl.textContent = mensaje; errEl.style.display = 'block'; }
+}
+
+function _loaderOcultar() {
+  var loader = document.getElementById('loader-container');
+  if (loader) {
+    loader.classList.add('loader-hidden');
+    setTimeout(function() { loader.style.display = 'none'; }, 800);
+  }
+}
+
 var _timerFinTurno = null;
 var _pollingTablaVacia = null;
 var _POLLING_INTERVALO_MS = 2 * 60 * 1000;
@@ -158,6 +200,7 @@ function _miniLoader(on) {
 }
 
 $(document).ready(function () {
+  _loaderSetPaso(1);
 
   // Mostrar saludo en el loader
   google.script.run.withSuccessHandler(function(email) {
@@ -393,11 +436,16 @@ function sincronizarEstadoInicial(debeCargarTabla = false) {
         console.log("Sincronizado con DB: " + estadoGlobalAsesor);
       }
       
+      _loaderSetPaso(2);
+
       if (debeCargarTabla) {
         cargarDatos();
       }
     })
-    .obtenerMiEstadoActual(); 
+    .withFailureHandler(function(e) {
+      _loaderError('No se pudo validar tu sesión: ' + (e && e.message ? e.message : 'intenta recargar la página.'));
+    })
+    .obtenerMiEstadoActual();
 }
 
 function cargarDatos() {
@@ -422,6 +470,7 @@ function cargarDatos() {
   var _dataFetchFn = (window.__IS_UNIFIED_VIEW__) ? 'getUnifiedTableData' : 'getTableData';
   google.script.run
     .withSuccessHandler(function (response) {
+      if (!cargaInicialHecha) _loaderSetPaso(3);
 
       if (response.error) {
         console.error("getUnifiedTableData error:", response.error);
@@ -555,7 +604,12 @@ function cargarDatos() {
       }
     })
     .withFailureHandler(function (e) {
-      if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+      if (!cargaInicialHecha) {
+        _loaderError('No se pudieron cargar los datos: ' + (e && e.message ? e.message : 'revisa tu conexión.'));
+        setTimeout(_loaderOcultar, 2200);
+      } else if (loader) {
+        loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800);
+      }
       _miniLoader(false);
       console.error("Error crítico en getTableData:", e);
       Swal.fire({
@@ -699,8 +753,7 @@ function renderizarTabla(data) {
     pageLength: 10,
     responsive: true,
     initComplete: function(settings, json) {
-      const loader = document.getElementById('loader-container');
-      if (loader) { loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800); }
+      if (!cargaInicialHecha) { setTimeout(_loaderOcultar, 350); } else { _loaderOcultar(); }
       cargaInicialHecha = true;
       _miniLoader(false);
     }
@@ -840,8 +893,7 @@ function renderizarTablaBiometria(data) {
     order: [[0, "desc"]],
     responsive: true,
     initComplete: function() {
-      var loader = document.getElementById("loader-container");
-      if (loader) { loader.classList.add("loader-hidden"); setTimeout(function() { loader.style.display = "none"; }, 800); }
+      if (!cargaInicialHecha) { setTimeout(_loaderOcultar, 350); } else { _loaderOcultar(); }
       cargaInicialHecha = true;
       _miniLoader(false);
     }

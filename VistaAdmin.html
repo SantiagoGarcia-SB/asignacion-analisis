@@ -142,7 +142,14 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     display:flex; align-items:center; justify-content:center;
     backdrop-filter:blur(8px);
 }
-.l-logo-inner img { width:48px; height:48px; object-fit:contain; filter:brightness(0) invert(1); }
+.l-logo-inner img { width:48px; height:48px; object-fit:contain; }
+.l-avatar-dot {
+    position:absolute; top:-4px; left:50%; transform:translateX(-50%);
+    width:10px; height:10px; border-radius:50%; background:#e64a5f;
+    box-shadow:0 0 0 3px rgba(11,15,25,0.6), 0 0 12px rgba(230,74,95,0.7);
+    animation:lDotBlink 1.6s infinite; z-index:4;
+}
+@keyframes lDotBlink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 .l-orbit-dot {
     position:absolute; inset:-10px; border-radius:50%;
     animation:lSpin 3s linear infinite;
@@ -170,14 +177,8 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
     height:100%; width:0%;
     background:linear-gradient(90deg, var(--azul), var(--rojo), #ff6b6b);
     border-radius:99px;
-    animation:lBarFill 2.8s cubic-bezier(0.4,0,0.2,1) forwards;
+    transition:width 0.5s cubic-bezier(0.4,0,0.2,1);
     box-shadow:0 0 12px rgba(189,15,20,0.5);
-}
-@keyframes lBarFill {
-    0%   { width:0%; }
-    30%  { width:35%; }
-    60%  { width:70%; }
-    100% { width:95%; }
 }
 .l-steps { display:flex; gap:20px; align-items:center; }
 .l-step-item {
@@ -195,7 +196,9 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
 }
 .l-step-icon.done  { background:rgba(189,15,20,0.25); color:var(--rojo-mid); }
 .l-step-icon.prog  { background:rgba(37,49,80,0.4); color:#93c5fd; }
+.l-step-icon.prog i { display:inline-block; animation:lSpin 1s linear infinite; }
 .l-step-icon.pend  { background:rgba(255,255,255,0.06); color:rgba(255,255,255,0.35); }
+.l-step-icon.error { background:rgba(189,15,20,0.35); color:#fca5a5; border-color:rgba(252,165,165,0.4); }
 .l-step-lbl { font-size:0.62rem; color:rgba(255,255,255,0.4); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
 .l-step-sep { color:rgba(255,255,255,0.15); font-size:0.8rem; margin-top:-14px; }
 
@@ -795,13 +798,15 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             <div class="l-ring l-ring-3"></div>
             <div class="l-orbit-dot"></div>
             <div class="l-logo-inner">
-                <img src="https://www.ellibertador.co/assets/img/logo.svg" alt="Logo">
+                <img src="https://multimedia-jelpit-personas-prod.s3.amazonaws.com/public/MmViFBbLVXF3xkEPDY7zBHjcNk8dIpnY42UqjtVO.png" alt="Logo">
             </div>
+            <div class="l-avatar-dot"></div>
         </div>
         <div class="l-text">
             <div class="l-title" id="loader-saludo-admin">Bienvenido <span>de nuevo</span></div>
             <div class="l-sub">Preparando tu panel de administración</div>
             <div class="l-sub" id="loader-frase-admin" style="margin-top:10px;font-size:0.78rem;font-style:italic;color:rgba(255,255,255,0.45);opacity:0;transition:opacity 0.6s 0.3s;"></div>
+            <div class="l-sub" id="loader-error-admin" style="margin-top:10px;font-size:0.78rem;color:#f87171;display:none;"></div>
             <script>
                 (function() {
                     var hora = new Date().getHours();
@@ -822,23 +827,23 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
             </script>
         </div>
         <div class="l-steps">
-            <div class="l-step-item">
-                <div class="l-step-icon done"><i class="bi bi-check-lg"></i></div>
+            <div class="l-step-item" id="lStepItem1">
+                <div class="l-step-icon prog" id="lStepIcon1"><i class="bi bi-shield-check"></i></div>
                 <div class="l-step-lbl">Acceso</div>
             </div>
             <div class="l-step-sep"><i class="bi bi-chevron-right"></i></div>
-            <div class="l-step-item">
-                <div class="l-step-icon prog"><i class="bi bi-arrow-repeat"></i></div>
+            <div class="l-step-item" id="lStepItem2">
+                <div class="l-step-icon pend" id="lStepIcon2"><i class="bi bi-arrow-repeat"></i></div>
                 <div class="l-step-lbl">Datos</div>
             </div>
             <div class="l-step-sep"><i class="bi bi-chevron-right"></i></div>
-            <div class="l-step-item">
-                <div class="l-step-icon pend"><i class="bi bi-grid"></i></div>
+            <div class="l-step-item" id="lStepItem3">
+                <div class="l-step-icon pend" id="lStepIcon3"><i class="bi bi-grid"></i></div>
                 <div class="l-step-lbl">Panel</div>
             </div>
         </div>
         <div class="l-bar-wrap">
-            <div class="l-bar"></div>
+            <div class="l-bar" id="lBarFill"></div>
         </div>
     </div>
 </div>
@@ -2045,6 +2050,41 @@ function badgeRol(v) {
     return '<span class="badge-pill badge-rol-asesor"><i class="bi bi-person"></i> ANALISTA</span>';
 }
 
+// Splash real de 3 pasos: Acceso (sesión confirmada) → Datos (obtenerDatosDashboard) → Panel (render listo).
+// Cada paso se marca cuando su función real resuelve, no en un timer — si algo falla se muestra
+// el error en el mismo componente en vez de dejarlo girando.
+function _loaderSetPaso(n) {
+    for (var i = 1; i <= 3; i++) {
+        var icon = document.getElementById('lStepIcon' + i);
+        if (!icon) continue;
+        icon.classList.remove('done', 'prog', 'pend', 'error');
+        icon.classList.add(i < n ? 'done' : (i === n ? 'prog' : 'pend'));
+        var iconTag = icon.querySelector('i');
+        if (iconTag) {
+            if (i < n) iconTag.className = 'bi bi-check-lg';
+            else if (i === 1) iconTag.className = 'bi bi-shield-check';
+            else if (i === 2) iconTag.className = 'bi bi-arrow-repeat';
+            else iconTag.className = 'bi bi-grid';
+        }
+    }
+    var bar = document.getElementById('lBarFill');
+    if (bar) bar.style.width = (Math.min(n, 3) / 3 * 100) + '%';
+}
+
+function _loaderError(mensaje) {
+    var icon = document.getElementById('lStepIcon1');
+    if (icon) {
+        icon.classList.remove('prog', 'pend', 'done');
+        icon.classList.add('error');
+        var iconTag = icon.querySelector('i');
+        if (iconTag) iconTag.className = 'bi bi-x-lg';
+    }
+    var errEl = document.getElementById('loader-error-admin');
+    if (errEl) { errEl.textContent = mensaje; errEl.style.display = 'block'; }
+    var subEl = document.querySelector('#loader-container .l-sub');
+    if (subEl) subEl.textContent = 'No se pudo completar la carga';
+}
+
 function ocultarLoader() {
     let loader = document.getElementById('loader-container');
     if (loader) {
@@ -2054,6 +2094,7 @@ function ocultarLoader() {
 }
 
 window.onload = function() {
+    _loaderSetPaso(1);
     google.script.run.withSuccessHandler(function(email) {
         if (email) {
             var prefijo = email.split('@')[0];
@@ -2066,6 +2107,9 @@ window.onload = function() {
                 elS.innerHTML = saludo + ', <span>' + nombre + '</span>';
             }
         }
+        _loaderSetPaso(2);
+    }).withFailureHandler(function(e) {
+        _loaderError('No se pudo validar tu sesión: ' + (e.message || 'intenta recargar la página.'));
     }).getEmailUsuario();
 
     google.script.run.withSuccessHandler(function(res) {
@@ -2749,10 +2793,12 @@ function refrescarDashboard() {
             responsive: true,
             dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
         });
-        ocultarLoader();
-    }).withFailureHandler(function() {
+        _loaderSetPaso(3);
+        setTimeout(ocultarLoader, 350);
+    }).withFailureHandler(function(e) {
         ocultarSyncOverlay();
-        ocultarLoader();
+        _loaderError('No se pudieron cargar los datos del panel: ' + (e && e.message ? e.message : 'revisa tu conexión.'));
+        setTimeout(ocultarLoader, 2200);
     }).obtenerDatosDashboard();
 }
 
