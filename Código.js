@@ -2382,10 +2382,168 @@ function solicitarPermiso(tipo, fechaInicio, fechaFin, observacion) {
     const ahora = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
     hoja.appendRow([id, ahora, userEmail, nombre, tipo, fechaInicio, fechaFin, observacion || '', 'PENDIENTE', '', '', '']);
     SpreadsheetApp.flush();
+
+    try {
+      const correosAdmin = dataUser
+        .filter(f => String(f[23]).toUpperCase().trim() === 'ADMIN' && f[2])
+        .map(f => String(f[2]).trim());
+      if (correosAdmin.length > 0) {
+        let urlPanel = '';
+        try { urlPanel = ScriptApp.getService().getUrl(); } catch (eUrl) {}
+        _enviarCorreoMarca_(
+          correosAdmin.join(','),
+          'Nueva solicitud de permiso: ' + nombre + ' (' + tipo + ')',
+          _construirCorreoNuevoPermiso_(nombre, userEmail, tipo, fechaInicio, fechaFin, observacion, urlPanel)
+        );
+      }
+    } catch (eMail) {
+      Logger.log('Error enviando correo de notificación de permiso: ' + eMail.message);
+    }
+
     return { success: true, message: 'Tu solicitud de ' + tipo + ' fue enviada. El administrador la revisará pronto.' };
   } catch (e) {
     return { success: false, message: e.message };
   }
+}
+
+const REMITENTE_CORREO_MARCA = 'noreply@segurosbolivar.com';
+const NOMBRE_CORREO_MARCA = 'Análisis · El Libertador';
+
+// Envío único de correos "de marca" (notificaciones de permisos, etc.). Intenta salir
+// como noreply@segurosbolivar.com — eso solo funciona si esa dirección está configurada
+// como alias "Enviar correo como" en la cuenta de Gmail/Workspace que corre el script.
+// Si no lo está, GmailApp lanza error y hacemos fallback a MailApp (sale desde la cuenta
+// real del script, pero conserva el nombre de remitente) para no perder la notificación.
+function _enviarCorreoMarca_(destinatarios, asunto, htmlBody) {
+  try {
+    GmailApp.sendEmail(destinatarios, asunto, '', {
+      htmlBody: htmlBody,
+      from: REMITENTE_CORREO_MARCA,
+      name: NOMBRE_CORREO_MARCA
+    });
+  } catch (eFrom) {
+    Logger.log('No se pudo enviar como ' + REMITENTE_CORREO_MARCA + ' (¿alias no configurado?): ' + eFrom.message + '. Enviando con remitente por defecto.');
+    MailApp.sendEmail({ to: destinatarios, subject: asunto, htmlBody: htmlBody, name: NOMBRE_CORREO_MARCA });
+  }
+}
+
+// Correo de notificación (nueva solicitud de permiso) con la identidad de marca de
+// El Libertador. Usa solo estilos inline (sin <style>) porque los clientes de correo
+// no soportan hojas de estilo externas ni siempre respetan bloques <style>.
+function _construirCorreoNuevoPermiso_(nombre, correo, tipo, fechaInicio, fechaFin, observacion, urlPanel) {
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const etiqueta = 'color:#706F6F;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;';
+  const valor = 'color:#111827;font-size:14px;font-weight:700;margin:0;';
+
+  const bloqueObservacion = observacion ? `
+    <div style="background-color:#f8fafc;border-left:3px solid #253150;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:24px;">
+      <p style="${etiqueta}">Observación</p>
+      <p style="margin:0;color:#374151;font-size:13px;line-height:1.5;">${esc(observacion)}</p>
+    </div>` : '';
+
+  const botonPanel = urlPanel ? `
+    <a href="${urlPanel}" style="display:inline-block;background-color:#BD0F14;color:#ffffff;text-decoration:none;font-weight:700;font-size:13px;padding:12px 28px;border-radius:10px;">
+      Abrir panel de administración &rarr;
+    </a>` : '';
+
+  return `
+<div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#F4F5F8;padding:24px;">
+  <div style="background-color:#253150;background:linear-gradient(135deg,#161e33 0%,#253150 60%,#3a4d7a 100%);border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+    <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px;">El Libertador</div>
+    <div style="color:rgba(255,255,255,0.7);font-size:12px;margin-top:4px;">Sistema de Asignación de Solicitudes</div>
+  </div>
+  <div style="background-color:#ffffff;padding:32px;border-radius:0 0 16px 16px;">
+    <div style="display:inline-block;background-color:#fef3c7;color:#92400e;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:6px 14px;border-radius:20px;margin-bottom:16px;">
+      Nueva solicitud de permiso
+    </div>
+    <h2 style="margin:0 0 4px;color:#111827;font-size:18px;">${esc(nombre)}</h2>
+    <p style="margin:0 0 24px;color:#706F6F;font-size:13px;">${esc(correo)}</p>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="width:34%;padding:0 12px 0 0;vertical-align:top;">
+          <p style="${etiqueta}">Tipo</p>
+          <span style="display:inline-block;background-color:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 10px;border-radius:8px;">${esc(tipo)}</span>
+        </td>
+        <td style="width:33%;padding:0 12px;vertical-align:top;border-left:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Desde</p>
+          <p style="${valor}">${esc(fechaInicio)}</p>
+        </td>
+        <td style="width:33%;padding:0 0 0 12px;vertical-align:top;border-left:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Hasta</p>
+          <p style="${valor}">${esc(fechaFin)}</p>
+        </td>
+      </tr>
+    </table>
+    ${bloqueObservacion}
+    ${botonPanel}
+  </div>
+  <div style="text-align:center;padding:16px;color:#A3A2A2;font-size:11px;">
+    Notificación automática — Sistema de Asignación El Libertador
+  </div>
+</div>`;
+}
+
+// Correo al analista con la decisión (aprobado/rechazado) de su solicitud de permiso.
+// Mismo lenguaje visual que _construirCorreoNuevoPermiso_, pero con tono e íconos
+// distintos según la decisión — celebratorio si se aprueba, respetuoso si no.
+function _construirCorreoResolucionPermiso_(nombre, tipo, fechaInicio, fechaFin, decision, observacionAdmin) {
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const etiqueta = 'color:#706F6F;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;';
+  const valor = 'color:#111827;font-size:14px;font-weight:700;margin:0;';
+  const esAprobado = decision === 'APROBADO';
+
+  const badge = esAprobado
+    ? `<div style="display:inline-block;background-color:#dcfce7;color:#15803d;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:6px 14px;border-radius:20px;margin-bottom:16px;">✓ Permiso aprobado</div>`
+    : `<div style="display:inline-block;background-color:#f1f5f9;color:#475569;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:6px 14px;border-radius:20px;margin-bottom:16px;">Solicitud no aprobada</div>`;
+
+  const mensaje = esAprobado
+    ? `¡Buenas noticias, <b>${esc(nombre)}</b>! Tu solicitud de <b>${esc(tipo)}</b> fue aprobada.`
+    : `Hola <b>${esc(nombre)}</b>, tu solicitud de <b>${esc(tipo)}</b> no fue aprobada en esta ocasión.`;
+
+  const bloqueObservacion = observacionAdmin ? `
+    <div style="background-color:#f8fafc;border-left:3px solid ${esAprobado ? '#15803d' : '#253150'};border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:24px;">
+      <p style="${etiqueta}">${esAprobado ? 'Nota del administrador' : 'Motivo'}</p>
+      <p style="margin:0;color:#374151;font-size:13px;line-height:1.5;">${esc(observacionAdmin)}</p>
+    </div>` : '';
+
+  const cierre = esAprobado
+    ? 'Recuerda marcar tu estado correspondiente en el sistema cuando inicie tu permiso. ¡Que salga todo bien!'
+    : 'Si tienes dudas sobre esta decisión, comunícate con tu coordinador.';
+
+  return `
+<div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#F4F5F8;padding:24px;">
+  <div style="background-color:#253150;background:linear-gradient(135deg,#161e33 0%,#253150 60%,#3a4d7a 100%);border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+    <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px;">El Libertador</div>
+    <div style="color:rgba(255,255,255,0.7);font-size:12px;margin-top:4px;">Sistema de Asignación de Solicitudes</div>
+  </div>
+  <div style="background-color:#ffffff;padding:32px;border-radius:0 0 16px 16px;">
+    ${badge}
+    <p style="margin:0 0 24px;color:#111827;font-size:14px;line-height:1.6;">${mensaje}</p>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="width:34%;padding:0 12px 0 0;vertical-align:top;">
+          <p style="${etiqueta}">Tipo</p>
+          <span style="display:inline-block;background-color:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 10px;border-radius:8px;">${esc(tipo)}</span>
+        </td>
+        <td style="width:33%;padding:0 12px;vertical-align:top;border-left:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Desde</p>
+          <p style="${valor}">${esc(fechaInicio)}</p>
+        </td>
+        <td style="width:33%;padding:0 0 0 12px;vertical-align:top;border-left:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Hasta</p>
+          <p style="${valor}">${esc(fechaFin)}</p>
+        </td>
+      </tr>
+    </table>
+    ${bloqueObservacion}
+    <p style="margin:0;color:#706F6F;font-size:13px;line-height:1.5;">${cierre}</p>
+  </div>
+  <div style="text-align:center;padding:16px;color:#A3A2A2;font-size:11px;">
+    Notificación automática — Sistema de Asignación El Libertador
+  </div>
+</div>`;
 }
 
 function verificarPermisoVigenteHoy() {

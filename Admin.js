@@ -1585,6 +1585,24 @@ function admin_resolverPermiso(id, decision, observacion) {
         hoja.getRange(i + 1, 11).setValue(ahora);
         hoja.getRange(i + 1, 12).setValue(observacion || '');
         SpreadsheetApp.flush();
+
+        try {
+          var correoAnalista = String(data[i][2]).trim();
+          if (correoAnalista) {
+            _enviarCorreoMarca_(
+              correoAnalista,
+              (decision === 'APROBADO' ? '✅ Tu permiso fue aprobado: ' : 'Sobre tu solicitud de permiso: ') + String(data[i][4]).trim(),
+              _construirCorreoResolucionPermiso_(
+                String(data[i][3]).trim(), String(data[i][4]).trim(),
+                _fmtFechaPI_(data[i][5]), _fmtFechaPI_(data[i][6]),
+                decision, observacion || ''
+              )
+            );
+          }
+        } catch (eMail) {
+          Logger.log('Error enviando correo de resolución de permiso: ' + eMail.message);
+        }
+
         return { success: true, message: 'Permiso ' + decision.toLowerCase() + ' correctamente.' };
       }
     }
