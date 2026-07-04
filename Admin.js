@@ -1611,6 +1611,173 @@ function admin_contarPermisosPendientes() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// HISTORIAL Y ANALÍTICA DE AUSENCIAS — Admin
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Días de ausencia inclusive entre dos fechas ya normalizadas a yyyy-MM-dd (usar
+// siempre después de _fmtFechaPI_, no parsea formatos crudos del sheet).
+function _diasEntreFechasPI_(fechaIniStr, fechaFinStr) {
+  if (!fechaIniStr || !fechaFinStr) return 0;
+  var ini = new Date(fechaIniStr + 'T00:00:00');
+  var fin = new Date(fechaFinStr + 'T00:00:00');
+  if (isNaN(ini.getTime()) || isNaN(fin.getTime())) return 0;
+  var dias = Math.round((fin.getTime() - ini.getTime()) / 86400000) + 1;
+  return dias > 0 ? dias : 0;
+}
+
+function admin_getUmbralFrecuente() {
+  verificarPermisoAdmin();
+  var v = PropertiesService.getScriptProperties().getProperty('UMBRAL_PERMISOS_FRECUENTE_30D');
+  return { umbral: parseInt(v) || 3 };
+}
+
+function admin_setUmbralFrecuente(valor) {
+  try {
+    verificarPermisoAdmin();
+    var n = parseInt(valor);
+    if (isNaN(n) || n < 1) return { success: false, message: 'El umbral debe ser un número mayor a 0.' };
+    PropertiesService.getScriptProperties().setProperty('UMBRAL_PERMISOS_FRECUENTE_30D', String(n));
+    return { success: true, message: 'Umbral actualizado a ' + n + ' aprobados en 30 días.' };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// Agregación por analista sobre TODOS los estados (a diferencia de admin_obtenerNovedades,
+// que solo mira APROBADO). Usa el mismo criterio de solapamiento de rango que
+// admin_obtenerNovedades (fi > hasta || ff < desde) para que los números cuadren
+// entre ambas vistas.
+function admin_obtenerHistorialAusencias(fechaDesde, fechaHasta) {
+  verificarPermisoAdmin();
+  var hoy = new Date();
+  var hoyStr = Utilities.formatDate(hoy, TIMEZONE, 'yyyy-MM-dd');
+  var desde = (fechaDesde && fechaDesde.trim() !== '') ? fechaDesde.trim() : hoyStr;
+  var hasta = (fechaHasta && fechaHasta.trim() !== '') ? fechaHasta.trim() : hoyStr;
+
+  var resultado = {
+    desde: desde, hasta: hasta,
+    kpis: { totalAprobados: 0, totalPendientes: 0, totalRechazados: 0, totalDiasAusencia: 0, tasaAprobacion: 0, porTipo: {} },
+    porAnalista: []
+  };
+
+  var hoja = _getHojaPermisos_();
+  if (hoja.getLastRow() <= 1) return resultado;
+
+  var data = hoja.getDataRange().getValues();
+  var porCorreo = {};
+  var umbral30 = Utilities.formatDate(new Date(hoy.getTime() - 30 * 86400000), TIMEZONE, 'yyyy-MM-dd');
+
+  for (var i = 1; i < data.length; i++) {
+    var fi = _fmtFechaPI_(data[i][5]);
+    var ff = _fmtFechaPI_(data[i][6]);
+    if (fi > hasta || ff < desde) continue;
+
+    var correo = String(data[i][2]).trim().toLowerCase();
+    var nombre = String(data[i][3]).trim();
+    var tipo = String(data[i][4]).trim();
+    var estado = String(data[i][8] || 'PENDIENTE').toUpperCase().trim();
+    var dias = _diasEntreFechasPI_(fi, ff);
+
+    if (!porCorreo[correo]) {
+      porCorreo[correo] = { correo: correo, nombre: nombre, aprobados: 0, pendientes: 0, rechazados: 0, diasTotales: 0, porTipo: {}, recientes30: 0 };
+    }
+    var r = porCorreo[correo];
+    r.porTipo[tipo] = (r.porTipo[tipo] || 0) + 1;
+
+    if (estado === 'APROBADO') {
+      r.aprobados++; r.diasTotales += dias;
+      resultado.kpis.totalAprobados++; resultado.kpis.totalDiasAusencia += dias;
+      resultado.kpis.porTipo[tipo] = (resultado.kpis.porTipo[tipo] || 0) + 1;
+      if (fi >= umbral30) r.recientes30++;
+    } else if (estado === 'PENDIENTE') {
+      r.pendientes++; resultado.kpis.totalPendientes++;
+    } else {
+      r.rechazados++; resultado.kpis.totalRechazados++;
+    }
+  }
+
+  var totalSolicitudes = resultado.kpis.totalAprobados + resultado.kpis.totalPendientes + resultado.kpis.totalRechazados;
+  resultado.kpis.tasaAprobacion = totalSolicitudes > 0 ? Math.round((resultado.kpis.totalAprobados / totalSolicitudes) * 100) : 0;
+
+  var umbralFrecuente = admin_getUmbralFrecuente().umbral;
+  for (var c in porCorreo) {
+    var p = porCorreo[c];
+    var tipoMasFrecuente = '', maxCount = 0;
+    for (var t in p.porTipo) { if (p.porTipo[t] > maxCount) { maxCount = p.porTipo[t]; tipoMasFrecuente = t; } }
+    resultado.porAnalista.push({
+      correo: p.correo, nombre: p.nombre,
+      aprobados: p.aprobados, pendientes: p.pendientes, rechazados: p.rechazados,
+      diasTotales: p.diasTotales, tipoMasFrecuente: tipoMasFrecuente,
+      esFrecuente: p.recientes30 >= umbralFrecuente
+    });
+  }
+  return resultado;
+}
+
+// Historial completo (todas las filas, todos los estados) de un analista, para la
+// "ficha de ausencias" del panel admin.
+function admin_obtenerFichaAusenciasAnalista(correo) {
+  verificarPermisoAdmin();
+  correo = String(correo || '').trim().toLowerCase();
+  var out = { correo: correo, nombre: '', registros: [], resumen: { aprobados: 0, pendientes: 0, rechazados: 0, diasTotales: 0 } };
+
+  var hoja = _getHojaPermisos_();
+  if (!correo || hoja.getLastRow() <= 1) return out;
+
+  var data = hoja.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][2]).trim().toLowerCase() !== correo) continue;
+    var fi = _fmtFechaPI_(data[i][5]);
+    var ff = _fmtFechaPI_(data[i][6]);
+    var dias = _diasEntreFechasPI_(fi, ff);
+    var estado = String(data[i][8] || 'PENDIENTE').toUpperCase().trim();
+
+    out.nombre = String(data[i][3]).trim();
+    out.registros.push({
+      id: String(data[i][0]).trim(),
+      fechaSolicitud: _fmtFechaPI_(data[i][1]),
+      tipo: String(data[i][4]).trim(),
+      fechaInicio: fi, fechaFin: ff, dias: dias,
+      observacionAnalista: String(data[i][7] || '').trim(),
+      estado: estado,
+      observacionAdmin: String(data[i][11] || '').trim()
+    });
+
+    if (estado === 'APROBADO') { out.resumen.aprobados++; out.resumen.diasTotales += dias; }
+    else if (estado === 'PENDIENTE') out.resumen.pendientes++;
+    else out.resumen.rechazados++;
+  }
+  out.registros.sort(function(a, b) { return b.fechaSolicitud.localeCompare(a.fechaSolicitud); });
+  return out;
+}
+
+// Conteo liviano de permisos APROBADOS con inicio en los últimos 30 días, para el
+// badge de contexto en la pestaña Solicitudes (no recalcula el historial completo).
+function admin_obtenerConteoPermisosRecientes(correos) {
+  verificarPermisoAdmin();
+  var mapa = {};
+  var set = {};
+  (correos || []).forEach(function(c) { set[String(c).trim().toLowerCase()] = true; });
+  if (Object.keys(set).length === 0) return mapa;
+
+  var hoja = _getHojaPermisos_();
+  if (hoja.getLastRow() <= 1) return mapa;
+
+  var data = hoja.getDataRange().getValues();
+  var umbral30 = Utilities.formatDate(new Date(Date.now() - 30 * 86400000), TIMEZONE, 'yyyy-MM-dd');
+
+  for (var i = 1; i < data.length; i++) {
+    var correo = String(data[i][2]).trim().toLowerCase();
+    if (!set[correo]) continue;
+    if (String(data[i][8]).toUpperCase().trim() !== 'APROBADO') continue;
+    var fi = _fmtFechaPI_(data[i][5]);
+    if (fi < umbral30) continue;
+    mapa[correo] = (mapa[correo] || 0) + 1;
+  }
+  return mapa;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // HORARIOS DE ASIGNACIÓN — Admin
 // ═══════════════════════════════════════════════════════════════════════════════
 
