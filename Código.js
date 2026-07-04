@@ -1913,7 +1913,7 @@ function verificarMisCupos(equipo) {
 function actualizarEstadoPropio(nuevoEstado) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(25000);
   } catch (e) {
     return { success: false, message: "Servidor ocupado, reintenta." };
   }

@@ -364,7 +364,7 @@ function autoAsignarBiometria() {
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(15000);
+    lock.waitLock(25000);
   } catch (e) {
     return { success: false, message: "El sistema está ocupado. Intenta de nuevo." };
   }
@@ -1588,6 +1588,84 @@ var VENTANA_DIAS_VERIFICACION_SAI = 3;
  * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
  */
 function verificarAprobacionDesaplazamientos() {
+  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const hojaHist = ss.getSheetByName("Historico_Gestiones");
+  if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
+
+  const lastRow = hojaHist.getLastRow();
+  if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
+
+  const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
+  const limiteFecha = new Date();
+  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
+
+  var candidatos = [];
+  for (var i = 0; i < data.length; i++) {
+    var fechaAsig = data[i][24];
+    var solicitudId = String(data[i][0]).trim();
+    var estadoActual = String(data[i][16]).toUpperCase().trim();
+
+    if (!(fechaAsig instanceof Date)) continue;
+    if (fechaAsig < limiteFecha) continue;
+    if (!solicitudId) continue;
+    if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
+
+    candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
+  }
+
+  if (candidatos.length === 0) {
+    return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+  }
+
+  var endpoint = getEndPointNewSai();
+  var apiKey = getKeyFull();
+  if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
+
+  // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
+  // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
+  // también usan la asignación de casos y el resto del sistema.
+  var actualizaciones = [];
+  var detalles = [];
+
+  for (var j = 0; j < candidatos.length; j++) {
+    var c = candidatos[j];
+    try {
+      var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
+        method: "GET",
+        muteHttpExceptions: true,
+        headers: { "x-api-key": apiKey, "Accept": "application/json" }
+      });
+
+      if (response.getResponseCode() === 200) {
+        var jsonData = JSON.parse(response.getContentText());
+        var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
+
+        if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
+          actualizaciones.push({ filaReal: c.filaReal, estado: studyStatus });
+          detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
+        } else {
+          detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
+        }
+      } else {
+        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
+      }
+    } catch (e) {
+      detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
+    }
+
+    if (j < candidatos.length - 1) Utilities.sleep(2000);
+  }
+
+  if (actualizaciones.length === 0) {
+    return {
+      success: true,
+      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
+      totalRevisados: candidatos.length,
+      totalActualizados: 0,
+      detalles: detalles
+    };
+  }
+
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -1596,79 +1674,16 @@ function verificarAprobacionDesaplazamientos() {
   }
 
   try {
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const hojaHist = ss.getSheetByName("Historico_Gestiones");
-    if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
-
-    const lastRow = hojaHist.getLastRow();
-    if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
-
-    const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
-    const limiteFecha = new Date();
-    limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
-
-    var candidatos = [];
-    for (var i = 0; i < data.length; i++) {
-      var fechaAsig = data[i][24];
-      var solicitudId = String(data[i][0]).trim();
-      var estadoActual = String(data[i][16]).toUpperCase().trim();
-
-      if (!(fechaAsig instanceof Date)) continue;
-      if (fechaAsig < limiteFecha) continue;
-      if (!solicitudId) continue;
-      if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
-
-      candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
-    }
-
-    if (candidatos.length === 0) {
-      return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
-    }
-
-    var endpoint = getEndPointNewSai();
-    var apiKey = getKeyFull();
-    if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
-
-    var totalActualizados = 0;
-    var detalles = [];
-
-    for (var j = 0; j < candidatos.length; j++) {
-      var c = candidatos[j];
-      try {
-        var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
-          method: "GET",
-          muteHttpExceptions: true,
-          headers: { "x-api-key": apiKey, "Accept": "application/json" }
-        });
-
-        if (response.getResponseCode() === 200) {
-          var jsonData = JSON.parse(response.getContentText());
-          var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
-
-          if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
-            hojaHist.getRange(c.filaReal, 17).setValue(studyStatus);
-            totalActualizados++;
-            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
-          } else {
-            detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
-          }
-        } else {
-          detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
-        }
-      } catch (e) {
-        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
-      }
-
-      if (j < candidatos.length - 1) Utilities.sleep(2000);
-    }
-
+    actualizaciones.forEach(function(u) {
+      hojaHist.getRange(u.filaReal, 17).setValue(u.estado);
+    });
     SpreadsheetApp.flush();
 
     return {
       success: true,
-      message: "Verificación completada. " + totalActualizados + " de " + candidatos.length + " actualizados.",
+      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
-      totalActualizados: totalActualizados,
+      totalActualizados: actualizaciones.length,
       detalles: detalles
     };
   } catch (error) {
@@ -1714,6 +1729,84 @@ function triggerVerificacionInducciones() {
  * 16:00-17:00, apuntando a triggerVerificacionReestudiosUar).
  */
 function verificarAprobacionReestudiosUar() {
+  const ss = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+  const hojaHist = ss.getSheetByName("Historico_Gestiones");
+  if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
+
+  const lastRow = hojaHist.getLastRow();
+  if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
+
+  const data = hojaHist.getRange(2, 1, lastRow - 1, 11).getValues();
+  const limiteFecha = new Date();
+  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
+
+  var candidatos = [];
+  for (var i = 0; i < data.length; i++) {
+    var solicitudId = String(data[i][1]).trim();
+    var fechaAsig = data[i][8];
+    var estadoActual = String(data[i][10]).toUpperCase().trim();
+
+    if (!(fechaAsig instanceof Date)) continue;
+    if (fechaAsig < limiteFecha) continue;
+    if (!solicitudId) continue;
+    if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
+
+    candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
+  }
+
+  if (candidatos.length === 0) {
+    return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+  }
+
+  var endpoint = getEndPointNewSai();
+  var apiKey = getKeyFull();
+  if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
+
+  // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
+  // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
+  // también usan la asignación de casos y el resto del sistema.
+  var actualizaciones = [];
+  var detalles = [];
+
+  for (var j = 0; j < candidatos.length; j++) {
+    var c = candidatos[j];
+    try {
+      var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
+        method: "GET",
+        muteHttpExceptions: true,
+        headers: { "x-api-key": apiKey, "Accept": "application/json" }
+      });
+
+      if (response.getResponseCode() === 200) {
+        var jsonData = JSON.parse(response.getContentText());
+        var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
+
+        if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
+          actualizaciones.push({ filaReal: c.filaReal, estado: studyStatus });
+          detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
+        } else {
+          detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
+        }
+      } else {
+        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
+      }
+    } catch (e) {
+      detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
+    }
+
+    if (j < candidatos.length - 1) Utilities.sleep(2000);
+  }
+
+  if (actualizaciones.length === 0) {
+    return {
+      success: true,
+      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
+      totalRevisados: candidatos.length,
+      totalActualizados: 0,
+      detalles: detalles
+    };
+  }
+
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -1722,79 +1815,16 @@ function verificarAprobacionReestudiosUar() {
   }
 
   try {
-    const ss = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-    const hojaHist = ss.getSheetByName("Historico_Gestiones");
-    if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
-
-    const lastRow = hojaHist.getLastRow();
-    if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
-
-    const data = hojaHist.getRange(2, 1, lastRow - 1, 11).getValues();
-    const limiteFecha = new Date();
-    limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
-
-    var candidatos = [];
-    for (var i = 0; i < data.length; i++) {
-      var solicitudId = String(data[i][1]).trim();
-      var fechaAsig = data[i][8];
-      var estadoActual = String(data[i][10]).toUpperCase().trim();
-
-      if (!(fechaAsig instanceof Date)) continue;
-      if (fechaAsig < limiteFecha) continue;
-      if (!solicitudId) continue;
-      if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
-
-      candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
-    }
-
-    if (candidatos.length === 0) {
-      return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
-    }
-
-    var endpoint = getEndPointNewSai();
-    var apiKey = getKeyFull();
-    if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
-
-    var totalActualizados = 0;
-    var detalles = [];
-
-    for (var j = 0; j < candidatos.length; j++) {
-      var c = candidatos[j];
-      try {
-        var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
-          method: "GET",
-          muteHttpExceptions: true,
-          headers: { "x-api-key": apiKey, "Accept": "application/json" }
-        });
-
-        if (response.getResponseCode() === 200) {
-          var jsonData = JSON.parse(response.getContentText());
-          var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
-
-          if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
-            hojaHist.getRange(c.filaReal, 11).setValue(studyStatus);
-            totalActualizados++;
-            detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
-          } else {
-            detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
-          }
-        } else {
-          detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
-        }
-      } catch (e) {
-        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
-      }
-
-      if (j < candidatos.length - 1) Utilities.sleep(2000);
-    }
-
+    actualizaciones.forEach(function(u) {
+      hojaHist.getRange(u.filaReal, 11).setValue(u.estado);
+    });
     SpreadsheetApp.flush();
 
     return {
       success: true,
-      message: "Verificación completada. " + totalActualizados + " de " + candidatos.length + " actualizados.",
+      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
-      totalActualizados: totalActualizados,
+      totalActualizados: actualizaciones.length,
       detalles: detalles
     };
   } catch (error) {

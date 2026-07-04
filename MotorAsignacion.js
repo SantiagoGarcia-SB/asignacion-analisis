@@ -421,7 +421,7 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
 function RequestLeadUnificado(equipoIdOverride) {
   var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(15000);
+    lock.waitLock(25000);
   } catch (e) {
     return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
   }
