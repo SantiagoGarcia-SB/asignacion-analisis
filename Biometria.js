@@ -810,6 +810,109 @@ function _enviarPrimerContactoBiometria() {
   }
 }
 
+// ===================================================================
+// UTILIDAD MANUAL — correr a demanda desde el editor de Apps Script cuando se
+// necesite destrabar biometrías 02/500 o 02/503 que están en fase vacía
+// esperando la ventana normal de VENTANA_HORAS_WA_BIOMETRIA horas (p.ej. un
+// pico de solicitudes que no puede esperar el ciclo horario normal). Envía el
+// WhatsApp ya mismo, sin esperar la ventana, y marca WA_ENVIADO. No es un
+// trigger automático: alguien tiene que ejecutarla a mano cada vez.
+//
+// Para escalar a asignación los que YA estaban en WA_ENVIADO antes de correr
+// esta función, usa la función existente cicloBiometriaPendiente() (no hace
+// falta duplicarla: no tiene espera de horario, solo revisa la fase).
+//
+// Importante: no correr cicloBiometriaPendiente() inmediatamente después de
+// esta función en la misma sesión — eso escalaría a llamada los casos recién
+// contactados por WhatsApp sin darles ni un minuto para responder, que es
+// justo lo que la ventana normal evita. Dejar pasar un rato entre una y otra.
+function forzarPrimerContactoBiometriaManual() {
+  Logger.log("=== INICIO forzarPrimerContactoBiometriaManual ===");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+
+  var candidatos = [];
+  for (var i = 0; i < datos.length; i++) {
+    var fase = String(datos[i][75]).trim();
+    if (fase !== "") continue; // solo primer contacto: fase vacía
+    var consecutivo = String(datos[i][0]).trim();
+    if (!consecutivo) continue;
+    candidatos.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
+  }
+
+  if (candidatos.length === 0) {
+    Logger.log("No hay candidatos en fase vacía para forzar.");
+    return;
+  }
+
+  Logger.log(candidatos.length + " candidatos a forzar primer contacto (sin esperar ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h).");
+
+  var resultados = [];
+  for (var p = 0; p < candidatos.length; p++) {
+    var datosApi = _consultarSaiIndividual(candidatos[p].consecutivo);
+    resultados.push({ item: candidatos[p], datosApi: datosApi });
+    Utilities.sleep(1000);
+  }
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para forzar primer contacto: " + e.message);
+    return;
+  }
+
+  try {
+    var rowsParaWA = [];
+    var filasParaWA = [];
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+    for (var r = 0; r < resultados.length; r++) {
+      var item = resultados[r].item;
+      var datosApi = resultados[r].datosApi;
+
+      if (!datosApi) {
+        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+        continue;
+      }
+
+      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+      hojaBio.getRange(item.fila, 63).setValue(statusActual);
+
+      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+        hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
+        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+        Logger.log("✅ " + item.consecutivo + " ya no está pendiente (" + statusActual + ") → cerrado sin WA.");
+        continue;
+      }
+
+      rowsParaWA.push(item.datosFila);
+      filasParaWA.push(item.fila);
+      hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
+      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+      Logger.log("📲 " + item.consecutivo + " forzado a WA_ENVIADO (sin esperar ventana).");
+    }
+
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+
+    if (rowsParaWA.length > 0) {
+      enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);
+    }
+  } catch (e) {
+    Logger.log("❌ Error en forzarPrimerContactoBiometriaManual: " + e.message);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+
+  Logger.log("=== FIN forzarPrimerContactoBiometriaManual ===");
+}
+
 // Escalación: pendientes que ya están en fase WA_ENVIADO (segundo contacto) y siguen
 // pendientes en SAI se escalan a la cola de asignación (llamada).
 function _procesarCortePendientes() {
