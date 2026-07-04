@@ -529,6 +529,17 @@
       box-shadow: var(--shadow-md);
     }
 
+    @keyframes cardMetricaIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .card-metrica { animation: cardMetricaIn 0.35s ease both; }
+    .card-metrica:nth-child(1) { animation-delay: 0.03s; }
+    .card-metrica:nth-child(2) { animation-delay: 0.07s; }
+    .card-metrica:nth-child(3) { animation-delay: 0.11s; }
+    .card-metrica:nth-child(4) { animation-delay: 0.15s; }
+    .card-metrica:nth-child(5) { animation-delay: 0.19s; }
+    .card-metrica:nth-child(6) { animation-delay: 0.23s; }
+    .card-metrica:nth-child(7) { animation-delay: 0.27s; }
+    .card-metrica:nth-child(8) { animation-delay: 0.31s; }
+
     .icon-circle-modern {
       width: 56px;
       height: 56px;
