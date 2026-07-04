@@ -1654,11 +1654,21 @@ function verificarTurnoActivo(userEmail, ss) {
         break;
       }
     }
-    if (!idTurnoActivo) return { ok: true };
+    if (!idTurnoActivo) {
+      return {
+        ok: false,
+        message: '⏰ No tienes un turno activo asignado para este momento. Contacta a tu administrador para que revise tu horario.'
+      };
+    }
 
     // 2. Leer definición del turno
     const hojaTurnos = ss.getSheetByName('Turnos');
-    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { ok: true };
+    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) {
+      return {
+        ok: false,
+        message: '⏰ Tu turno no está correctamente configurado. Contacta a tu administrador.'
+      };
+    }
 
     const dataTurnos = hojaTurnos.getDataRange().getValues();
     const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
@@ -1686,11 +1696,21 @@ function verificarTurnoActivo(userEmail, ss) {
       horaFinStr = String(dispTurnos[i][finCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
       break;
     }
-    if (!horaFinStr) return { ok: true };
+    if (!horaFinStr) {
+      return {
+        ok: false,
+        message: '⏰ Tu turno (' + (nombreTurno || idTurnoActivo) + ') no tiene hora de fin configurada. Contacta a tu administrador.'
+      };
+    }
 
     let minIni = parseMin(horaIniStr);
     let minFin = parseMin(horaFinStr);
-    if (minFin === null) return { ok: true };
+    if (minFin === null) {
+      return {
+        ok: false,
+        message: '⏰ Tu turno (' + (nombreTurno || idTurnoActivo) + ') tiene una hora de fin inválida. Contacta a tu administrador.'
+      };
+    }
 
     if (minIni !== null && minActual < minIni) {
       return {
@@ -2163,6 +2183,39 @@ function obtenerMiEstadoActual() {
     return "INACTIVO";
   } catch (e) {
     return "ERROR";
+  }
+}
+
+/**
+ * Indica si el analista ya registró estado ALMUERZO en algún momento de hoy,
+ * para no seguir mostrándole el recordatorio de almuerzo el resto del día.
+ */
+function yaAlmorzoHoy() {
+  try {
+    const correoAnalista = Session.getActiveUser().getEmail();
+    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaUsuarios = ss.getSheetByName("Usuarios");
+    const datos = hojaUsuarios.getDataRange().getValues();
+    const columnaCorreo = 2;
+    const columnaHistorial = 11;
+    const fechaHoy = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+
+    for (let i = 1; i < datos.length; i++) {
+      if (datos[i][columnaCorreo] && datos[i][columnaCorreo].toString().toLowerCase().trim() === correoAnalista.toLowerCase().trim()) {
+        const contenido = datos[i][columnaHistorial];
+        if (!contenido) return false;
+        let historial = [];
+        try { historial = JSON.parse(contenido); } catch (e) { return false; }
+        return historial.some(function(h) {
+          if (!h || h.estado !== 'ALMUERZO' || !h.inicio) return false;
+          const fechaEntrada = h.inicio.includes('T') ? h.inicio.split('T')[0] : h.inicio.split(' ')[0];
+          return fechaEntrada === fechaHoy;
+        });
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
   }
 }
 

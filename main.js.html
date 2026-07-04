@@ -55,6 +55,51 @@ var _pollingTablaVacia = null;
 var _POLLING_INTERVALO_MS = 2 * 60 * 1000;
 var _pollingEnCurso = false;
 
+var _yaAlmorzoHoy = false;
+var _ultimoRecordatorioAlmuerzoMin = -1;
+var _MENSAJES_RECORDATORIO_ALMUERZO = [
+  '¿Ya te dio hambre? 😋 Marca tu Almuerzo antes de salir, así tu compañero toma la posta y ningún cliente se queda esperando de más.',
+  '¡Hora de recargar energía! 🍽️ No olvides marcarte en Almuerzo — tu cliente y tú se lo merecen.',
+  'Un break bien tomado rinde más 🙂 Si vas a salir, ponte en Almuerzo para que el equipo siga fluyendo sin ti unos minutitos.'
+];
+
+function _tickRecordatorioAlmuerzo() {
+  if (_yaAlmorzoHoy || estadoGlobalAsesor !== 'ACTIVO') return;
+
+  var ahora = new Date();
+  var minutosDelDia = ahora.getHours() * 60 + ahora.getMinutes();
+  if (minutosDelDia < 11 * 60 || minutosDelDia > 14 * 60) return;
+  if (_ultimoRecordatorioAlmuerzoMin !== -1 && (minutosDelDia - _ultimoRecordatorioAlmuerzoMin) < 30) return;
+
+  _ultimoRecordatorioAlmuerzoMin = minutosDelDia;
+  var msg = _MENSAJES_RECORDATORIO_ALMUERZO[Math.floor(Math.random() * _MENSAJES_RECORDATORIO_ALMUERZO.length)];
+
+  Swal.fire({
+    toast: true,
+    position: 'bottom-end',
+    icon: 'info',
+    iconColor: '#f59e0b',
+    title: msg,
+    showConfirmButton: true,
+    confirmButtonText: '🍽️ Ponerme en Almuerzo',
+    confirmButtonColor: '#f59e0b',
+    showCloseButton: true,
+    timer: 15000,
+    timerProgressBar: true
+  }).then(function(result) {
+    if (result.isConfirmed) cambiarMiEstado('ALMUERZO');
+  });
+}
+
+function _programarRecordatorioAlmuerzo() {
+  google.script.run
+    .withSuccessHandler(function(ya) { _yaAlmorzoHoy = !!ya; })
+    .withFailureHandler(function() {})
+    .yaAlmorzoHoy();
+
+  setInterval(_tickRecordatorioAlmuerzo, 60 * 1000);
+}
+
 function _mostrarBannerPolling(visible) {
   var banner = document.getElementById('bannerPolling');
   if (!banner) return;
@@ -217,6 +262,7 @@ $(document).ready(function () {
   sincronizarEstadoInicial(true);
   verificarYAplicarPermisoVigente();
   _programarAutoInactivo();
+  _programarRecordatorioAlmuerzo();
 
   $('#btnGuardarCambios')
     .off('click')
@@ -1114,6 +1160,7 @@ function animarNumero(id, valorFinal) {
 function cambiarMiEstado(nuevoEstado) {
   var estadoAnterior = estadoGlobalAsesor;
   estadoGlobalAsesor = nuevoEstado.toUpperCase();
+  if (estadoGlobalAsesor === 'ALMUERZO') _yaAlmorzoHoy = true;
 
   const statusText = $('#currentStatusText');
   const statusDot = $('#statusDot');

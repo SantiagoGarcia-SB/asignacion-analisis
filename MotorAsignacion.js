@@ -255,9 +255,9 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
       if (canonHasta > 0 && canonValor > canonHasta) continue;
     }
 
-    if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
-
     var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
+    if (!reasignada && conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
+
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
     var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';
 
@@ -565,24 +565,43 @@ function RequestLeadUnificado(equipoIdOverride) {
       return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
     });
 
-    // === SELECCIONAR CANDIDATO ===
-    var prioridadActual = pendientes[0].tipoPrioridad;
-    var candidatos = pendientes.filter(function(p) { return p.tipoPrioridad === prioridadActual; });
+    // === SELECCIONAR CANDIDATOS (respeta maxAsignarPorLlamada) ===
+    var fechaHora = new Date();
+    var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
+    var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
 
-    var leadSeleccionado;
+    var pool = pendientes.slice();
+    var conteoLocal = {};
+    for (var kk in conteoHoyTotal) conteoLocal[kk] = conteoHoyTotal[kk];
+    var seleccionados = [];
+    var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
 
-    if (equipo.usarVipRotacion && equipo.usarScoreCategories) {
-      var scoreSheet = ss.getSheetByName("score");
+    while (seleccionados.length < cupoDisponible && pool.length > 0) {
+      var prioridadActual = pool[0].tipoPrioridad;
+      var candidatos = pool.filter(function(p) { return p.tipoPrioridad === prioridadActual; });
+
+      var leadSeleccionado;
       if (scoreSheet) {
         leadSeleccionado = _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal);
       } else {
         leadSeleccionado = candidatos[0];
       }
-    } else {
-      leadSeleccionado = candidatos[0];
+      if (!leadSeleccionado) break;
+
+      seleccionados.push(leadSeleccionado);
+      pool = pool.filter(function(p) { return p !== leadSeleccionado; });
+
+      var tipoSel = leadSeleccionado.tipo;
+      if (!leadSeleccionado.reasignada) {
+        conteoLocal[tipoSel] = (conteoLocal[tipoSel] || 0) + 1;
+        if (cuotas[tipoSel] > 0 && conteoLocal[tipoSel] >= cuotas[tipoSel]) {
+          // Cupo de este tipo se agotó dentro del mismo lote: descartar el resto (salvo reasignadas)
+          pool = pool.filter(function(p) { return p.tipo !== tipoSel || p.reasignada; });
+        }
+      }
     }
 
-    if (!leadSeleccionado) {
+    if (seleccionados.length === 0) {
       return { success: false, message: "⚠️ Error interno: no se pudo seleccionar un caso." };
     }
 
@@ -590,21 +609,26 @@ function RequestLeadUnificado(equipoIdOverride) {
     var _reasCount = pendientes.filter(function(p){ return p.reasignada; }).length;
     var _tiposPend = {};
     pendientes.forEach(function(p){ _tiposPend[p.tipo] = (_tiposPend[p.tipo]||0)+1; });
-    Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionado: " + leadSeleccionado.tipo + " (reasig=" + leadSeleccionado.reasignada + ") | Orden tipos: " + JSON.stringify(_tiposConPendientes));
+    Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionados: " + seleccionados.length + " | Orden tipos: " + JSON.stringify(_tiposConPendientes));
 
-    // === ASIGNAR ===
-    var fechaHora = new Date();
-    var maxAsignar = equipo.maxAsignarPorLlamada || 1;
-    var asignados = 0;
+    // === ASIGNAR (de mayor a menor rowIndex por hoja, para no invalidar filas al borrar) ===
+    var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+    var reestudios = seleccionados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
-    if (leadSeleccionado.base === 'PRINCIPAL') {
-      _asignarCasoPrincipal(leadSeleccionado, userEmail, nombreUsuario, fechaHora, refPrincipal.hoja, ss);
-    } else {
-      _asignarCasoReestudios(leadSeleccionado, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
-    }
-    asignados++;
+    principales.forEach(function(lead) {
+      _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, refPrincipal.hoja, ss);
+    });
+    reestudios.forEach(function(lead) {
+      _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
+    });
 
-    var msgAsignacion = "✅ Asignado: " + asignados + " caso de " + (ETIQUETAS_TIPO[leadSeleccionado.tipo] || leadSeleccionado.tipo.toUpperCase()) + ".";
+    var _resumenTipos = {};
+    seleccionados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
+    var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');
+
+    var msgAsignacion = seleccionados.length === 1
+      ? "✅ Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionados[0].tipo] || seleccionados[0].tipo.toUpperCase()) + "."
+      : "✅ Asignados: " + seleccionados.length + " casos (" + _detalleTipos + ").";
     if (cuposLlenosHoy.length > 0) {
       msgAsignacion += "\n⚠️ Cupos del día completados: " + cuposLlenosHoy.join(', ');
     }
