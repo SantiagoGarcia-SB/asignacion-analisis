@@ -1,11 +1,13 @@
-const WAREHOUSE_ID = '1V2GTI4IOPUEsC67SPIGey3LM3OxFCt-8HlFbX95R_fs'; 
-const TARGET_SOLICITUDES_SS_ID = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0'; 
+const WAREHOUSE_ID = '1V2GTI4IOPUEsC67SPIGey3LM3OxFCt-8HlFbX95R_fs';
+const TARGET_SOLICITUDES_SS_ID = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0';
+const ID_SHEET_GESTION_DIRECTA = '1VCcd2_QglH-71-WnyPoBfDAyf05HAd51mbjVJtBXyyM';
 
 
 const Consulta_Especial = 'Consulta_especial';
 
 const SHEET_NAME_POLIZAS = 'Hoja 1';
 const SHEET_NAME_SOLICITUDES = 'solicitud';
+const NOMBRE_HOJA_PENDIENTE_CODEUDOR = 'pendiente_codeudor';
 
 
 const DIAS_TOTAL = 45;              
@@ -558,6 +560,56 @@ function getDataUniqueForSolicitud(solicitud) {
   }
 }
 
+function construirItemHomologado(item, estadoGeneral, mapaTipos) {
+  const tipoOriginal = String(item.requestType || "").toUpperCase().trim();
+  let claseNormalizada = mapaTipos[tipoOriginal] || tipoOriginal;
+  if (estadoGeneral.includes("EN ESTUDIO") && claseNormalizada === "") {
+    claseNormalizada = "NUEVA";
+  }
+
+  var codeudores = [];
+  if (item.codebtors && Array.isArray(item.codebtors)) {
+    for (var ci = 0; ci < Math.min(item.codebtors.length, 3); ci++) {
+      var c = item.codebtors[ci];
+      codeudores.push({
+        nombre: c.name || "",
+        documento: c.document || "",
+        tipoDoc: c.documentType || "",
+        email: c.email || "",
+        telefono: c.phone || "",
+        estado: c.studyStatus || "",
+        resultado: c.resultDescription || ""
+      });
+    }
+  }
+
+  return {
+    solicitud: item.consecutive,
+    poliza: item.policyNumber,
+    identificacionInquilino: item.evaluatedDocument || item.holderDocument,
+    tipoIdentificacion: item.evaluatedDocumentType || item.holderDocumentType,
+    nombreInquilino: item.tenantName,
+    correoInquilino: item.tenantEmail,
+    telefonoInquilino: item.tenantPhone,
+    ingresos: item.income,
+    fechaExpedicion: item.expeditionDate,
+    canon: item.monthlyRent,
+    cuota: item.managementFee,
+    direccionInmueble: item.address,
+    destinoInmueble: item.propertyUse,
+    ciudadInmueble: item.cityName,
+    nombreAsesor: item.executiveName,
+    correoAsesor: item.advisorEmail,
+    estadoGeneral: item.studyStatus,
+    fechaRadicacion: item.registrationDate,
+    fechaResultado: item.lastResultDate || item.lastMovementDate,
+    clase: claseNormalizada,
+    digitalUar: "No",
+    canal: String(item.channel || "").trim(),
+    codeudores: codeudores
+  };
+}
+
 function actualizarSolicitudesNuevasAPI() {
   Logger.log("Iniciando ejecución");
   const hoy = new Date();
@@ -591,6 +643,7 @@ function actualizarSolicitudesNuevasAPI() {
   
   const solicitudesHomologadas = [];
   const idsFinalizadas = new Set();
+  const solicitudesCodeudorPendiente = [];
   const mapaTipos = {
     "TS":  "NUEVA",
     "AD": "ADICIONAL",
@@ -640,6 +693,13 @@ function actualizarSolicitudesNuevasAPI() {
           if (ESTADOS_EXCLUIR.has(estadoGeneral)) {
             const solId = String(item.consecutive || "").trim();
             if (solId) idsFinalizadas.add(solId);
+            if (solId && estadoGeneral === "CODEUDORES_REQUERIDOS") {
+              solicitudesCodeudorPendiente.push({
+                solicitud: solId,
+                fechaRadicacion: item.registrationDate || "",
+                item: construirItemHomologado(item, estadoGeneral, mapaTipos)
+              });
+            }
           }
 
           if (estadoGeneral === "APROBADO_PENDIENTE_BIOMETRIA") {
@@ -651,54 +711,7 @@ function actualizarSolicitudesNuevasAPI() {
           }
 
           if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido) {
-
-            const tipoOriginal = String(item.requestType || "").toUpperCase().trim();
-            let claseNormalizada = mapaTipos[tipoOriginal] || tipoOriginal;
-            if (estadoGeneral.includes("EN ESTUDIO") && claseNormalizada === "") {
-              claseNormalizada = "NUEVA";
-            }
-
-            var codeudores = [];
-            if (item.codebtors && Array.isArray(item.codebtors)) {
-              for (var ci = 0; ci < Math.min(item.codebtors.length, 3); ci++) {
-                var c = item.codebtors[ci];
-                codeudores.push({
-                  nombre: c.name || "",
-                  documento: c.document || "",
-                  tipoDoc: c.documentType || "",
-                  email: c.email || "",
-                  telefono: c.phone || "",
-                  estado: c.studyStatus || "",
-                  resultado: c.resultDescription || ""
-                });
-              }
-            }
-
-            solicitudesHomologadas.push({
-              solicitud: item.consecutive,
-              poliza: item.policyNumber,
-              identificacionInquilino: item.evaluatedDocument || item.holderDocument,
-              tipoIdentificacion: item.evaluatedDocumentType || item.holderDocumentType,
-              nombreInquilino: item.tenantName,
-              correoInquilino: item.tenantEmail,
-              telefonoInquilino: item.tenantPhone,
-              ingresos: item.income,
-              fechaExpedicion: item.expeditionDate,
-              canon: item.monthlyRent,
-              cuota: item.managementFee,
-              direccionInmueble: item.address,
-              destinoInmueble: item.propertyUse,
-              ciudadInmueble: item.cityName,
-              nombreAsesor: item.executiveName,
-              correoAsesor: item.advisorEmail,
-              estadoGeneral: item.studyStatus,
-              fechaRadicacion: item.registrationDate,
-              fechaResultado: item.lastResultDate || item.lastMovementDate,
-              clase: claseNormalizada,
-              digitalUar: "No",
-              canal: String(item.channel || "").trim(),
-              codeudores: codeudores
-            });
+            solicitudesHomologadas.push(construirItemHomologado(item, estadoGeneral, mapaTipos));
             guardadosEnPagina++;
           }
         });
@@ -733,6 +746,10 @@ function actualizarSolicitudesNuevasAPI() {
 
   if (idsFinalizadas.size > 0) {
     eliminarSolicitudesFinalizadas(idsFinalizadas);
+  }
+
+  if (solicitudesCodeudorPendiente.length > 0) {
+    moverAListaEsperaCodeudor(solicitudesCodeudorPendiente);
   }
 }
 
@@ -771,6 +788,153 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     Logger.log("❌ Error eliminando solicitudes finalizadas: " + err.message);
   } finally {
     lock.releaseLock();
+  }
+}
+
+// Archiva CODEUDORES_REQUERIDOS antes de borrarlas, para poder revisarlas luego aunque queden fuera de la ventana de fechas de la API.
+function moverAListaEsperaCodeudor(lista) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    Logger.log("❌ Lock no disponible para escribir en pendiente_codeudor: " + e.message);
+    return;
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(ID_SHEET_GESTION_DIRECTA);
+    let hoja = ss.getSheetByName(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
+    if (!hoja) {
+      hoja = ss.insertSheet(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
+      hoja.appendRow(["Solicitud", "FechaRadicacion", "FechaDeteccion", "UltimaVerificacion", "DatosJSON"]);
+    }
+
+    const existentes = getSetDeIds(hoja);
+    const ahora = Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+    const filas = [];
+
+    lista.forEach(entry => {
+      if (existentes.has(entry.solicitud)) return;
+      filas.push([entry.solicitud, entry.fechaRadicacion || "", ahora, ahora, JSON.stringify(entry.item)]);
+    });
+
+    if (filas.length > 0) {
+      const rowInicio = hoja.getLastRow() + 1;
+      hoja.getRange(rowInicio, 1, filas.length, 5).setValues(filas);
+      SpreadsheetApp.flush();
+      Logger.log(`✅ ${filas.length} solicitudes movidas a pendiente_codeudor.`);
+    }
+  } catch (err) {
+    Logger.log("❌ Error escribiendo en pendiente_codeudor: " + err.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Trigger periódico (independiente del sync de 10 min): purga expiradas (>3 meses) y reactiva las que ya salieron de CODEUDORES_REQUERIDOS.
+function revisarEnEsperaCodeudor() {
+  const keyFull = getKeyFull();
+  const endpointBase = PropertiesService.getScriptProperties().getProperty('endpointSaiNewApi');
+  if (!keyFull || !endpointBase) {
+    Logger.log("❌ revisarEnEsperaCodeudor: faltan credenciales.");
+    return;
+  }
+
+  let reactivadas = [];
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    Logger.log("❌ Lock no disponible para revisar pendiente_codeudor: " + e.message);
+    return;
+  }
+
+  try {
+    const ss = SpreadsheetApp.openById(ID_SHEET_GESTION_DIRECTA);
+    const hoja = ss.getSheetByName(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
+    if (!hoja || hoja.getLastRow() < 2) return;
+
+    const lastRow = hoja.getLastRow();
+    const datos = hoja.getRange(2, 1, lastRow - 1, 5).getValues();
+    const ahora = new Date();
+    const TRES_MESES_MS = 90 * 24 * 60 * 60 * 1000;
+    const filasAEliminar = [];
+
+    for (let i = 0; i < datos.length; i++) {
+      const solicitud = String(datos[i][0]).trim();
+      if (!solicitud) continue;
+
+      const fechaRadicacion = new Date(datos[i][1]);
+      if (!isNaN(fechaRadicacion.getTime()) && (ahora - fechaRadicacion) > TRES_MESES_MS) {
+        filasAEliminar.push(i);
+        Logger.log(`🧹 Solicitud ${solicitud} expiró en pendiente_codeudor (>3 meses de radicación).`);
+        continue;
+      }
+
+      try {
+        const response = UrlFetchApp.fetch(endpointBase + solicitud, {
+          method: 'get',
+          headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
+          muteHttpExceptions: true
+        });
+
+        if (response.getResponseCode() !== 200) {
+          Logger.log(`⚠️ HTTP ${response.getResponseCode()} verificando solicitud ${solicitud} en pendiente_codeudor.`);
+          continue;
+        }
+
+        const data = JSON.parse(response.getContentText());
+        const estado = String(data.studyStatus || "").toUpperCase().trim();
+
+        if (estado === "CODEUDORES_REQUERIDOS") {
+          hoja.getRange(i + 2, 4).setValue(Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss"));
+          continue;
+        }
+
+        if (estado === "RECHAZADO" || estado === "APROBADO") {
+          filasAEliminar.push(i);
+          continue;
+        }
+
+        let item;
+        try {
+          item = JSON.parse(datos[i][4]);
+        } catch (eParse) {
+          item = {};
+        }
+        item.estadoGeneral = data.studyStatus;
+        item.codeudores = (data.codebtors || []).slice(0, 3).map(c => ({
+          nombre: c.name || "",
+          documento: c.document || "",
+          tipoDoc: c.documentType || "",
+          email: c.email || "",
+          telefono: c.phone || "",
+          estado: c.studyStatus || "",
+          resultado: c.resultDescription || ""
+        }));
+
+        reactivadas.push(item);
+        filasAEliminar.push(i);
+
+      } catch (e) {
+        Logger.log(`❌ Error verificando solicitud ${solicitud} en pendiente_codeudor: ${e.message}`);
+      }
+    }
+
+    for (let i = filasAEliminar.length - 1; i >= 0; i--) {
+      hoja.deleteRow(filasAEliminar[i] + 2);
+    }
+    if (filasAEliminar.length > 0) SpreadsheetApp.flush();
+
+  } catch (err) {
+    Logger.log("❌ Error en revisarEnEsperaCodeudor: " + err.message);
+  } finally {
+    lock.releaseLock();
+  }
+
+  if (reactivadas.length > 0) {
+    procesarYGuardarLote(reactivadas);
+    Logger.log(`✅ ${reactivadas.length} solicitudes reactivadas desde pendiente_codeudor hacia Solicitudes.`);
   }
 }
 
