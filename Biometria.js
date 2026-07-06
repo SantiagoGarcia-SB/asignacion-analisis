@@ -83,15 +83,13 @@ function verificarEstadoBiometria(solicitud) {
   }
 }
 
+// IMPORTANTE: la consulta paginada a SAI (lenta, con pausas de 2s entre páginas) corre
+// SIN el ScriptLock — igual que se corrigió en verificarAprobacionDesaplazamientos/Uar
+// (ver commit "Corrige retención de lock durante llamadas a SAI"). El lock solo se toma
+// al final, para el borrado, y justo antes se vuelve a leer la hoja para confirmar que
+// la fila sigue ahí con el mismo estado (evita borrar una fila que otro proceso ya movió
+// o reemplazó mientras se esperaba la respuesta de SAI).
 function limpiarBiometriasResueltas() {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    Logger.log("❌ Lock no disponible para limpiar biometrías: " + e.message);
-    return;
-  }
-
   try {
     const ss = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
     const hoja = ss.getSheetByName("solicitud");
@@ -169,7 +167,7 @@ function limpiarBiometriasResueltas() {
     } while (paginaActual <= totalPaginas);
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
-    const filasAEliminar = [];
+    const idsAEliminar = new Set();
 
     for (let i = 0; i < datos.length; i++) {
       const estado = String(datos[i][16]).toUpperCase().trim();
@@ -180,25 +178,55 @@ function limpiarBiometriasResueltas() {
 
       const statusSai = estadosSai.get(solicitud);
       if (statusSai && !ESTADOS_CONSERVAR.has(statusSai)) {
-        filasAEliminar.push(i + 2);
+        idsAEliminar.add(solicitud);
         Logger.log("🗑️ Solicitud " + solicitud + " cambió a " + statusSai);
       }
     }
 
-    for (let j = filasAEliminar.length - 1; j >= 0; j--) {
-      hoja.deleteRow(filasAEliminar[j]);
+    if (idsAEliminar.size === 0) {
+      Logger.log("✅ Ninguna biometría cambió de estado.");
+      return;
     }
 
-    if (filasAEliminar.length > 0) {
-      SpreadsheetApp.flush();
-      Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas.");
-    } else {
-      Logger.log("✅ Ninguna biometría cambió de estado.");
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+    } catch (e) {
+      Logger.log("❌ Lock no disponible para limpiar biometrías: " + e.message);
+      return;
+    }
+
+    try {
+      // Re-leer justo antes de borrar: si otro proceso ya asignó/movió la fila mientras
+      // se esperaba la respuesta de SAI, esta relectura evita borrar la fila equivocada.
+      const lastRowActual = hoja.getLastRow();
+      if (lastRowActual < 2) return;
+      const idsActuales = hoja.getRange(2, 1, lastRowActual - 1, 17).getValues();
+
+      const filasAEliminar = [];
+      for (let i = 0; i < idsActuales.length; i++) {
+        const solicitud = String(idsActuales[i][0]).trim();
+        const estado = String(idsActuales[i][16]).toUpperCase().trim();
+        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && idsAEliminar.has(solicitud)) {
+          filasAEliminar.push(i + 2);
+        }
+      }
+
+      for (let j = filasAEliminar.length - 1; j >= 0; j--) {
+        hoja.deleteRow(filasAEliminar[j]);
+      }
+
+      if (filasAEliminar.length > 0) {
+        SpreadsheetApp.flush();
+        Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas.");
+      } else {
+        Logger.log("ℹ️ Las filas candidatas ya no estaban disponibles al momento de borrar (probablemente asignadas mientras tanto).");
+      }
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
     }
   } catch (e) {
     Logger.log("❌ Error en limpiarBiometriasResueltas: " + e.message);
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -566,6 +594,16 @@ function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
   _procesarCortePendientes();
   Logger.log("=== FIN cicloBiometriaPendiente ===");
+}
+
+// Trigger cada hora: revisa las biometrías YA escaladas a la cola de asignación
+// (solicitud, estado APROBADO_PENDIENTE_BIOMETRIA) contra SAI. Si el estado cambió a
+// algo distinto de APROBADO_PENDIENTE_BIOMETRIA/EN_ESTUDIO, se bajan de la cola para
+// que ningún analista llame a un cliente por un caso que ya se resolvió por otro lado.
+function cicloLimpiezaBiometriaEscalada() {
+  Logger.log("=== INICIO cicloLimpiezaBiometriaEscalada ===");
+  limpiarBiometriasResueltas();
+  Logger.log("=== FIN cicloLimpiezaBiometriaEscalada ===");
 }
 
 function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
@@ -1106,6 +1144,213 @@ function corregirFaseParaBroadcastsPrevios() {
   Logger.log("✅ Corrección aplicada: " + corregidas + " filas marcadas WA_ENVIADO (ya habían recibido WhatsApp bajo la lógica anterior).");
 }
 
+// CORRECCIÓN PUNTUAL — correr una sola vez (o cuantas veces haga falta, es idempotente)
+// para reparar casos que entraron a "solicitud" directo desde revisarEnEsperaCodeudor()
+// (Código.js) antes de que esa función enrutara APROBADO_PENDIENTE_BIOMETRIA hacia
+// pendiente_biometria. Busca en "solicitud" filas con ese estado que no tengan su
+// solicitud en pendiente_biometria, las re-consulta en SAI para reconstruir los datos
+// completos, y si SAI confirma que siguen pendientes de biometría las mueve a
+// pendiente_biometria (fase vacía, como si hubieran entrado por el camino correcto) y
+// las borra de "solicitud". Si SAI ya no dice pendiente, se deja la fila donde está y
+// se loguea para revisión manual (no se borra nada solo, para no perder el caso).
+function corregirBiometriasMalEnrutadas() {
+  Logger.log("=== INICIO corregirBiometriasMalEnrutadas ===");
+
+  var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hojaSol || hojaSol.getLastRow() < 2) { Logger.log("No hay filas en solicitud."); return; }
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var setIdsBio = getSetDeIds(hojaBio);
+
+  var lastRowSol = hojaSol.getLastRow();
+  var datosSol = hojaSol.getRange(2, 1, lastRowSol - 1, 17).getValues();
+
+  var candidatos = [];
+  for (var i = 0; i < datosSol.length; i++) {
+    var estado = String(datosSol[i][16]).toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+
+    var solId = String(datosSol[i][0]).trim();
+    if (!solId || setIdsBio.has(solId)) continue; // ya está en pendiente_biometria, no es un caso mal enrutado
+
+    candidatos.push({ fila: i + 2, solicitud: solId });
+  }
+
+  if (candidatos.length === 0) {
+    Logger.log("✅ No hay biometrías mal enrutadas en 'solicitud'.");
+    return;
+  }
+
+  Logger.log(candidatos.length + " candidatos encontrados en 'solicitud' sin match en pendiente_biometria.");
+
+  var paraMover = [];
+  var idsAMover = new Set();
+  var yaNoAplica = 0;
+
+  for (var c = 0; c < candidatos.length; c++) {
+    var datosApi = _consultarSaiIndividual(candidatos[c].solicitud);
+    if (!datosApi) {
+      Logger.log("⚠️ Sin respuesta API para " + candidatos[c].solicitud + ", se deja como está.");
+      continue;
+    }
+
+    var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+    if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+      Logger.log("ℹ️ " + candidatos[c].solicitud + " ya no está pendiente de biometría (" + statusActual + "). Se deja en 'solicitud' para revisión manual.");
+      yaNoAplica++;
+      continue;
+    }
+
+    paraMover.push(_homologarDatosApi(datosApi));
+    idsAMover.add(candidatos[c].solicitud);
+    Utilities.sleep(1000);
+  }
+
+  if (idsAMover.size > 0) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (e) {
+      Logger.log("❌ Lock no disponible para mover biometrías mal enrutadas: " + e.message);
+      return;
+    }
+    var filasBorradas = 0;
+    try {
+      // Re-leer justo antes de borrar por ID (no por el índice capturado antes de las
+      // consultas a SAI): entre esas consultas y este punto pudieron pasar varios
+      // segundos, tiempo en el que otro proceso (asignación, etc.) pudo mover filas y
+      // desfasar los índices originales.
+      var lastRowActual = hojaSol.getLastRow();
+      if (lastRowActual >= 2) {
+        var datosActuales = hojaSol.getRange(2, 1, lastRowActual - 1, 17).getValues();
+        var filasABorrar = [];
+        for (var k = 0; k < datosActuales.length; k++) {
+          var idActual = String(datosActuales[k][0]).trim();
+          var estadoActual = String(datosActuales[k][16]).toUpperCase().trim();
+          if (idsAMover.has(idActual) && estadoActual === "APROBADO_PENDIENTE_BIOMETRIA") {
+            filasABorrar.push(k + 2);
+          }
+        }
+        filasABorrar.sort((a, b) => b - a).forEach(function(fila) { hojaSol.deleteRow(fila); });
+        filasBorradas = filasABorrar.length;
+        SpreadsheetApp.flush();
+      }
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+
+    _guardarLoteBiometriaPendiente(paraMover);
+    Logger.log("✅ " + filasBorradas + " biometrías movidas de 'solicitud' a pendiente_biometria (de " + idsAMover.size + " candidatas confirmadas).");
+  }
+
+  Logger.log("Resumen — movidas: " + idsAMover.size + " | ya no aplica (dejadas para revisión manual): " + yaNoAplica);
+  Logger.log("=== FIN corregirBiometriasMalEnrutadas ===");
+}
+
+// CORRECCIÓN PUNTUAL — correr una sola vez (idempotente) para el caso contrario a
+// corregirBiometriasMalEnrutadas(): solicitudes que quedaron DUPLICADAS — presentes a la
+// vez en "solicitud" (ya disponibles para llamar) y en pendiente_biometria con una fase
+// que todavía no debería permitir eso ("" = nunca contactado, "WA_ENVIADO" = contactado
+// pero sin escalar, "RESUELTA" = ya cerrado en SAI). Solo cuando la fase es "ESCALADA" es
+// correcto que coexistan en ambas hojas — ese es el estado normal post-escalación.
+// Para los demás casos, se borra la fila de "solicitud" y se deja pendiente_biometria
+// intacta para que el caso siga su curso normal (WA en el próximo ciclo horario si aplica,
+// escalación en el próximo corte 8am/12pm). No se toca nada en pendiente_biometria.
+function corregirBiometriasDuplicadasEnCola() {
+  Logger.log("=== INICIO corregirBiometriasDuplicadasEnCola ===");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRowBio = hojaBio.getLastRow();
+  if (lastRowBio < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var fasesPorId = new Map();
+  var datosBio = hojaBio.getRange(2, 1, lastRowBio - 1, 76).getValues();
+  for (var b = 0; b < datosBio.length; b++) {
+    var idBio = String(datosBio[b][0]).trim();
+    if (!idBio) continue;
+    fasesPorId.set(idBio, String(datosBio[b][75]).trim());
+  }
+
+  var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hojaSol || hojaSol.getLastRow() < 2) { Logger.log("No hay filas en solicitud."); return; }
+
+  var lastRowSol = hojaSol.getLastRow();
+  var datosSol = hojaSol.getRange(2, 1, lastRowSol - 1, 17).getValues();
+
+  var idsABorrar = new Set();
+  var detalle = [];
+
+  for (var i = 0; i < datosSol.length; i++) {
+    var estado = String(datosSol[i][16]).toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+
+    var solId = String(datosSol[i][0]).trim();
+    if (!solId || !fasesPorId.has(solId)) continue; // sin match en pendiente_biometria: eso lo cubre corregirBiometriasMalEnrutadas()
+
+    var fase = fasesPorId.get(solId);
+    if (fase === "ESCALADA") continue; // coexistencia correcta, no tocar
+
+    idsABorrar.add(solId);
+    detalle.push(solId + " (fase: " + (fase || "vacía") + ")");
+  }
+
+  if (idsABorrar.size === 0) {
+    Logger.log("✅ No hay duplicados indebidos entre 'solicitud' y pendiente_biometria.");
+    return;
+  }
+
+  Logger.log(idsABorrar.size + " duplicados encontrados: " + detalle.join(", "));
+
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(60000); } catch (e) {
+    Logger.log("❌ Lock no disponible para limpiar duplicados: " + e.message + " — vuelve a correrla en un momento con menos actividad.");
+    return;
+  }
+  try {
+    // Re-leer justo antes de borrar (por ID, no por el índice calculado arriba): la
+    // espera del lock (hasta 60s bajo contención) es tiempo suficiente para que otro
+    // proceso mueva filas y desfase los índices originales. También se vuelve a
+    // consultar la fase en pendiente_biometria por si cambió a ESCALADA mientras se
+    // esperaba, en cuyo caso la coexistencia ya sería correcta y no hay que borrar.
+    var lastRowBioActual = hojaBio.getLastRow();
+    var fasesActuales = new Map();
+    if (lastRowBioActual >= 2) {
+      var datosBioActuales = hojaBio.getRange(2, 1, lastRowBioActual - 1, 76).getValues();
+      for (var b2 = 0; b2 < datosBioActuales.length; b2++) {
+        var idBio2 = String(datosBioActuales[b2][0]).trim();
+        if (idBio2) fasesActuales.set(idBio2, String(datosBioActuales[b2][75]).trim());
+      }
+    }
+
+    var lastRowSolActual = hojaSol.getLastRow();
+    var filasABorrar = [];
+    if (lastRowSolActual >= 2) {
+      var datosSolActuales = hojaSol.getRange(2, 1, lastRowSolActual - 1, 17).getValues();
+      for (var k = 0; k < datosSolActuales.length; k++) {
+        var idActual = String(datosSolActuales[k][0]).trim();
+        var estadoActual = String(datosSolActuales[k][16]).toUpperCase().trim();
+        if (!idsABorrar.has(idActual) || estadoActual !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+        if (fasesActuales.get(idActual) === "ESCALADA") continue; // ya escaló mientras se esperaba, correcto dejarlo
+        filasABorrar.push(k + 2);
+      }
+    }
+
+    filasABorrar.sort((a, b) => b - a).forEach(function(fila) { hojaSol.deleteRow(fila); });
+    SpreadsheetApp.flush();
+    Logger.log("✅ " + filasABorrar.length + " filas duplicadas eliminadas de 'solicitud' (de " + idsABorrar.size + " candidatas confirmadas). Quedan intactas en pendiente_biometria siguiendo su fase actual.");
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+
+  Logger.log("=== FIN corregirBiometriasDuplicadasEnCola ===");
+}
+
 // BACKFILL ÚNICO — correr una sola vez, después de agregarColumnaFechaActualizacionFase(),
 // para poblar fecha_actualizacion_fase en filas que ya tenían fase asignada antes de que
 // existiera la columna. No existe un registro exacto de cuándo cambió cada fase en el pasado
@@ -1581,10 +1826,17 @@ function testEnviarWhatsApp() {
 var ESTADOS_FINALES_GESTION = new Set(['APROBADO', 'RECHAZADO']);
 var VENTANA_DIAS_VERIFICACION_SAI = 3;
 
+// Alcance de verificarAprobacionDesaplazamientos(): por ahora solo desaplazamiento e
+// inducción (columna 61 de Historico_Gestiones, el "tipo asignado"), no digital/canones
+// altos. Ventana de 90 días porque esa es la vigencia real de una solicitud — más allá
+// de eso ya no tiene sentido seguir preguntándole a SAI.
+var TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = new Set(['desaplazamiento', 'induccion']);
+var VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = 90;
+
 /**
- * Verifica contra SAI el resultado real de cualquier caso del Historico_Gestiones
- * principal (digital, canones_altos, desaplazamiento, induccion) que un analista
- * dejó sin resolución definitiva (aplazado, negado con motivo pendiente, etc.).
+ * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducción
+ * (Historico_Gestiones principal) que un analista dejó sin resolución definitiva
+ * (aplazado, negado con motivo pendiente, etc.). No toca digital/canones altos.
  * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
  */
 function verificarAprobacionDesaplazamientos() {
@@ -1597,14 +1849,16 @@ function verificarAprobacionDesaplazamientos() {
 
   const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
   const limiteFecha = new Date();
-  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
+  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION);
 
   var candidatos = [];
   for (var i = 0; i < data.length; i++) {
     var fechaAsig = data[i][24];
     var solicitudId = String(data[i][0]).trim();
     var estadoActual = String(data[i][16]).toUpperCase().trim();
+    var tipoAsignado = String(data[i][60]).trim().toLowerCase();
 
+    if (!TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION.has(tipoAsignado)) continue;
     if (!(fechaAsig instanceof Date)) continue;
     if (fechaAsig < limiteFecha) continue;
     if (!solicitudId) continue;
@@ -1703,9 +1957,12 @@ function triggerVerificacionDesaplazamientos() {
 }
 
 /**
- * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` (vive en el mismo
- * Historico_Gestiones principal). Se mantiene este nombre por si sigue enganchado
- * a un trigger propio en la UI de Apps Script.
+ * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` explícitamente (mismo
+ * Historico_Gestiones, mismo filtro de tipo). Este wrapper es 100% redundante — si el
+ * trigger `triggerVerificacionInducciones` sigue activo en la UI de Apps Script junto
+ * al de `triggerVerificacionDesaplazamientos`, hay que borrar uno de los dos: ambos
+ * corren exactamente el mismo trabajo y disparar los dos duplica innecesariamente las
+ * llamadas a SAI (y el riesgo de que la ejecución se pase del tiempo límite).
  */
 function verificarResultadoInducciones() {
   return verificarAprobacionDesaplazamientos();

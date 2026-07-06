@@ -841,6 +841,7 @@ function revisarEnEsperaCodeudor() {
   }
 
   let reactivadas = [];
+  let reactivadasBiometria = [];
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -903,6 +904,7 @@ function revisarEnEsperaCodeudor() {
           item = {};
         }
         item.estadoGeneral = data.studyStatus;
+        item.resultCode = String(data.resultCode || "").trim();
         item.codeudores = (data.codebtors || []).slice(0, 3).map(c => ({
           nombre: c.name || "",
           documento: c.document || "",
@@ -910,10 +912,18 @@ function revisarEnEsperaCodeudor() {
           email: c.email || "",
           telefono: c.phone || "",
           estado: c.studyStatus || "",
-          resultado: c.resultDescription || ""
+          resultado: c.resultDescription || "",
+          resultCode: String(c.resultCode || "").trim()
         }));
 
-        reactivadas.push(item);
+        // Si salió de CODEUDORES_REQUERIDOS directo a pendiente de biometría, debe seguir
+        // el mismo camino que cualquier otra biometría (WA + cortes 8am/12pm), no entrar
+        // directo a la cola de llamada saltándose ese control.
+        if (estado === "APROBADO_PENDIENTE_BIOMETRIA") {
+          reactivadasBiometria.push(item);
+        } else {
+          reactivadas.push(item);
+        }
         filasAEliminar.push(i);
 
       } catch (e) {
@@ -932,9 +942,28 @@ function revisarEnEsperaCodeudor() {
     lock.releaseLock();
   }
 
+  // Las filas correspondientes en pendiente_codeudor ya se borraron arriba, así que si
+  // alguno de estos dos guardados falla, esos casos se pierden de ambas hojas salvo por
+  // este log. Se manejan en try/catch independientes para que una falla en uno no le
+  // impida al otro guardar los casos que sí le corresponden (son listas independientes).
   if (reactivadas.length > 0) {
-    procesarYGuardarLote(reactivadas);
-    Logger.log(`✅ ${reactivadas.length} solicitudes reactivadas desde pendiente_codeudor hacia Solicitudes.`);
+    try {
+      procesarYGuardarLote(reactivadas);
+      Logger.log(`✅ ${reactivadas.length} solicitudes reactivadas desde pendiente_codeudor hacia Solicitudes.`);
+    } catch (e) {
+      const ids = reactivadas.map(it => it.solicitud).join(", ");
+      Logger.log(`❌ Error guardando ${reactivadas.length} reactivadas en Solicitudes: ${e.message}. IDs a recuperar manualmente: ${ids}`);
+    }
+  }
+
+  if (reactivadasBiometria.length > 0) {
+    try {
+      _guardarLoteBiometriaPendiente(reactivadasBiometria);
+      Logger.log(`✅ ${reactivadasBiometria.length} solicitudes reactivadas desde pendiente_codeudor hacia pendiente_biometria.`);
+    } catch (e) {
+      const ids = reactivadasBiometria.map(it => it.solicitud).join(", ");
+      Logger.log(`❌ Error guardando ${reactivadasBiometria.length} reactivadas en pendiente_biometria: ${e.message}. IDs a recuperar manualmente: ${ids}`);
+    }
   }
 }
 
