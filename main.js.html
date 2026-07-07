@@ -1848,6 +1848,9 @@ function _validarFormBio() {
   if (resFinal.indexOf('APLAZ') !== -1) {
     if (!(document.getElementById('bio_motivoAplazamiento').value || '')) { btn.disabled = true; return; }
   }
+  if (resFinal.indexOf('RECHAZ') !== -1) {
+    if (!(document.getElementById('bio_motivoNegacion').value || '')) { btn.disabled = true; return; }
+  }
   btn.disabled = false;
 }
 

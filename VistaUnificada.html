@@ -482,7 +482,10 @@
                 </div>
                 <div class="col-md-6 d-none" id="bio_contenedor_negacion">
                   <label class="gestion-label"><i class="bi bi-x-circle me-1"></i>Motivo Negación <span class="text-danger">*</span></label>
-                  <textarea id="bio_motivoNegacion" class="form-control gestion-select" rows="2" placeholder="Describe el motivo de negación..." style="border-radius:10px;"></textarea>
+                  <select id="bio_motivoNegacion" class="form-select gestion-select">
+                    <option value="">Seleccione...</option>
+                    <option value="Desistimiento">Desistimiento</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -1102,6 +1105,8 @@ function bioActualizarMotivo() {
   if (contNeg) {
     if (estado === 'RECHAZADO') {
       contNeg.classList.remove('d-none');
+      var selNeg = document.getElementById('bio_motivoNegacion');
+      if (selNeg) selNeg.value = 'Desistimiento';
     } else {
       contNeg.classList.add('d-none');
       var txt = document.getElementById('bio_motivoNegacion');
