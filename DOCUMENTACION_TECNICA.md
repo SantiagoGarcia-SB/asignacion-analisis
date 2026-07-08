@@ -238,7 +238,11 @@ Motor principal de asignación para todos los equipos. Reemplaza a `RequestLead`
    NIVEL 2: Tipo con menor ratio cupo usado (asignadosHoy / cupoDiario)
             Desempate: GLOBAL_PRIORIDAD (DIGITAL_PRIMERO, INDUCCION_PRIMERO, etc.)
    NIVEL 3: Canal externo primero (Canal ≠ EL_LIBERTADOR)
-   NIVEL 4: FIFO (más antiguo). Excepción: desplazamiento = LIFO (más reciente)
+   NIVEL 4: FIFO (más antiguo, por fechaRadicacion).
+            Excepción — desaplazamiento/biometría: ordena por fechaResultado (última
+            actualización SAI), en LIFO (más reciente) o FIFO (más antiguo) según la
+            propiedad ORDEN_DESAPLAZAMIENTO (configurable por el admin desde el
+            dashboard). autoAsignarBiometria() en Biometria.js respeta la misma propiedad.
    ```
 
 8. **VIP y Score (solo DIGITAL y CANONES_ALTOS):** Rotación 2 VIP → 1 otra categoría. Categorías: mediana, grande, pequeña, premier, preferente, micro, pyme.
@@ -696,6 +700,7 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | `endpointSaiNewApi` | Endpoint para consulta por consecutivo | `https://api.sai.co/v2/solicitud/` |
 | `endPointSaiNewApiDate` | Endpoint para consulta masiva por rango de fecha | `https://api.sai.co/v2/requests` |
 | `GLOBAL_PRIORIDAD` | Orden de prioridad de asignación | `NUEVAS_PRIMERO` |
+| `ORDEN_DESAPLAZAMIENTO` | Dentro de la cola de desaplazamiento/biometría, quién se asigna primero según `fechaResultado`: `RECIENTE_PRIMERO` (LIFO, default) o `ANTIGUO_PRIMERO` (FIFO). Configurable por el admin (`admin_setOrdenDesaplazamiento`), aplica a `RequestLeadUnificado` y `autoAsignarBiometria` | `RECIENTE_PRIMERO` |
 | `PUNTERO_ROTACION` | Índice actual de rotación de categorías | `0` |
 | `VIP_COUNT_{email}` | Contador de VIPs consecutivas por analista | `1` |
 | `CUPOS_{EQUIPO}_TOTAL` | Tope total de cupos diarios del equipo | `90` |

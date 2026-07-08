@@ -324,11 +324,9 @@ function autoAsignarBiometria() {
     const lastRowSol = hojaSolicitud.getLastRow();
     const datosSol = hojaSolicitud.getRange(2, 1, lastRowSol - 1, 38).getValues();
 
-    let candidatosParaAsignar = [];
+    let candidatosElegibles = [];
 
     for (let i = 0; i < datosSol.length; i++) {
-      if (cupoDisponible <= 0) break;
-
       const row = datosSol[i];
       const id = String(row[0]).trim();
       if (!id) continue;
@@ -340,14 +338,24 @@ function autoAsignarBiometria() {
       if (asignado !== "") continue;
       if (idsEnGestion.has(id)) continue;
 
-      candidatosParaAsignar.push({ row: row, sheetRowIndex: i + 2 });
+      // fechaResultado (col S / índice 18): misma columna que usa RequestLeadUnificado
+      // para ordenar desaplazamiento, así ambas rutas de asignación quedan consistentes.
+      candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: _parseDateUnif(row[18]) });
       idsEnGestion.add(id);
-      cupoDisponible--;
     }
 
-    if (candidatosParaAsignar.length === 0) {
+    if (candidatosElegibles.length === 0) {
       return { success: false, message: "No hay biometrías pendientes validadas." };
     }
+
+    // El admin decide si se llama primero al más reciente o al más antiguo
+    // (ver admin_getOrdenDesaplazamiento / admin_setOrdenDesaplazamiento en Admin.js).
+    const ordenReciente = (PropertiesService.getScriptProperties().getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
+    candidatosElegibles.sort(function(a, b) {
+      return ordenReciente ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+    });
+
+    const candidatosParaAsignar = candidatosElegibles.slice(0, cupoDisponible);
 
     const fechaAsignacion = new Date();
     const filasAEliminar = [];
@@ -612,6 +620,7 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
   var baseUrl = props.getProperty('INFOBIP_BASE_URL');
   var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
   var sender = props.getProperty('INFOBIP_SENDER');
+  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
 
   if (!apiKey || !baseUrl || !templateName || !sender) {
     Logger.log("⚠️ Infobip no configurado. Broadcast no enviado.");
@@ -640,13 +649,21 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
         telefono = "57" + telefono;
       }
 
+      var templateData = {
+        body: { placeholders: [nombre, solicitudId] },
+        buttons: [{ type: "QUICK_REPLY", parameter: solicitudId }]
+      };
+      if (headerPdfUrl) {
+        templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
+      }
+
       var payload = {
         messages: [{
           from: sender,
           to: telefono,
           content: {
             templateName: templateName,
-            templateData: { body: { placeholders: [nombre, solicitudId] } },
+            templateData: templateData,
             language: "es_CO"
           }
         }]
@@ -1689,6 +1706,7 @@ function enviarBroadcastInfobip(filasBiometria, hojaBio, rowInicio) {
   var baseUrl = props.getProperty('INFOBIP_BASE_URL');
   var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
   var sender = props.getProperty('INFOBIP_SENDER');
+  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
 
   if (!apiKey || !baseUrl || !templateName || !sender) {
     Logger.log("⚠️ Infobip no configurado — faltan Script Properties. Broadcast no enviado.");
@@ -1717,17 +1735,21 @@ function enviarBroadcastInfobip(filasBiometria, hojaBio, rowInicio) {
         telefono = "57" + telefono;
       }
 
+      var templateData = {
+        body: { placeholders: [nombre, solicitudId] },
+        buttons: [{ type: "QUICK_REPLY", parameter: solicitudId }]
+      };
+      if (headerPdfUrl) {
+        templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
+      }
+
       var payload = {
         messages: [{
           from: sender,
           to: telefono,
           content: {
             templateName: templateName,
-            templateData: {
-              body: {
-                placeholders: [nombre, solicitudId]
-              }
-            },
+            templateData: templateData,
             language: "es_CO"
           }
         }]
@@ -1777,6 +1799,7 @@ function configurarInfobip() {
   props.setProperty('INFOBIP_BASE_URL', 'yrrzxg.api.infobip.com');
   props.setProperty('INFOBIP_TEMPLATE_NAME', 'biometria_pendiente');
   props.setProperty('INFOBIP_SENDER', '573148390322');
+  props.setProperty('INFOBIP_HEADER_PDF_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/cc80086a-3754-40f0-a50e-5163febeeb84.pdf');
   Logger.log("✅ Propiedades de Infobip configuradas correctamente.");
 }
 
@@ -1786,10 +1809,19 @@ function testEnviarWhatsApp() {
   var baseUrl = props.getProperty('INFOBIP_BASE_URL');
   var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
   var sender = props.getProperty('INFOBIP_SENDER');
+  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
 
   var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
   var nombre = "Santiago";
   var solicitud = "12345678";
+
+  var templateData = {
+    body: { placeholders: [nombre, solicitud] },
+    buttons: [{ type: "QUICK_REPLY", parameter: solicitud }]
+  };
+  if (headerPdfUrl) {
+    templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
+  }
 
   var url = "https://" + baseUrl + "/whatsapp/1/message/template";
   var payload = {
@@ -1798,11 +1830,49 @@ function testEnviarWhatsApp() {
       to: telefono,
       content: {
         templateName: templateName,
-        templateData: {
-          body: {
-            placeholders: [nombre, solicitud]
-          },
-        },
+        templateData: templateData,
+        language: "es_CO"
+      }
+    }]
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method: "POST",
+    contentType: "application/json",
+    headers: { "Authorization": "App " + apiKey },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  Logger.log("HTTP " + response.getResponseCode());
+  Logger.log(response.getContentText());
+}
+
+function testEnviarWhatsAppDuplicado() {
+  var props = PropertiesService.getScriptProperties();
+  var apiKey = props.getProperty('INFOBIP_API_KEY');
+  var baseUrl = props.getProperty('INFOBIP_BASE_URL');
+  var sender = props.getProperty('INFOBIP_SENDER');
+  var templateName = 'duplicado_de_biometria_pendiente';
+
+  var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
+  var nombre = "Santiago";
+  var solicitud = "12345678";
+
+  var templateData = {
+    body: { placeholders: [nombre, solicitud] },
+    header: { type: "IMAGE", mediaUrl: "https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png" },
+    buttons: [{ type: "QUICK_REPLY", parameter: solicitud }]
+  };
+
+  var url = "https://" + baseUrl + "/whatsapp/1/message/template";
+  var payload = {
+    messages: [{
+      from: sender,
+      to: telefono,
+      content: {
+        templateName: templateName,
+        templateData: templateData,
         language: "es_CO"
       }
     }]

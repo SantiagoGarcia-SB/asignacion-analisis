@@ -754,6 +754,24 @@ function admin_setPrioridadGlobal(nuevaPrioridad) {
   return { success: true, message: "Prioridad actualizada a: " + nuevaPrioridad };
 }
 
+// Orden de asignación para desaplazamiento/biometría: qué caso se llama primero
+// dentro de la cola, según fechaResultado (última actualización de SAI).
+// RECIENTE_PRIMERO = LIFO (comportamiento histórico) | ANTIGUO_PRIMERO = FIFO.
+// Aplica tanto a RequestLeadUnificado (MotorAsignacion.js) como a autoAsignarBiometria (Biometria.js).
+function admin_getOrdenDesaplazamiento() {
+  verificarPermisoAdmin();
+  return PropertiesService.getScriptProperties().getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO';
+}
+
+function admin_setOrdenDesaplazamiento(nuevoOrden) {
+  verificarPermisoAdmin();
+  if (nuevoOrden !== 'RECIENTE_PRIMERO' && nuevoOrden !== 'ANTIGUO_PRIMERO') {
+    return { success: false, message: "Valor de orden inválido." };
+  }
+  PropertiesService.getScriptProperties().setProperty('ORDEN_DESAPLAZAMIENTO', nuevoOrden);
+  return { success: true, message: "Orden de desaplazamiento actualizado a: " + nuevoOrden };
+}
+
 function _getTiposParaCupos() {
   var tipos = _getTiposSolicitud();
   return tipos.filter(function(t) { return t.activo; }).map(function(t) { return { id: t.id, label: t.label }; });

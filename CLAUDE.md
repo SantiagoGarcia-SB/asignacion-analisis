@@ -70,6 +70,7 @@ All IDs are stored in **Script Properties** (not in code). Key properties:
 | `endPointSaiFullStageProd` | SAI endpoint (by request ID) |
 | `endpointSaiNewApi` | SAI endpoint (by consecutive) |
 | `GLOBAL_PRIORIDAD` | Assignment priority mode (DIGITAL_PRIMERO, DESAPLAZAMIENTO_PRIMERO, INDUCCION_PRIMERO) |
+| `ORDEN_DESAPLAZAMIENTO` | Within the desaplazamiento/biometría queue: `RECIENTE_PRIMERO` (LIFO by fechaResultado, default) or `ANTIGUO_PRIMERO` (FIFO). Admin-configurable via `admin_setOrdenDesaplazamiento()`; read by both `RequestLeadUnificado` and `autoAsignarBiometria`. |
 | `PUNTERO_ROTACION` | Category rotation pointer |
 | `CUPOS_{EQUIPO}_{TIPO}` | Daily cupo limits per team and type |
 
@@ -92,7 +93,7 @@ All code must use these exact IDs (singular form). The legacy mapping to Script 
 5. Counts today's assignments per type from `Historico_Gestiones`
 6. Collects pending cases, skipping types with full cupos
 7. Applies canon filter (DIGITAL < 8M, CANONES_ALTOS >= 8M)
-8. **Sorts by 4 levels:** reasignadas first → lowest cupo ratio type → external channel first → FIFO (oldest)
+8. **Sorts by 4 levels:** reasignadas first → lowest cupo ratio type → external channel first → FIFO (oldest). Exception: `desaplazamiento`/biometría orders by `fechaResultado` (last SAI update) instead of `fechaRadicacion`, direction controlled by `ORDEN_DESAPLAZAMIENTO` (`RECIENTE_PRIMERO`/LIFO by default, or `ANTIGUO_PRIMERO`/FIFO) — same property also governs `autoAsignarBiometria()` in `Biometria.js`.
 9. For DIGITAL/CANONES_ALTOS: applies VIP rotation + score categories
 10. Writes assignment, moves row to `Historico_Gestiones`, deletes from source
 11. Releases lock

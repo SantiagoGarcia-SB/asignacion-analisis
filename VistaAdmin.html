@@ -923,6 +923,17 @@ body { font-family:'Manrope',sans-serif; background:var(--bg-page); color:var(--
                 <i class="bi bi-mortarboard"></i> Inducciones
             </button>
         </div>
+        <div class="segmented-control" id="segmentedOrdenBio" title="Dentro de Desaplazamiento/Biometría, ¿a quién se llama primero según la fecha de resultado de SAI?">
+            <button class="seg-btn active" data-value="RECIENTE_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                <i class="bi bi-sort-numeric-down-alt"></i> Bio: Reciente
+            </button>
+            <button class="seg-btn" data-value="ANTIGUO_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                <i class="bi bi-sort-numeric-down"></i> Bio: Antiguo
+            </button>
+        </div>
+        <button class="btn-outline-brand" id="btn-ayuda-orden" onclick="mostrarAyudaOrdenAsignacion()" title="¿Qué hacen estos botones?">
+            <i class="bi bi-question-circle"></i>
+        </button>
         <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()">
             <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
         </button>
@@ -2217,7 +2228,7 @@ window.onload = function() {
     }).getEmailUsuario();
 
     google.script.run.withSuccessHandler(function(res) {
-        document.querySelectorAll('.seg-btn').forEach(function(btn) {
+        document.querySelectorAll('#segmentedPrioridad .seg-btn').forEach(function(btn) {
             btn.classList.remove('active');
             if (btn.getAttribute('data-value') === res) btn.classList.add('active');
         });
@@ -2292,8 +2303,122 @@ function cargarPrioridadActual() {
     }).admin_getPrioridadGlobal();
 }
 
+// ==============================================================
+// AYUDA: EXPLICACIÓN DE LOS BOTONES DE PRIORIDAD Y ORDEN
+// ==============================================================
+function mostrarAyudaOrdenAsignacion() {
+    Swal.fire({
+        title: '¿Qué hacen estos botones?',
+        width: 620,
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#253150',
+        html: `
+            <div style="text-align:left; font-size:0.92rem; line-height:1.5;">
+                <p style="margin-bottom:6px;"><i class="bi bi-laptop"></i> <i class="bi bi-fingerprint"></i> <i class="bi bi-mortarboard"></i>
+                <b>Digital / Desaplazamiento / Inducciones</b></p>
+                <p style="color:#555; margin-top:0;">
+                    Cuando un analista pide su siguiente caso y tiene varios tipos disponibles
+                    (digital, desaplazamiento, inducción), este botón decide <b>cuál tipo se le entrega primero</b>.
+                    Ejemplo: si está activo "Desaplazamiento", un analista con casos digitales y de
+                    desaplazamiento pendientes recibirá primero el de desaplazamiento.
+                </p>
+                <hr style="margin:14px 0;">
+                <p style="margin-bottom:6px;"><i class="bi bi-sort-numeric-down-alt"></i> <i class="bi bi-sort-numeric-down"></i>
+                <b>Bio: Reciente / Bio: Antiguo</b></p>
+                <p style="color:#555; margin-top:0;">
+                    Ya dentro de la fila de <b>Desaplazamiento/Biometría</b>, decide <b>a qué cliente se llama primero</b>,
+                    según la fecha en que SAI actualizó por última vez su caso:
+                </p>
+                <ul style="color:#555; margin-top:0; padding-left:20px;">
+                    <li><b>Bio: Reciente</b> → se llama primero al cliente cuyo caso SAI actualizó <b>más recientemente</b>.</li>
+                    <li><b>Bio: Antiguo</b> → se llama primero al cliente que <b>lleva más tiempo esperando</b> desde su última
+                    actualización de SAI (recomendado para que ningún caso quede esperando indefinidamente).</li>
+                </ul>
+                <hr style="margin:14px 0;">
+                <p style="margin-bottom:6px;"><i class="bi bi-exclamation-octagon-fill" style="color:#e11d48;"></i>
+                <b>PAUSAR</b></p>
+                <p style="color:#555; margin-top:0;">
+                    Botón de emergencia: pone a <b>TODOS los analistas en INACTIVO</b> de inmediato, deteniendo
+                    la asignación automática de casos en todo el sistema. Úsalo solo si hay que frenar la operación
+                    por completo (ej. un problema en la data o en SAI). No se puede deshacer con un clic —
+                    hay que reactivar a cada analista manualmente después.
+                </p>
+                <hr style="margin:14px 0;">
+                <p style="margin-bottom:6px;"><i class="bi bi-clipboard-check"></i> <b>Verificar Bio</b></p>
+                <p style="color:#555; margin-top:0;">
+                    Consulta en SAI el estado actual de <b>todos los desaplazamientos/biometrías asignados hoy</b>
+                    (toma 1-3 minutos). Sirve para confirmar cuáles ya se resolvieron o cambiaron de estado desde
+                    que se asignaron, sin esperar al próximo ciclo automático.
+                </p>
+            </div>
+        `
+    });
+}
+
+// ==============================================================
+// ORDEN DE ASIGNACIÓN DESAPLAZAMIENTO/BIOMETRÍA (RECIENTE vs ANTIGUO PRIMERO)
+// ==============================================================
+function seleccionarOrdenDesaplazamiento(botonClick) {
+    const nuevoOrden = botonClick.getAttribute('data-value');
+    const textoOrden = botonClick.innerText.trim();
+
+    if (botonClick.classList.contains('active')) return;
+
+    Swal.fire({
+        title: '¿Cambiar el orden de Desaplazamiento/Biometría?',
+        text: 'A partir de ahora se llamará primero a: ' + textoOrden + ' (según fecha de resultado de SAI).',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#253150',
+        cancelButtonColor: '#706F6F',
+        confirmButtonText: 'Sí, aplicar cambio'
+    }).then(function(result) {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Actualizando...',
+                allowOutsideClick: false,
+                didOpen: function() { Swal.showLoading(); }
+            });
+
+            google.script.run
+                .withSuccessHandler(function(res) {
+                    if (res && res.success) {
+                        Swal.fire('¡Orden Actualizado!', 'La cola de Desaplazamiento/Biometría ahora prioriza: ' + textoOrden + '.', 'success');
+                        document.querySelectorAll('#segmentedOrdenBio .seg-btn').forEach(function(btn) {
+                            btn.classList.remove('active');
+                        });
+                        botonClick.classList.add('active');
+                    } else {
+                        Swal.fire('Error', (res && res.message) || 'Error desconocido', 'error');
+                        cargarOrdenDesaplazamientoActual();
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire('Error de conexión', err.message, 'error');
+                    cargarOrdenDesaplazamientoActual();
+                })
+                .admin_setOrdenDesaplazamiento(nuevoOrden);
+        }
+    });
+}
+
+function cargarOrdenDesaplazamientoActual() {
+    google.script.run.withSuccessHandler(function(ordenGuardado) {
+        if (ordenGuardado) {
+            document.querySelectorAll('#segmentedOrdenBio .seg-btn').forEach(function(btn) {
+                if (btn.getAttribute('data-value') === ordenGuardado) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+    }).admin_getOrdenDesaplazamiento();
+}
+
 document.addEventListener("DOMContentLoaded", function() {
     cargarPrioridadActual();
+    cargarOrdenDesaplazamientoActual();
 });
 
 var _seccionCargada = {};

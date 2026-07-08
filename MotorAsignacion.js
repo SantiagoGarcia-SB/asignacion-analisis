@@ -556,13 +556,19 @@ function RequestLeadUnificado(equipoIdOverride) {
       }
     });
 
+    // Desaplazamiento/biometría: el admin decide si se llama primero al más reciente
+    // (RECIENTE_PRIMERO, valor histórico por defecto) o al más antiguo (ANTIGUO_PRIMERO),
+    // siempre según fechaResultado (ver _recolectarPendientesPrincipal).
+    var ordenDesaplazamientoReciente = (propsLocal.getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
+
     pendientes.sort(function(a, b) {
       if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
       if (a.tipo !== 'desaplazamiento' && b.tipo !== 'desaplazamiento') {
         if (a.esExterno && !b.esExterno) return -1;
         if (!a.esExterno && b.esExterno) return 1;
       }
-      return a.tipo === 'desaplazamiento' ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+      if (a.tipo === 'desaplazamiento') return ordenDesaplazamientoReciente ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+      return a.fechaOrd - b.fechaOrd;
     });
 
     // === SELECCIONAR CANDIDATOS (respeta maxAsignarPorLlamada) ===
