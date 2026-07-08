@@ -773,10 +773,50 @@ function _homologarDatosApi(item) {
   };
 }
 
+// Ley 2300 de 2023: las comunicaciones de cobranza (incluye WhatsApp) solo se pueden
+// enviar lunes a viernes 7:00-19:00 y sábados 8:00-15:00. Domingos y festivos, prohibido.
+// Se valida aquí (y no solo confiando en el horario del trigger en GAS) para que el
+// envío quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
+function _dentroDeVentanaLey2300() {
+  var ahora = new Date();
+  var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
+  var horaStr = Utilities.formatDate(ahora, "GMT-5", "HH:mm");
+  var horaNum = parseInt(horaStr.split(':')[0], 10) + parseInt(horaStr.split(':')[1], 10) / 60;
+
+  // Mediodía fijo para hallar el día de la semana en zona Bogotá sin líos de DST/borde.
+  var dow = new Date(fechaStr + "T12:00:00").getDay(); // 0=domingo … 6=sábado
+  if (dow === 0) return false;
+
+  try {
+    var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaFestivos = ss.getSheetByName("Festivos");
+    if (hojaFestivos) {
+      var valores = hojaFestivos.getDataRange().getValues();
+      for (var i = 0; i < valores.length; i++) {
+        var celda = valores[i][0];
+        var fFestivo = celda instanceof Date ? celda : new Date(celda);
+        if (!isNaN(fFestivo.getTime()) && Utilities.formatDate(fFestivo, "GMT-5", "yyyy-MM-dd") === fechaStr) {
+          return false;
+        }
+      }
+    }
+  } catch (e) {
+    Logger.log("⚠️ No se pudo verificar hoja Festivos para Ley 2300, se asume día hábil: " + e.message);
+  }
+
+  if (dow === 6) return horaNum >= 8 && horaNum < 15;
+  return horaNum >= 7 && horaNum < 19;
+}
+
 // Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
 // cumplieron la ventana de 4h desde fecha_resultado y siguen pendientes en SAI.
 function _enviarPrimerContactoBiometria() {
   Logger.log("--- Primer contacto: evaluación de pendientes en fase vacía ---");
+
+  if (!_dentroDeVentanaLey2300()) {
+    Logger.log("⏸️ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos). Envío de WA pospuesto al próximo corte hábil.");
+    return;
+  }
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -883,6 +923,11 @@ function _enviarPrimerContactoBiometria() {
 // justo lo que la ventana normal evita. Dejar pasar un rato entre una y otra.
 function forzarPrimerContactoBiometriaManual() {
   Logger.log("=== INICIO forzarPrimerContactoBiometriaManual ===");
+
+  if (!_dentroDeVentanaLey2300()) {
+    Logger.log("⏸️ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos). No se envía, ni siquiera forzado manualmente.");
+    return;
+  }
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
