@@ -5,6 +5,23 @@
 const ID_WAREHOUSE_USUARIOS = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0';
 const ID_SHEET_BIOMETRIA_PENDIENTE = '1gHW1RFMVd0h4HZr2xTrFnx-A5Pk_npJs-bAk8GOx2h0';
 const NOMBRE_HOJA_PENDIENTE_BIOMETRIA = 'pendiente_biometria';
+// Pestaña de archivo, en el mismo spreadsheet de pendiente_biometria (ID_SHEET_BIOMETRIA_PENDIENTE):
+// bandeja de solo revisión manual para solicitudes de biometría que agotaron su ventana de ~12h
+// en la cola de llamada ("solicitud") sin ser asignadas. Ver _archivarColaBiometriaVencida().
+const NOMBRE_HOJA_BIOMETRIA_ARCHIVADA = 'biometria_cola_archivada';
+
+// Header de la pestaña de archivo: replica el ancho de fila real de "solicitud" (58 columnas,
+// HEADER_SOLICITUDES + 3 bloques de codeudor de 7 columnas cada uno) más 3 columnas de metadata.
+function _headerBiometriaArchivada() {
+  var header = HEADER_SOLICITUDES.slice();
+  [1, 2, 3].forEach(function(n) {
+    header = header.concat([
+      'codeudor' + n + '_nombre', 'codeudor' + n + '_documento', 'codeudor' + n + '_tipoDoc',
+      'codeudor' + n + '_email', 'codeudor' + n + '_telefono', 'codeudor' + n + '_estado', 'codeudor' + n + '_resultado'
+    ]);
+  });
+  return header.concat(['fecha_archivado', 'corte_origen', 'umbral_ventana_aplicado']);
+}
 
 function getEndPointNewApiDate() { return PropertiesService.getScriptProperties().getProperty('endPointSaiNewApiDate'); }
 function getEndPointNewSai() { return PropertiesService.getScriptProperties().getProperty('endpointSaiNewApi'); }
@@ -98,7 +115,7 @@ function limpiarBiometriasResueltas() {
     const lastRow = hoja.getLastRow();
     if (lastRow < 2) return;
 
-    const datos = hoja.getRange(2, 1, lastRow - 1, 17).getValues();
+    const datos = hoja.getRange(2, 1, lastRow - 1, 19).getValues();
 
     const bioIds = new Set();
 
@@ -128,6 +145,7 @@ function limpiarBiometriasResueltas() {
     const sFin = formatDateCustom(new Date());
 
     const estadosSai = new Map();
+    const fechasSai = new Map();
     let paginaActual = 1;
     let totalPaginas = 1;
 
@@ -152,6 +170,8 @@ function limpiarBiometriasResueltas() {
         const id = String(item.consecutive || "").trim();
         if (id && bioIds.has(id)) {
           estadosSai.set(id, String(item.studyStatus || "").toUpperCase().trim());
+          const fechaResultadoApi = item.lastResultDate || item.lastMovementDate || "";
+          if (fechaResultadoApi) fechasSai.set(id, fechaResultadoApi);
         }
       });
 
@@ -168,6 +188,7 @@ function limpiarBiometriasResueltas() {
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
     const idsAEliminar = new Set();
+    const fechasAActualizar = new Map(); // id → nueva fechaResultado (texto normalizado)
 
     for (let i = 0; i < datos.length; i++) {
       const estado = String(datos[i][16]).toUpperCase().trim();
@@ -180,11 +201,21 @@ function limpiarBiometriasResueltas() {
       if (statusSai && !ESTADOS_CONSERVAR.has(statusSai)) {
         idsAEliminar.add(solicitud);
         Logger.log("🗑️ Solicitud " + solicitud + " cambió a " + statusSai);
+        continue;
+      }
+
+      const fechaApi = fechasSai.get(solicitud);
+      if (fechaApi) {
+        const fechaNueva = _normalizarFechaApiComoTexto(fechaApi);
+        const fechaActual = String(datos[i][18] || "").trim();
+        if (fechaNueva && fechaNueva !== fechaActual) {
+          fechasAActualizar.set(solicitud, fechaNueva);
+        }
       }
     }
 
-    if (idsAEliminar.size === 0) {
-      Logger.log("✅ Ninguna biometría cambió de estado.");
+    if (idsAEliminar.size === 0 && fechasAActualizar.size === 0) {
+      Logger.log("✅ Ninguna biometría cambió de estado ni de fechaResultado.");
       return;
     }
 
@@ -197,18 +228,24 @@ function limpiarBiometriasResueltas() {
     }
 
     try {
-      // Re-leer justo antes de borrar: si otro proceso ya asignó/movió la fila mientras
-      // se esperaba la respuesta de SAI, esta relectura evita borrar la fila equivocada.
+      // Re-leer justo antes de actuar: si otro proceso ya asignó/movió la fila mientras
+      // se esperaba la respuesta de SAI, esta relectura evita tocar la fila equivocada.
       const lastRowActual = hoja.getLastRow();
       if (lastRowActual < 2) return;
-      const idsActuales = hoja.getRange(2, 1, lastRowActual - 1, 17).getValues();
+      const idsActuales = hoja.getRange(2, 1, lastRowActual - 1, 19).getValues();
 
       const filasAEliminar = [];
+      let actualizadas = 0;
       for (let i = 0; i < idsActuales.length; i++) {
         const solicitud = String(idsActuales[i][0]).trim();
         const estado = String(idsActuales[i][16]).toUpperCase().trim();
-        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && idsAEliminar.has(solicitud)) {
+        if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+
+        if (idsAEliminar.has(solicitud)) {
           filasAEliminar.push(i + 2);
+        } else if (fechasAActualizar.has(solicitud)) {
+          hoja.getRange(i + 2, 19).setValue(fechasAActualizar.get(solicitud));
+          actualizadas++;
         }
       }
 
@@ -216,11 +253,11 @@ function limpiarBiometriasResueltas() {
         hoja.deleteRow(filasAEliminar[j]);
       }
 
-      if (filasAEliminar.length > 0) {
+      if (filasAEliminar.length > 0 || actualizadas > 0) {
         SpreadsheetApp.flush();
-        Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas.");
+        Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas. " + actualizadas + " fechaResultado actualizadas.");
       } else {
-        Logger.log("ℹ️ Las filas candidatas ya no estaban disponibles al momento de borrar (probablemente asignadas mientras tanto).");
+        Logger.log("ℹ️ Las filas candidatas ya no estaban disponibles al momento de actuar (probablemente asignadas mientras tanto).");
       }
     } finally {
       if (lock.hasLock()) lock.releaseLock();
@@ -595,11 +632,162 @@ function cicloPrimerContactoBiometria() {
   Logger.log("=== FIN cicloPrimerContactoBiometria ===");
 }
 
+// Calcula el inicio de la ventana de ~12h que se abre en el corte actual (8am o 12pm),
+// usada por _archivarColaBiometriaVencida() para decidir qué queda fuera de plazo.
+// Corte 8am (hora < 12): la ventana que se abre es "ayer 12:00pm–11:59pm" → umbral = ayer 12:00pm.
+// Corte 12pm (hora >= 12): la ventana que se abre es "hoy 00:00–11:59am" → umbral = hoy 00:00.
+// Se deriva de la hora real de ejecución (no de un parámetro fijo) para poder probarla manualmente.
+function _calcularUmbralArchivoColaBiometria(ahora) {
+  var base = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  if (ahora.getHours() < 12) {
+    var ayerMediodia = new Date(base.getTime() - 12 * 60 * 60 * 1000);
+    return { umbral: ayerMediodia, corteOrigen: "CORTE_8AM" };
+  }
+  return { umbral: base, corteOrigen: "CORTE_12PM" };
+}
+
+// Archiva a biometria_cola_archivada (mismo spreadsheet de pendiente_biometria) las
+// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuyo fechaResultado
+// (con fallback a fechaRadicacion) sea anterior al umbral del corte actual — es decir, que
+// tuvieron un ciclo completo de ~12h para ser llamadas y no se lograron asignar.
+// Es una bandeja de solo revisión manual: no hay reactivación automática.
+function _archivarColaBiometriaVencida() {
+  Logger.log("--- Archivado de cola de biometría vencida ---");
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hoja) { Logger.log("Hoja 'solicitud' no encontrada."); return; }
+
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en 'solicitud'."); return; }
+
+  var ahora = new Date();
+  var vent = _calcularUmbralArchivoColaBiometria(ahora);
+
+  // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
+  var datos = hoja.getRange(2, 1, lastRow - 1, 58).getValues();
+  var idsCandidatos = new Set();
+
+  for (var i = 0; i < datos.length; i++) {
+    var row = datos[i];
+    var estado = String(row[16]).toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+    var asignado = String(row[27]).trim();
+    if (asignado !== "") continue;
+
+    var solicitud = String(row[0]).trim();
+    if (!solicitud) continue;
+
+    var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
+    if (!fecha) {
+      Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable — no se archiva.");
+      continue;
+    }
+
+    if (fecha.getTime() < vent.umbral.getTime()) {
+      idsCandidatos.add(solicitud);
+    }
+  }
+
+  if (idsCandidatos.size === 0) {
+    Logger.log("✅ No hay solicitudes fuera de ventana (" + vent.corteOrigen + ") para archivar.");
+    return;
+  }
+
+  Logger.log(idsCandidatos.size + " solicitudes candidatas a archivar (" + vent.corteOrigen + ").");
+
+  // Fase 2 — con lock, solo para actuar: re-leer y re-filtrar por si algún analista tomó
+  // el caso entre la fase 1 y este punto (mismo patrón que limpiarBiometriasResueltas()).
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(30000); } catch (e) {
+    Logger.log("❌ Lock no disponible para archivar cola de biometría: " + e.message);
+    return;
+  }
+
+  try {
+    var lastRowActual = hoja.getLastRow();
+    if (lastRowActual < 2) return;
+    var datosActuales = hoja.getRange(2, 1, lastRowActual - 1, 58).getValues();
+
+    var filasAArchivar = [];
+    for (var j = 0; j < datosActuales.length; j++) {
+      var rowAct = datosActuales[j];
+      var estadoAct = String(rowAct[16]).toUpperCase().trim();
+      if (estadoAct !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+      var asignadoAct = String(rowAct[27]).trim();
+      if (asignadoAct !== "") continue;
+      var solicitudAct = String(rowAct[0]).trim();
+      if (!solicitudAct || !idsCandidatos.has(solicitudAct)) continue;
+      filasAArchivar.push({ fila: j + 2, datosFila: rowAct });
+    }
+
+    if (filasAArchivar.length === 0) {
+      Logger.log("ℹ️ Las candidatas ya no estaban disponibles al momento de archivar (probablemente asignadas mientras tanto).");
+      return;
+    }
+
+    var ssArchivo = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaArchivo = ssArchivo.getSheetByName(NOMBRE_HOJA_BIOMETRIA_ARCHIVADA);
+    if (!hojaArchivo) {
+      hojaArchivo = ssArchivo.insertSheet(NOMBRE_HOJA_BIOMETRIA_ARCHIVADA);
+      hojaArchivo.appendRow(_headerBiometriaArchivada());
+    }
+
+    var setIdsArchivo = getSetDeIds(hojaArchivo);
+    var ahoraTexto = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    var umbralTexto = Utilities.formatDate(vent.umbral, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+    var filasParaEscribir = [];
+    var idsAQuitarDeSolicitud = new Set();
+    filasAArchivar.forEach(function(item) {
+      var solId = String(item.datosFila[0]).trim();
+      if (setIdsArchivo.has(solId)) {
+        Logger.log("⚠️ Solicitud " + solId + " ya estaba en " + NOMBRE_HOJA_BIOMETRIA_ARCHIVADA + " — se quita de 'solicitud' sin duplicar.");
+      } else {
+        filasParaEscribir.push(item.datosFila.concat([ahoraTexto, vent.corteOrigen, umbralTexto]));
+        setIdsArchivo.add(solId);
+      }
+      idsAQuitarDeSolicitud.add(solId);
+    });
+
+    if (filasParaEscribir.length > 0) {
+      var rowInicio = hojaArchivo.getLastRow() + 1;
+      var rango = hojaArchivo.getRange(rowInicio, 1, filasParaEscribir.length, filasParaEscribir[0].length);
+      rango.setNumberFormat("@");
+      rango.setValues(filasParaEscribir);
+    }
+
+    // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes (cientos de
+    // filas), cientos de deleteRow() secuenciales son lentos y pueden agotar la cuota de
+    // escritura del servicio de Sheets ("Service Spreadsheets failed..."). En su lugar se
+    // reescribe toda la hoja de una sola vez, conservando el orden de las filas que quedan.
+    var filasRestantes = datosActuales.filter(function(row) {
+      return !idsAQuitarDeSolicitud.has(String(row[0]).trim());
+    });
+
+    hoja.getRange(2, 1, datosActuales.length, 58).clearContent();
+    if (filasRestantes.length > 0) {
+      hoja.getRange(2, 1, filasRestantes.length, 58).setValues(filasRestantes);
+    }
+
+    SpreadsheetApp.flush();
+    Logger.log("✅ " + idsAQuitarDeSolicitud.size + " solicitudes archivadas en " + NOMBRE_HOJA_BIOMETRIA_ARCHIVADA + " (" + vent.corteOrigen + ").");
+  } catch (e) {
+    Logger.log("❌ Error en _archivarColaBiometriaVencida: " + e.message);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
 // Trigger 8am y 12pm: escala a la cola de asignación (llamada) los pendientes que ya
 // están en fase WA_ENVIADO (segundo contacto) y SAI sigue diciendo pendiente.
 // Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
+// También, en este mismo corte: refresca fechaResultado contra SAI, archiva lo que agotó
+// su ventana de ~12h sin ser asignado, y solo entonces escala los nuevos pendientes.
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
+  limpiarBiometriasResueltas();
+  _archivarColaBiometriaVencida();
   _procesarCortePendientes();
   Logger.log("=== FIN cicloBiometriaPendiente ===");
 }
@@ -1680,23 +1868,7 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
       }
 
       [item.fechaRadicacion, item.fechaResultado].forEach(function(f, idx) {
-        var valor = String(f || "").trim();
-        var resultado = valor;
-        if (valor && valor !== "En Proceso" && valor !== "null") {
-          try {
-            var fObj;
-            if (valor.includes("/")) {
-              var p = valor.split(/[\/\s:]/);
-              fObj = new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0, p[5] || 0);
-            } else {
-              fObj = new Date(valor);
-            }
-            if (!isNaN(fObj.getTime())) {
-              resultado = Utilities.formatDate(fObj, "GMT-5", "yyyy-MM-dd HH:mm:ss");
-            }
-          } catch (e) {}
-        }
-        fila[17 + idx] = resultado;
+        fila[17 + idx] = _normalizarFechaApiComoTexto(f);
       });
 
       fila[59] = ahora;  // fecha_consulta_sai

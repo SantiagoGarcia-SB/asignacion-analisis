@@ -610,6 +610,32 @@ function construirItemHomologado(item, estadoGeneral, mapaTipos) {
   };
 }
 
+// Parsea una fecha proveniente de la API SAI (ISO o "dd/MM/yyyy HH:mm:ss") y la
+// devuelve como texto normalizado "yyyy-MM-dd HH:mm:ss" (GMT-5), igual al formato
+// que ya se guarda en las columnas fechaRadicacion/fechaResultado. Si no se puede
+// parsear, devuelve el valor original tal cual (nunca lanza).
+function _normalizarFechaApiComoTexto(valorApi) {
+  let valor = String(valorApi || "").trim();
+  let resultado = valor;
+  if (valor && valor !== "En Proceso" && valor !== "null") {
+    try {
+      let fObj;
+      if (valor.includes("/")) {
+        const p = valor.split(/[\/\s:]/);
+        fObj = new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0, p[5] || 0);
+      } else {
+        fObj = new Date(valor);
+      }
+      if (!isNaN(fObj.getTime())) {
+        resultado = Utilities.formatDate(fObj, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+      }
+    } catch (e) {
+      Logger.log(`Advertencia: No se pudo parsear la fecha ${valor}.`);
+    }
+  }
+  return resultado;
+}
+
 function actualizarSolicitudesNuevasAPI() {
   Logger.log("Iniciando ejecución");
   const hoy = new Date();
@@ -1051,26 +1077,7 @@ function procesarYGuardarLote(listaObjetos) {
 
 
       [item.fechaRadicacion, item.fechaResultado].forEach((f, idx) => {
-        let valor = String(f || "").trim();
-        let resultado = valor;
-        if (valor && valor !== "En Proceso" && valor !== "null") {
-          try {
-            let fObj;
-            if (valor.includes("/")) {
-              const p = valor.split(/[\/\s:]/);
-              fObj = new Date(p[2], p[1] - 1, p[0], p[3] || 0, p[4] || 0, p[5] || 0);
-            } else {
-              fObj = new Date(valor);
-            }
-            
-            if (!isNaN(fObj.getTime())) {
-              resultado = Utilities.formatDate(fObj, "GMT-5", "yyyy-MM-dd HH:mm:ss");
-            }
-          } catch(e) {
-            Logger.log(`Advertencia: No se pudo parsear la fecha ${valor}.`);
-          }
-        }
-        fila[17 + idx] = resultado; 
+        fila[17 + idx] = _normalizarFechaApiComoTexto(f);
       });
 
       filaP.push(fila);
