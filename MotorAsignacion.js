@@ -628,6 +628,15 @@ function RequestLeadUnificado(equipoIdOverride) {
       _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
     });
 
+    // Registrar en pendiente_biometria las biometrías asignadas (tipo 'desaplazamiento').
+    var idsBioAsignadas = principales
+      .filter(function(lead) { return lead.tipo === 'desaplazamiento'; })
+      .map(function(lead) { return String(lead.rowData[0] || '').trim(); })
+      .filter(function(id) { return id; });
+    if (idsBioAsignadas.length > 0) {
+      _actualizarFaseBiometriaPendiente(idsBioAsignadas, "ASIGNADA");
+    }
+
     var _resumenTipos = {};
     seleccionados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
     var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');

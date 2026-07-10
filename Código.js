@@ -946,9 +946,11 @@ function revisarEnEsperaCodeudor() {
         // el mismo camino que cualquier otra biometría (WA + cortes 8am/12pm), no entrar
         // directo a la cola de llamada saltándose ese control. Pero solo si resultCode
         // confirma que hay alguien pendiente de verdad (500/503) — si no, a pendiente_biometria
-        // no debe llegar y se deja como reactivación normal hacia la cola de llamada.
+        // no debe llegar y se descarta (no es biometría real pendiente).
         if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && _esResultCodeBiometriaPendiente(item.resultCode)) {
           reactivadasBiometria.push(item);
+        } else if (estado === "APROBADO_PENDIENTE_BIOMETRIA") {
+          Logger.log("ℹ️ Solicitud " + solicitud + " tiene estado APROBADO_PENDIENTE_BIOMETRIA pero resultCode " + item.resultCode + " — no es biometría real, se descarta.");
         } else {
           reactivadas.push(item);
         }

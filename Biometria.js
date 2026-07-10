@@ -1,34 +1,20 @@
-// OBSOLETA: biometrías ahora se toman de la hoja "solicitud" en ID_WAREHOUSE_USUARIOS
+// OBSOLETA: biometrÃ­as ahora se toman de la hoja "solicitud" en ID_WAREHOUSE_USUARIOS
 // const ID_SHEET_ORIGEN = '1tmXIxNB65eAUQah8dxvSJSJVKmR25ZiuM59SLX0NYME';
-// OBSOLETA: biometría ahora usa Historico_Gestiones en ID_WAREHOUSE_USUARIOS
+// OBSOLETA: biometrÃ­a ahora usa Historico_Gestiones en ID_WAREHOUSE_USUARIOS
 // const ID_SHEET_GESTION = '1lT9BxWAKgo9xed9xaAbbFqna304TWNbzL3v2302ZvOQ';
 const ID_WAREHOUSE_USUARIOS = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0';
 const ID_SHEET_BIOMETRIA_PENDIENTE = '1gHW1RFMVd0h4HZr2xTrFnx-A5Pk_npJs-bAk8GOx2h0';
 const NOMBRE_HOJA_PENDIENTE_BIOMETRIA = 'pendiente_biometria';
-// Pestaña de archivo, en el mismo spreadsheet de pendiente_biometria (ID_SHEET_BIOMETRIA_PENDIENTE):
-// bandeja de solo revisión manual para solicitudes de biometría que agotaron su ventana de ~12h
-// en la cola de llamada ("solicitud") sin ser asignadas. Ver _archivarColaBiometriaVencida().
+// OBSOLETA â€” la trazabilidad de archivadas ahora se gestiona directamente en
+// pendiente_biometria con fase "ARCHIVADA". La hoja se conserva como registro histÃ³rico.
 const NOMBRE_HOJA_BIOMETRIA_ARCHIVADA = 'biometria_cola_archivada';
-
-// Header de la pestaña de archivo: replica el ancho de fila real de "solicitud" (58 columnas,
-// HEADER_SOLICITUDES + 3 bloques de codeudor de 7 columnas cada uno) más 3 columnas de metadata.
-function _headerBiometriaArchivada() {
-  var header = HEADER_SOLICITUDES.slice();
-  [1, 2, 3].forEach(function(n) {
-    header = header.concat([
-      'codeudor' + n + '_nombre', 'codeudor' + n + '_documento', 'codeudor' + n + '_tipoDoc',
-      'codeudor' + n + '_email', 'codeudor' + n + '_telefono', 'codeudor' + n + '_estado', 'codeudor' + n + '_resultado'
-    ]);
-  });
-  return header.concat(['fecha_archivado', 'corte_origen', 'umbral_ventana_aplicado']);
-}
 
 function getEndPointNewApiDate() { return PropertiesService.getScriptProperties().getProperty('endPointSaiNewApiDate'); }
 function getEndPointNewSai() { return PropertiesService.getScriptProperties().getProperty('endpointSaiNewApi'); }
 
-// SUSPENDIDA: biometrías ahora se toman de la hoja "solicitud" (APROBADO_PENDIENTE_BIOMETRIA)
+// SUSPENDIDA: biometrÃ­as ahora se toman de la hoja "solicitud" (APROBADO_PENDIENTE_BIOMETRIA)
 function descargarBiometriasAPI() {
-  Logger.log("descargarBiometriasAPI SUSPENDIDA — biometrías se toman de hoja solicitud");
+  Logger.log("descargarBiometriasAPI SUSPENDIDA â€” biometrÃ­as se toman de hoja solicitud");
   return;
 }
 
@@ -62,7 +48,7 @@ function updateBiometriagpt(solicitud) {
     const status = String(parsed.studyStatus || '').trim().toUpperCase();
     return status === 'APROBADO_PENDIENTE_BIOMETRIA';
   } catch (e) {
-    console.error("updateBiometriagpt - Excepción para solicitud " + solicitud + ": " + e.toString());
+    console.error("updateBiometriagpt - ExcepciÃ³n para solicitud " + solicitud + ": " + e.toString());
     return false;
   }
 }
@@ -100,12 +86,12 @@ function verificarEstadoBiometria(solicitud) {
   }
 }
 
-// IMPORTANTE: la consulta paginada a SAI (lenta, con pausas de 2s entre páginas) corre
-// SIN el ScriptLock — igual que se corrigió en verificarAprobacionDesaplazamientos/Uar
-// (ver commit "Corrige retención de lock durante llamadas a SAI"). El lock solo se toma
+// IMPORTANTE: la consulta paginada a SAI (lenta, con pausas de 2s entre pÃ¡ginas) corre
+// SIN el ScriptLock â€” igual que se corrigiÃ³ en verificarAprobacionDesaplazamientos/Uar
+// (ver commit "Corrige retenciÃ³n de lock durante llamadas a SAI"). El lock solo se toma
 // al final, para el borrado, y justo antes se vuelve a leer la hoja para confirmar que
-// la fila sigue ahí con el mismo estado (evita borrar una fila que otro proceso ya movió
-// o reemplazó mientras se esperaba la respuesta de SAI).
+// la fila sigue ahÃ­ con el mismo estado (evita borrar una fila que otro proceso ya moviÃ³
+// o reemplazÃ³ mientras se esperaba la respuesta de SAI).
 function limpiarBiometriasResueltas() {
   try {
     const ss = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
@@ -129,34 +115,34 @@ function limpiarBiometriasResueltas() {
     }
 
     if (bioIds.length === 0) {
-      Logger.log("✅ No hay biometrías pendientes para revisar.");
+      Logger.log("âœ… No hay biometrÃ­as pendientes para revisar.");
       return;
     }
 
-    Logger.log("📋 " + bioIds.length + " biometrías pendientes a verificar contra SAI (consulta individual).");
+    Logger.log("ðŸ“‹ " + bioIds.length + " biometrÃ­as pendientes a verificar contra SAI (consulta individual).");
 
-    // Consulta individual por solicitud (mismo patrón que _procesarCortePendientes()) en vez
-    // de la búsqueda paginada por rango de fechas: con la cola típica (decenas, no miles de
-    // pendientes) es mucho más rápido y no depende de que la solicitud se haya radicado
-    // dentro de una ventana de días — antes, una solicitud radicada hace más de 4 días
-    // quedaba fuera del rango de búsqueda y nunca se revisaba.
+    // Consulta individual por solicitud (mismo patrÃ³n que _procesarCortePendientes()) en vez
+    // de la bÃºsqueda paginada por rango de fechas: con la cola tÃ­pica (decenas, no miles de
+    // pendientes) es mucho mÃ¡s rÃ¡pido y no depende de que la solicitud se haya radicado
+    // dentro de una ventana de dÃ­as â€” antes, una solicitud radicada hace mÃ¡s de 4 dÃ­as
+    // quedaba fuera del rango de bÃºsqueda y nunca se revisaba.
     const estadosSai = new Map();
     const fechasSai = new Map();
     for (let i = 0; i < bioIds.length; i++) {
       const datosApi = _consultarSaiIndividual(bioIds[i]);
       if (datosApi) {
         estadosSai.set(bioIds[i], String(datosApi.studyStatus || "").toUpperCase().trim());
-        const fechaResultadoApi = datosApi.lastResultDate || datosApi.lastMovementDate || "";
+        const fechaResultadoApi = datosApi.lastMovementDate || "";
         if (fechaResultadoApi) fechasSai.set(bioIds[i], fechaResultadoApi);
       } else {
-        Logger.log("⚠️ Sin respuesta API para " + bioIds[i]);
+        Logger.log("âš ï¸ Sin respuesta API para " + bioIds[i]);
       }
       Utilities.sleep(1000);
     }
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
     const idsAEliminar = new Set();
-    const fechasAActualizar = new Map(); // id → nueva fechaResultado (texto normalizado)
+    const fechasAActualizar = new Map(); // id â†’ nueva fechaResultado (texto normalizado)
 
     for (let i = 0; i < datos.length; i++) {
       const estado = String(datos[i][16]).toUpperCase().trim();
@@ -168,7 +154,7 @@ function limpiarBiometriasResueltas() {
       const statusSai = estadosSai.get(solicitud);
       if (statusSai && !ESTADOS_CONSERVAR.has(statusSai)) {
         idsAEliminar.add(solicitud);
-        Logger.log("🗑️ Solicitud " + solicitud + " cambió a " + statusSai);
+        Logger.log("ðŸ—‘ï¸ Solicitud " + solicitud + " cambiÃ³ a " + statusSai);
         continue;
       }
 
@@ -183,7 +169,7 @@ function limpiarBiometriasResueltas() {
     }
 
     if (idsAEliminar.size === 0 && fechasAActualizar.size === 0) {
-      Logger.log("✅ Ninguna biometría cambió de estado ni de fechaResultado.");
+      Logger.log("âœ… Ninguna biometrÃ­a cambiÃ³ de estado ni de fechaResultado.");
       return;
     }
 
@@ -191,12 +177,12 @@ function limpiarBiometriasResueltas() {
     try {
       lock.waitLock(30000);
     } catch (e) {
-      Logger.log("❌ Lock no disponible para limpiar biometrías: " + e.message);
+      Logger.log("âŒ Lock no disponible para limpiar biometrÃ­as: " + e.message);
       return;
     }
 
     try {
-      // Re-leer justo antes de actuar: si otro proceso ya asignó/movió la fila mientras
+      // Re-leer justo antes de actuar: si otro proceso ya asignÃ³/moviÃ³ la fila mientras
       // se esperaba la respuesta de SAI, esta relectura evita tocar la fila equivocada.
       const lastRowActual = hoja.getLastRow();
       if (lastRowActual < 2) return;
@@ -223,15 +209,21 @@ function limpiarBiometriasResueltas() {
 
       if (filasAEliminar.length > 0 || actualizadas > 0) {
         SpreadsheetApp.flush();
-        Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas. " + actualizadas + " fechaResultado actualizadas.");
+        Logger.log("âœ… " + filasAEliminar.length + " biometrÃ­as resueltas eliminadas. " + actualizadas + " fechaResultado actualizadas.");
       } else {
-        Logger.log("ℹ️ Las filas candidatas ya no estaban disponibles al momento de actuar (probablemente asignadas mientras tanto).");
+        Logger.log("â„¹ï¸ Las filas candidatas ya no estaban disponibles al momento de actuar (probablemente asignadas mientras tanto).");
       }
     } finally {
       if (lock.hasLock()) lock.releaseLock();
     }
+
+    // Fuera del lock: registrar en pendiente_biometria que estas solicitudes se resolvieron
+    // solas mientras estaban en la cola (ningÃºn analista las tomÃ³).
+    if (idsAEliminar.size > 0) {
+      _actualizarFaseBiometriaPendiente(idsAEliminar, "RESUELTA_EN_COLA");
+    }
   } catch (e) {
-    Logger.log("❌ Error en limpiarBiometriasResueltas: " + e.message);
+    Logger.log("âŒ Error en limpiarBiometriasResueltas: " + e.message);
   }
 }
 
@@ -260,7 +252,7 @@ function autoAsignarBiometria() {
   try {
     lock.waitLock(10000);
   } catch (e) {
-    return { success: false, message: "El sistema está asignando casos a otros compañeros. Reintenta en unos segundos." };
+    return { success: false, message: "El sistema estÃ¡ asignando casos a otros compaÃ±eros. Reintenta en unos segundos." };
   }
 
   try {
@@ -272,14 +264,14 @@ function autoAsignarBiometria() {
     const usuario = dataUsuarios.find(u => String(u[2]).trim().toLowerCase() === userEmail);
 
     if (!usuario) return { success: false, message: "Usuario no registrado" };
-    if (String(usuario[5]).toUpperCase().trim() !== "ACTIVO") return { success: false, message: "Usuario no está activo" };
+    if (String(usuario[5]).toUpperCase().trim() !== "ACTIVO") return { success: false, message: "Usuario no estÃ¡ activo" };
 
     const permisoCheck = verificarPermisoVigenteHoy();
-    if (permisoCheck.tienePermiso) return { success: false, message: "⛔ Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
+    if (permisoCheck.tienePermiso) return { success: false, message: "â›” Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
 
     const capTotal = parseInt(usuario[6]) || 0;
     const nombreAnalista = String(usuario[1]).trim();
-    if (capTotal <= 0) return { success: false, message: "Capacidad inválida o en 0" };
+    if (capTotal <= 0) return { success: false, message: "Capacidad invÃ¡lida o en 0" };
 
     let hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
     if (!hojaHist) hojaHist = ssWarehouse.insertSheet("Historico_Gestiones");
@@ -319,12 +311,12 @@ function autoAsignarBiometria() {
     const cuposBio = obtenerCuposEfectivos(userEmail, 'DESAPLAZAMIENTO', dataUsuarios);
     const cupoBioDiario = cuposBio.desaplazamiento;
 
-    if (conteoHoyBio >= cupoBioDiario) return { success: false, message: "Cupo diario de biometría alcanzado (" + cupoBioDiario + ")." };
+    if (conteoHoyBio >= cupoBioDiario) return { success: false, message: "Cupo diario de biometrÃ­a alcanzado (" + cupoBioDiario + ")." };
     const cupoRestanteBio = cupoBioDiario - conteoHoyBio;
     if (cupoDisponible > cupoRestanteBio) cupoDisponible = cupoRestanteBio;
 
     const hojaSolicitud = ssWarehouse.getSheetByName("solicitud");
-    if (!hojaSolicitud || hojaSolicitud.getLastRow() < 2) return { success: false, message: "No hay biometrías pendientes en la base." };
+    if (!hojaSolicitud || hojaSolicitud.getLastRow() < 2) return { success: false, message: "No hay biometrÃ­as pendientes en la base." };
 
     const lastRowSol = hojaSolicitud.getLastRow();
     const datosSol = hojaSolicitud.getRange(2, 1, lastRowSol - 1, 38).getValues();
@@ -343,17 +335,17 @@ function autoAsignarBiometria() {
       if (asignado !== "") continue;
       if (idsEnGestion.has(id)) continue;
 
-      // fechaResultado (col S / índice 18): misma columna que usa RequestLeadUnificado
-      // para ordenar desaplazamiento, así ambas rutas de asignación quedan consistentes.
+      // fechaResultado (col S / Ã­ndice 18): misma columna que usa RequestLeadUnificado
+      // para ordenar desaplazamiento, asÃ­ ambas rutas de asignaciÃ³n quedan consistentes.
       candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: _parseDateUnif(row[18]) });
       idsEnGestion.add(id);
     }
 
     if (candidatosElegibles.length === 0) {
-      return { success: false, message: "No hay biometrías pendientes validadas." };
+      return { success: false, message: "No hay biometrÃ­as pendientes validadas." };
     }
 
-    // El admin decide si se llama primero al más reciente o al más antiguo
+    // El admin decide si se llama primero al mÃ¡s reciente o al mÃ¡s antiguo
     // (ver admin_getOrdenDesaplazamiento / admin_setOrdenDesaplazamiento en Admin.js).
     const ordenReciente = (PropertiesService.getScriptProperties().getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
     candidatosElegibles.sort(function(a, b) {
@@ -393,6 +385,10 @@ function autoAsignarBiometria() {
 
     SpreadsheetApp.flush();
 
+    // Registrar en pendiente_biometria que estas solicitudes fueron asignadas a un analista.
+    var idsAsignadas = candidatosParaAsignar.map(c => String(c.row[0]).trim()).filter(id => id);
+    _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");
+
     return { success: true, message: `Se te asignaron ${filasHist.length} nuevas solicitudes.`, nueva: true };
 
   } catch (error) {
@@ -407,7 +403,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
   try {
     lock.waitLock(25000);
   } catch (e) {
-    return { success: false, message: "El sistema está ocupado. Intenta de nuevo." };
+    return { success: false, message: "El sistema estÃ¡ ocupado. Intenta de nuevo." };
   }
 
   try {
@@ -434,24 +430,24 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const motivoAplaz = resFinal === 'APLAZADO' ? (datosFormulario.motivoAplazamiento || '') : '';
         const motivoNeg = resFinal === 'RECHAZADO' ? (datosFormulario.motivoNegacion || '') : '';
 
-        // Col Q (17): estado → resultado final
+        // Col Q (17): estado â†’ resultado final
         hojaHist.getRange(filaReal, 17).setValue(resFinal);
-        // Col U (21): clase → BIOMETRIA
+        // Col U (21): clase â†’ BIOMETRIA
         hojaHist.getRange(filaReal, 21).setValue('BIOMETRIA');
         // Col AM (39): resultado_llamada_desaplazamiento_biometria
         hojaHist.getRange(filaReal, 39).setValue(datosFormulario.resLlamada || '');
-        // Col X (24): observaciones → vacío para biometría
+        // Col X (24): observaciones â†’ vacÃ­o para biometrÃ­a
         hojaHist.getRange(filaReal, 24).setValue('');
-        // Col AA (27): fecha fin gestión
+        // Col AA (27): fecha fin gestiÃ³n
         hojaHist.getRange(filaReal, 27).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss");
-        // Col AC-AD (29-30): motivo aplazamiento, motivo negación
+        // Col AC-AD (29-30): motivo aplazamiento, motivo negaciÃ³n
         hojaHist.getRange(filaReal, 29, 1, 2).setValues([[motivoAplaz, motivoNeg]]);
-        // Col AE (31): fecha solo día
+        // Col AE (31): fecha solo dÃ­a
         hojaHist.getRange(filaReal, 31).setValue(fechaSoloDia);
 
         // Calcular tiempos SLA
         const fechaAsignacion = _parseFechaGAS(fila[24]);
-        // Desaplazamiento: fechaDiligenciadaRadicación = fechaAsignación (cola = 0)
+        // Desaplazamiento: fechaDiligenciadaRadicaciÃ³n = fechaAsignaciÃ³n (cola = 0)
         const tRadCola = fechaAsignacion;
         hojaHist.getRange(filaReal, 34).setValue(fechaAsignacion || '');
         if (fechaAsignacion) hojaHist.getRange(filaReal, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
@@ -462,7 +458,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         SpreadsheetApp.flush();
         lock.releaseLock();
 
-        return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
+        return { success: true, message: "GestiÃ³n guardada correctamente.", disparaAsignacion: true };
       }
     }
     return { success: false, message: "Solicitud " + idSolicitud + " no encontrada o ya gestionada." };
@@ -516,19 +512,19 @@ function getDatosBiometria() {
       listaPendientes.push([
         fechaAsigStr,           // [0] fechaAsignacion
         String(hist[27] || ""), // [1] nombreAnalista
-        "",                     // [2] (vacío)
+        "",                     // [2] (vacÃ­o)
         polizaVal,              // [3] poliza
         inmoVal,                // [4] inmobiliaria
         String(hist[13] || ""), // [5] ciudad
         String(hist[0] || ""),  // [6] solicitud
         hist[9] || 0,           // [7] canon
         String(hist[6] || ""),  // [8] celular/telefono
-        "",                     // [9] (vacío)
+        "",                     // [9] (vacÃ­o)
         String(hist[11] || ""), // [10] direccion
         String(hist[4] || ""),  // [11] nombreInquilino
-        "",                     // [12] (vacío)
+        "",                     // [12] (vacÃ­o)
         String(hist[16] || ""), // [13] estadoGeneral
-        "",                     // [14] (vacío)
+        "",                     // [14] (vacÃ­o)
         "PENDIENTE GESTION",    // [15] estado gestion
         "__DESAPLAZAMIENTO__",        // [16] marcador de tipo para detectarTipoCaso()
         String(hist[25] || ""), // [17] emailAsignado
@@ -555,44 +551,84 @@ function getDatosBiometria() {
 
 
 // ===================================================================
-// FLUJO BIOMETRÍA: Captura cada 10 min + Primer contacto cada hora + Escalación 8am/12pm
+// FLUJO BIOMETRÃA: Captura cada 10 min + Primer contacto cada hora + EscalaciÃ³n 8am/12pm
 // ===================================================================
-// Columna 76 (índice 75) de pendiente_biometria: fase_seguimiento_biometria
-// "" = aún sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
-// "ESCALADA" = ya se envió a asignación (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
-// Columna 77 (índice 76): fecha_actualizacion_fase — se sobrescribe con la fecha/hora exacta
+// Columna 76 (Ã­ndice 75) de pendiente_biometria: fase_seguimiento_biometria
+// "" = aÃºn sin contactar | "WA_ENVIADO" = ya tuvo su oportunidad por WhatsApp
+// "ESCALADA" = ya se enviÃ³ a asignaciÃ³n (llamada) | "RESUELTA" = SAI ya no dice pendiente, se cierra sin llamar
+// "RESUELTA_EN_COLA" = SAI dejÃ³ de reportar pendiente mientras estaba en cola "solicitud" (sin analista)
+// "ASIGNADA" = un analista la tomÃ³ desde la cola | "ARCHIVADA" = se venciÃ³ en cola sin ser asignada
+// Columna 77 (Ã­ndice 76): fecha_actualizacion_fase â€” se sobrescribe con la fecha/hora exacta
 // cada vez que fase_seguimiento_biometria cambia de valor. Requiere correr una vez
 // agregarColumnaFechaActualizacionFase() para crear el encabezado en la hoja.
 var COL_FECHA_ACTUALIZACION_FASE = 77;
 
-// EJECUTAR UNA SOLA VEZ desde el editor de Apps Script para crear el encabezado.
-function agregarColumnaFechaActualizacionFase() {
-  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+/**
+ * Actualiza la fase final en pendiente_biometria para una lista de consecutivos.
+ * Busca cada consecutivo en la hoja y marca la fase indicada + timestamp.
+ * Solo actualiza filas cuya fase actual sea "ESCALADA" (las Ãºnicas que deberÃ­an
+ * estar en la cola "solicitud"). Si la fase ya es terminal (RESUELTA, RESUELTA_EN_COLA,
+ * ASIGNADA, ARCHIVADA), no la sobreescribe â€” protege contra doble ejecuciÃ³n.
+ *
+ * @param {Set|Array} consecutivos - IDs de solicitud a actualizar
+ * @param {string} nuevaFase - "RESUELTA_EN_COLA" | "ASIGNADA" | "ARCHIVADA"
+ */
+function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
+  if (!consecutivos || (consecutivos instanceof Set ? consecutivos.size === 0 : consecutivos.length === 0)) return;
 
-  var encabezadoActual = hojaBio.getRange(1, COL_FECHA_ACTUALIZACION_FASE).getValue();
-  if (String(encabezadoActual).trim() !== "") {
-    Logger.log("La columna " + COL_FECHA_ACTUALIZACION_FASE + " ya tiene encabezado: " + encabezadoActual);
-    return;
+  var idsSet = consecutivos instanceof Set ? consecutivos : new Set(consecutivos);
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+  try {
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    if (!hojaBio || hojaBio.getLastRow() < 2) return;
+
+    var lastRow = hojaBio.getLastRow();
+    var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+    var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+
+    var FASES_TERMINALES = new Set(["RESUELTA", "RESUELTA_EN_COLA", "ASIGNADA", "ARCHIVADA"]);
+    var actualizadas = 0;
+
+    for (var i = 0; i < ids.length; i++) {
+      var solId = String(ids[i][0]).trim();
+      if (!idsSet.has(solId)) continue;
+
+      var faseActual = String(fases[i][0]).trim().toUpperCase();
+      if (FASES_TERMINALES.has(faseActual)) continue; // ya cerrada, no sobreescribir
+
+      hojaBio.getRange(i + 2, 76).setValue(nuevaFase);
+      hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+      actualizadas++;
+
+      idsSet.delete(solId);
+      if (idsSet.size === 0) break; // ya encontrÃ³ todas
+    }
+
+    if (actualizadas > 0) {
+      SpreadsheetApp.flush();
+      Logger.log("ðŸ“ pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "'.");
+    }
+  } catch (e) {
+    // No lanzar: esta operaciÃ³n es de trazabilidad, no debe romper el flujo principal.
+    Logger.log("âš ï¸ Error actualizando fase en pendiente_biometria (" + nuevaFase + "): " + e.message);
   }
-  hojaBio.getRange(1, COL_FECHA_ACTUALIZACION_FASE).setValue("fecha_actualizacion_fase");
-  Logger.log("✅ Encabezado 'fecha_actualizacion_fase' creado en columna " + COL_FECHA_ACTUALIZACION_FASE + ".");
 }
 
-// Trigger cada 10 min: captura nuevas biometrías de SAI
+// Trigger cada 10 min: captura nuevas biometrÃ­as de SAI
 function consultarBiometriasPeriodicaAPI() {
   Logger.log("=== INICIO consultarBiometriasPeriodicaAPI ===");
   _capturarNuevasBiometrias();
   Logger.log("=== FIN consultarBiometriasPeriodicaAPI ===");
 }
 
-// Trigger cada hora: primer contacto (fase vacía) → si ya pasaron >=4h desde fecha_resultado
-// (cuando radicación le mandó su propio WA al aplazar por biometría) y SAI sigue diciendo
-// pendiente, se envía WhatsApp y se marca WA_ENVIADO. Corre independiente del corte de
-// escalación para que el WA salga apenas se cumple la ventana, sin esperar al corte fijo
-// siguiente — así casos de un día quedan con WA_ENVIADO listos para escalar desde el
-// primer corte del día siguiente (8am).
+// Trigger cada hora: primer contacto (fase vacÃ­a) â†’ si ya pasaron >=4h desde fecha_resultado
+// (cuando radicaciÃ³n le mandÃ³ su propio WA al aplazar por biometrÃ­a) y SAI sigue diciendo
+// pendiente, se envÃ­a WhatsApp y se marca WA_ENVIADO. Corre independiente del corte de
+// escalaciÃ³n para que el WA salga apenas se cumple la ventana, sin esperar al corte fijo
+// siguiente â€” asÃ­ casos de un dÃ­a quedan con WA_ENVIADO listos para escalar desde el
+// primer corte del dÃ­a siguiente (8am).
 var VENTANA_HORAS_WA_BIOMETRIA = 4;
 function cicloPrimerContactoBiometria() {
   Logger.log("=== INICIO cicloPrimerContactoBiometria ===");
@@ -601,15 +637,15 @@ function cicloPrimerContactoBiometria() {
 }
 
 // Calcula el inicio de la ventana de ~12h que se abre en el corte actual (8am o 12pm),
-// usada por _archivarColaBiometriaVencida() para decidir qué queda fuera de plazo.
+// usada por _archivarColaBiometriaVencida() para decidir quÃ© queda fuera de plazo.
 // Los triggers reales corren en las ventanas 7-8am y 11-12pm (Apps Script no dispara al
-// minuto exacto), así que el corte de "12pm" normalmente se ejecuta con hora=11, todavía
+// minuto exacto), asÃ­ que el corte de "12pm" normalmente se ejecuta con hora=11, todavÃ­a
 // menor a 12. Por eso el corte se separa en el punto medio entre ambas ventanas (hora < 9),
-// no en el mediodía exacto — de lo contrario el corte de 11-12 se clasificaba como si fuera
-// el de 8am y usaba el umbral equivocado (más laxo: "ayer 12:00pm" en vez de "hoy 00:00").
-// Corte 8am (hora < 9): la ventana que se abre es "ayer 12:00pm–11:59pm" → umbral = ayer 12:00pm.
-// Corte 12pm (hora >= 9): la ventana que se abre es "hoy 00:00–11:59am" → umbral = hoy 00:00.
-// Se deriva de la hora real de ejecución (no de un parámetro fijo) para poder probarla manualmente.
+// no en el mediodÃ­a exacto â€” de lo contrario el corte de 11-12 se clasificaba como si fuera
+// el de 8am y usaba el umbral equivocado (mÃ¡s laxo: "ayer 12:00pm" en vez de "hoy 00:00").
+// Corte 8am (hora < 9): la ventana que se abre es "ayer 12:00pmâ€“11:59pm" â†’ umbral = ayer 12:00pm.
+// Corte 12pm (hora >= 9): la ventana que se abre es "hoy 00:00â€“11:59am" â†’ umbral = hoy 00:00.
+// Se deriva de la hora real de ejecuciÃ³n (no de un parÃ¡metro fijo) para poder probarla manualmente.
 function _calcularUmbralArchivoColaBiometria(ahora) {
   var base = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
   if (ahora.getHours() < 9) {
@@ -621,11 +657,11 @@ function _calcularUmbralArchivoColaBiometria(ahora) {
 
 // Archiva a biometria_cola_archivada (mismo spreadsheet de pendiente_biometria) las
 // solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuyo fechaResultado
-// (con fallback a fechaRadicacion) sea anterior al umbral del corte actual — es decir, que
+// (con fallback a fechaRadicacion) sea anterior al umbral del corte actual â€” es decir, que
 // tuvieron un ciclo completo de ~12h para ser llamadas y no se lograron asignar.
-// Es una bandeja de solo revisión manual: no hay reactivación automática.
+// Es una bandeja de solo revisiÃ³n manual: no hay reactivaciÃ³n automÃ¡tica.
 function _archivarColaBiometriaVencida() {
-  Logger.log("--- Archivado de cola de biometría vencida ---");
+  Logger.log("--- Archivado de cola de biometrÃ­a vencida ---");
 
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
@@ -637,7 +673,7 @@ function _archivarColaBiometriaVencida() {
   var ahora = new Date();
   var vent = _calcularUmbralArchivoColaBiometria(ahora);
 
-  // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
+  // Fase 1 â€” sin lock: lectura y decisiÃ³n sobre los datos vigentes en este momento.
   var datos = hoja.getRange(2, 1, lastRow - 1, 58).getValues();
   var idsCandidatos = new Set();
 
@@ -653,7 +689,7 @@ function _archivarColaBiometriaVencida() {
 
     var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
     if (!fecha) {
-      Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable — no se archiva.");
+      Logger.log("âš ï¸ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable â€” no se archiva.");
       continue;
     }
 
@@ -663,17 +699,17 @@ function _archivarColaBiometriaVencida() {
   }
 
   if (idsCandidatos.size === 0) {
-    Logger.log("✅ No hay solicitudes fuera de ventana (" + vent.corteOrigen + ") para archivar.");
+    Logger.log("âœ… No hay solicitudes fuera de ventana (" + vent.corteOrigen + ") para archivar.");
     return;
   }
 
   Logger.log(idsCandidatos.size + " solicitudes candidatas a archivar (" + vent.corteOrigen + ").");
 
-  // Fase 2 — con lock, solo para actuar: re-leer y re-filtrar por si algún analista tomó
-  // el caso entre la fase 1 y este punto (mismo patrón que limpiarBiometriasResueltas()).
+  // Fase 2 â€” con lock, solo para actuar: re-leer y re-filtrar por si algÃºn analista tomÃ³
+  // el caso entre la fase 1 y este punto (mismo patrÃ³n que limpiarBiometriasResueltas()).
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para archivar cola de biometría: " + e.message);
+    Logger.log("âŒ Lock no disponible para archivar cola de biometrÃ­a: " + e.message);
     return;
   }
 
@@ -695,40 +731,15 @@ function _archivarColaBiometriaVencida() {
     }
 
     if (filasAArchivar.length === 0) {
-      Logger.log("ℹ️ Las candidatas ya no estaban disponibles al momento de archivar (probablemente asignadas mientras tanto).");
+      Logger.log("â„¹ï¸ Las candidatas ya no estaban disponibles al momento de archivar (probablemente asignadas mientras tanto).");
       return;
     }
 
-    var ssArchivo = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-    var hojaArchivo = ssArchivo.getSheetByName(NOMBRE_HOJA_BIOMETRIA_ARCHIVADA);
-    if (!hojaArchivo) {
-      hojaArchivo = ssArchivo.insertSheet(NOMBRE_HOJA_BIOMETRIA_ARCHIVADA);
-      hojaArchivo.appendRow(_headerBiometriaArchivada());
-    }
-
-    var setIdsArchivo = getSetDeIds(hojaArchivo);
-    var ahoraTexto = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd HH:mm:ss");
-    var umbralTexto = Utilities.formatDate(vent.umbral, "GMT-5", "yyyy-MM-dd HH:mm:ss");
-
-    var filasParaEscribir = [];
     var idsAQuitarDeSolicitud = new Set();
     filasAArchivar.forEach(function(item) {
       var solId = String(item.datosFila[0]).trim();
-      if (setIdsArchivo.has(solId)) {
-        Logger.log("⚠️ Solicitud " + solId + " ya estaba en " + NOMBRE_HOJA_BIOMETRIA_ARCHIVADA + " — se quita de 'solicitud' sin duplicar.");
-      } else {
-        filasParaEscribir.push(item.datosFila.concat([ahoraTexto, vent.corteOrigen, umbralTexto]));
-        setIdsArchivo.add(solId);
-      }
       idsAQuitarDeSolicitud.add(solId);
     });
-
-    if (filasParaEscribir.length > 0) {
-      var rowInicio = hojaArchivo.getLastRow() + 1;
-      var rango = hojaArchivo.getRange(rowInicio, 1, filasParaEscribir.length, filasParaEscribir[0].length);
-      rango.setNumberFormat("@");
-      rango.setValues(filasParaEscribir);
-    }
 
     // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes (cientos de
     // filas), cientos de deleteRow() secuenciales son lentos y pueden agotar la cuota de
@@ -744,18 +755,21 @@ function _archivarColaBiometriaVencida() {
     }
 
     SpreadsheetApp.flush();
-    Logger.log("✅ " + idsAQuitarDeSolicitud.size + " solicitudes archivadas en " + NOMBRE_HOJA_BIOMETRIA_ARCHIVADA + " (" + vent.corteOrigen + ").");
+    Logger.log("âœ… " + idsAQuitarDeSolicitud.size + " solicitudes vencidas eliminadas de cola (" + vent.corteOrigen + ").");
+
+    // Registrar en pendiente_biometria que estas solicitudes se vencieron sin ser asignadas.
+    _actualizarFaseBiometriaPendiente(idsAQuitarDeSolicitud, "ARCHIVADA");
   } catch (e) {
-    Logger.log("❌ Error en _archivarColaBiometriaVencida: " + e.message);
+    Logger.log("âŒ Error en _archivarColaBiometriaVencida: " + e.message);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
 }
 
-// Trigger 8am y 12pm: escala a la cola de asignación (llamada) los pendientes que ya
-// están en fase WA_ENVIADO (segundo contacto) y SAI sigue diciendo pendiente.
+// Trigger 8am y 12pm: escala a la cola de asignaciÃ³n (llamada) los pendientes que ya
+// estÃ¡n en fase WA_ENVIADO (segundo contacto) y SAI sigue diciendo pendiente.
 // Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
-// También, en este mismo corte: refresca fechaResultado contra SAI, archiva lo que agotó
+// TambiÃ©n, en este mismo corte: refresca fechaResultado contra SAI, archiva lo que agotÃ³
 // su ventana de ~12h sin ser asignado, y solo entonces escala los nuevos pendientes.
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
@@ -765,10 +779,10 @@ function cicloBiometriaPendiente() {
   Logger.log("=== FIN cicloBiometriaPendiente ===");
 }
 
-// Trigger cada hora: revisa las biometrías YA escaladas a la cola de asignación
-// (solicitud, estado APROBADO_PENDIENTE_BIOMETRIA) contra SAI. Si el estado cambió a
+// Trigger cada hora: revisa las biometrÃ­as YA escaladas a la cola de asignaciÃ³n
+// (solicitud, estado APROBADO_PENDIENTE_BIOMETRIA) contra SAI. Si el estado cambiÃ³ a
 // algo distinto de APROBADO_PENDIENTE_BIOMETRIA/EN_ESTUDIO, se bajan de la cola para
-// que ningún analista llame a un cliente por un caso que ya se resolvió por otro lado.
+// que ningÃºn analista llame a un cliente por un caso que ya se resolviÃ³ por otro lado.
 function cicloLimpiezaBiometriaEscalada() {
   Logger.log("=== INICIO cicloLimpiezaBiometriaEscalada ===");
   limpiarBiometriasResueltas();
@@ -784,7 +798,7 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
   var headerImageUrl = props.getProperty('INFOBIP_HEADER_IMAGE_URL');
 
   if (!apiKey || !baseUrl || !templateName || !sender) {
-    Logger.log("⚠️ Infobip no configurado. Broadcast no enviado.");
+    Logger.log("âš ï¸ Infobip no configurado. Broadcast no enviado.");
     return;
   }
 
@@ -843,14 +857,14 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
         if (code >= 200 && code < 300) {
           enviados++;
           filaEnvioOk = true;
-          Logger.log("✅ WA enviado → " + rol + ": " + nombre + " | Tel: " + telefono + " | Sol: " + solicitudId);
+          Logger.log("âœ… WA enviado â†’ " + rol + ": " + nombre + " | Tel: " + telefono + " | Sol: " + solicitudId);
         } else {
           errores++;
-          Logger.log("❌ WA falló → " + telefono + " | HTTP " + code);
+          Logger.log("âŒ WA fallÃ³ â†’ " + telefono + " | HTTP " + code);
         }
       } catch (e) {
         errores++;
-        Logger.log("❌ Error WA → " + telefono + " | " + e.message);
+        Logger.log("âŒ Error WA â†’ " + telefono + " | " + e.message);
       }
 
       Utilities.sleep(500);
@@ -863,7 +877,7 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
   }
 
   SpreadsheetApp.flush();
-  Logger.log("📱 Broadcast finalizado: " + enviados + " enviados, " + errores + " errores.");
+  Logger.log("ðŸ“± Broadcast finalizado: " + enviados + " enviados, " + errores + " errores.");
 }
 
 function _consultarSaiIndividual(consecutivo) {
@@ -880,25 +894,25 @@ function _consultarSaiIndividual(consecutivo) {
     if (response.getResponseCode() !== 200) return null;
     return JSON.parse(response.getContentText());
   } catch (e) {
-    Logger.log("⚠️ Error consultando SAI para " + consecutivo + ": " + e.message);
+    Logger.log("âš ï¸ Error consultando SAI para " + consecutivo + ": " + e.message);
     return null;
   }
 }
 
-// Wrapper sin argumentos: el botón "Ejecutar" del editor no permite pasar parámetros,
-// así que este es el que hay que seleccionar y correr directamente.
+// Wrapper sin argumentos: el botÃ³n "Ejecutar" del editor no permite pasar parÃ¡metros,
+// asÃ­ que este es el que hay que seleccionar y correr directamente.
 function diagnosticarDestinosBiometriaTest() {
   diagnosticarDestinosBiometria('12236327');
 }
 
-// DIAGNÓSTICO MANUAL — correr desde el editor pasando un consecutivo, p.ej.
+// DIAGNÃ“STICO MANUAL â€” correr desde el editor pasando un consecutivo, p.ej.
 // diagnosticarDestinosBiometria('12236327'). Muestra en el log el resultCode real
-// del inquilino y de cada codeudor tal como los devuelve SAI, para entender por qué
-// un caso queda sin destinatarios de WhatsApp (bio_destino_1..4 vacíos → estado ERROR).
+// del inquilino y de cada codeudor tal como los devuelve SAI, para entender por quÃ©
+// un caso queda sin destinatarios de WhatsApp (bio_destino_1..4 vacÃ­os â†’ estado ERROR).
 function diagnosticarDestinosBiometria(consecutivo) {
   var item = _consultarSaiIndividual(String(consecutivo).trim());
   if (!item) {
-    Logger.log("❌ Sin respuesta de SAI para " + consecutivo);
+    Logger.log("âŒ Sin respuesta de SAI para " + consecutivo);
     return;
   }
   Logger.log("studyStatus: " + item.studyStatus + " | mainResultCode: " + item.mainResultCode);
@@ -915,9 +929,9 @@ function diagnosticarFilaPendienteBiometriaTest() {
   diagnosticarFilaPendienteBiometria('12236327');
 }
 
-// DIAGNÓSTICO MANUAL — lee la fila realmente guardada en pendiente_biometria (no lo
-// que SAI dice ahora, que ya pudo haber cambiado): estado, fase de seguimiento, cuándo
-// se consultó por última vez, y qué quedó en las columnas bio_destino_1..4.
+// DIAGNÃ“STICO MANUAL â€” lee la fila realmente guardada en pendiente_biometria (no lo
+// que SAI dice ahora, que ya pudo haber cambiado): estado, fase de seguimiento, cuÃ¡ndo
+// se consultÃ³ por Ãºltima vez, y quÃ© quedÃ³ en las columnas bio_destino_1..4.
 function diagnosticarFilaPendienteBiometria(consecutivo) {
   var id = String(consecutivo).trim();
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
@@ -925,7 +939,7 @@ function diagnosticarFilaPendienteBiometria(consecutivo) {
   if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
 
   var lastRow = hojaBio.getLastRow();
-  if (lastRow < 2) { Logger.log("Hoja vacía."); return; }
+  if (lastRow < 2) { Logger.log("Hoja vacÃ­a."); return; }
 
   var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
   for (var i = 0; i < datos.length; i++) {
@@ -940,7 +954,7 @@ function diagnosticarFilaPendienteBiometria(consecutivo) {
     }
     return;
   }
-  Logger.log("⚠️ No se encontró la solicitud " + id + " en pendiente_biometria.");
+  Logger.log("âš ï¸ No se encontrÃ³ la solicitud " + id + " en pendiente_biometria.");
 }
 
 function _homologarDatosApi(item) {
@@ -983,7 +997,7 @@ function _homologarDatosApi(item) {
     correoAsesor: item.advisorEmail,
     estadoGeneral: item.studyStatus,
     fechaRadicacion: item.registrationDate,
-    fechaResultado: item.lastResultDate || item.lastMovementDate,
+    fechaResultado: item.lastMovementDate,
     clase: claseNormalizada,
     digitalUar: "No",
     canal: String(item.channel || "").trim(),
@@ -993,17 +1007,17 @@ function _homologarDatosApi(item) {
 }
 
 // Ley 2300 de 2023: las comunicaciones de cobranza (incluye WhatsApp) solo se pueden
-// enviar lunes a viernes 7:00-19:00 y sábados 8:00-15:00. Domingos y festivos, prohibido.
-// Se valida aquí (y no solo confiando en el horario del trigger en GAS) para que el
-// envío quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
+// enviar lunes a viernes 7:00-19:00 y sÃ¡bados 8:00-15:00. Domingos y festivos, prohibido.
+// Se valida aquÃ­ (y no solo confiando en el horario del trigger en GAS) para que el
+// envÃ­o quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
 function _dentroDeVentanaLey2300() {
   var ahora = new Date();
   var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
   var horaStr = Utilities.formatDate(ahora, "GMT-5", "HH:mm");
   var horaNum = parseInt(horaStr.split(':')[0], 10) + parseInt(horaStr.split(':')[1], 10) / 60;
 
-  // Mediodía fijo para hallar el día de la semana en zona Bogotá sin líos de DST/borde.
-  var dow = new Date(fechaStr + "T12:00:00").getDay(); // 0=domingo … 6=sábado
+  // MediodÃ­a fijo para hallar el dÃ­a de la semana en zona BogotÃ¡ sin lÃ­os de DST/borde.
+  var dow = new Date(fechaStr + "T12:00:00").getDay(); // 0=domingo â€¦ 6=sÃ¡bado
   if (dow === 0) return false;
 
   try {
@@ -1020,20 +1034,20 @@ function _dentroDeVentanaLey2300() {
       }
     }
   } catch (e) {
-    Logger.log("⚠️ No se pudo verificar hoja Festivos para Ley 2300, se asume día hábil: " + e.message);
+    Logger.log("âš ï¸ No se pudo verificar hoja Festivos para Ley 2300, se asume dÃ­a hÃ¡bil: " + e.message);
   }
 
   if (dow === 6) return horaNum >= 8 && horaNum < 15;
   return horaNum >= 7 && horaNum < 19;
 }
 
-// Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
+// Primer contacto: evalÃºa pendientes en fase vacÃ­a, envÃ­a WhatsApp a los que ya
 // cumplieron la ventana de 4h desde fecha_resultado y siguen pendientes en SAI.
 function _enviarPrimerContactoBiometria() {
-  Logger.log("--- Primer contacto: evaluación de pendientes en fase vacía ---");
+  Logger.log("--- Primer contacto: evaluaciÃ³n de pendientes en fase vacÃ­a ---");
 
   if (!_dentroDeVentanaLey2300()) {
-    Logger.log("⏸️ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos). Envío de WA pospuesto al próximo corte hábil.");
+    Logger.log("â¸ï¸ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, SÃ¡b 8:00-15:00, no domingos/festivos). EnvÃ­o de WA pospuesto al prÃ³ximo corte hÃ¡bil.");
     return;
   }
 
@@ -1049,13 +1063,13 @@ function _enviarPrimerContactoBiometria() {
   var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
     var fase = String(datos[i][75]).trim();
-    if (fase !== "") continue; // solo primer contacto: fase vacía
+    if (fase !== "") continue; // solo primer contacto: fase vacÃ­a
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
 
     var fechaResultado = _parseFechaGAS(datos[i][18]); // fecha_resultado
     var horasDesdeResultado = fechaResultado ? (Date.now() - fechaResultado.getTime()) / 3600000 : null;
-    if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) continue; // aún no cumple ventana
+    if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) continue; // aÃºn no cumple ventana
 
     candidatos.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
   }
@@ -1076,7 +1090,7 @@ function _enviarPrimerContactoBiometria() {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para primer contacto de biometría: " + e.message);
+    Logger.log("âŒ Lock no disponible para primer contacto de biometrÃ­a: " + e.message);
     return;
   }
 
@@ -1090,7 +1104,7 @@ function _enviarPrimerContactoBiometria() {
       var datosApi = resultados[r].datosApi;
 
       if (!datosApi) {
-        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+        Logger.log("âš ï¸ Sin respuesta API para " + item.consecutivo);
         continue;
       }
 
@@ -1100,7 +1114,7 @@ function _enviarPrimerContactoBiometria() {
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
         hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
+        Logger.log("âœ… " + item.consecutivo + " se resolviÃ³ solo (" + statusActual + ") â†’ cerrado, sin llamada.");
         continue;
       }
 
@@ -1108,7 +1122,7 @@ function _enviarPrimerContactoBiometria() {
       filasParaWA.push(item.fila);
       hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
       hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-      Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
+      Logger.log("ðŸ“² " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente â†’ primer contacto (WhatsApp).");
     }
 
     SpreadsheetApp.flush();
@@ -1118,33 +1132,33 @@ function _enviarPrimerContactoBiometria() {
       enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);
     }
   } catch (e) {
-    Logger.log("❌ Error en _enviarPrimerContactoBiometria: " + e.message);
+    Logger.log("âŒ Error en _enviarPrimerContactoBiometria: " + e.message);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
 }
 
 // ===================================================================
-// UTILIDAD MANUAL — correr a demanda desde el editor de Apps Script cuando se
-// necesite destrabar biometrías 02/500 o 02/503 que están en fase vacía
+// UTILIDAD MANUAL â€” correr a demanda desde el editor de Apps Script cuando se
+// necesite destrabar biometrÃ­as 02/500 o 02/503 que estÃ¡n en fase vacÃ­a
 // esperando la ventana normal de VENTANA_HORAS_WA_BIOMETRIA horas (p.ej. un
-// pico de solicitudes que no puede esperar el ciclo horario normal). Envía el
+// pico de solicitudes que no puede esperar el ciclo horario normal). EnvÃ­a el
 // WhatsApp ya mismo, sin esperar la ventana, y marca WA_ENVIADO. No es un
-// trigger automático: alguien tiene que ejecutarla a mano cada vez.
+// trigger automÃ¡tico: alguien tiene que ejecutarla a mano cada vez.
 //
-// Para escalar a asignación los que YA estaban en WA_ENVIADO antes de correr
-// esta función, usa la función existente cicloBiometriaPendiente() (no hace
+// Para escalar a asignaciÃ³n los que YA estaban en WA_ENVIADO antes de correr
+// esta funciÃ³n, usa la funciÃ³n existente cicloBiometriaPendiente() (no hace
 // falta duplicarla: no tiene espera de horario, solo revisa la fase).
 //
-// Importante: no correr cicloBiometriaPendiente() inmediatamente después de
-// esta función en la misma sesión — eso escalaría a llamada los casos recién
+// Importante: no correr cicloBiometriaPendiente() inmediatamente despuÃ©s de
+// esta funciÃ³n en la misma sesiÃ³n â€” eso escalarÃ­a a llamada los casos reciÃ©n
 // contactados por WhatsApp sin darles ni un minuto para responder, que es
 // justo lo que la ventana normal evita. Dejar pasar un rato entre una y otra.
 function forzarPrimerContactoBiometriaManual() {
   Logger.log("=== INICIO forzarPrimerContactoBiometriaManual ===");
 
   if (!_dentroDeVentanaLey2300()) {
-    Logger.log("⏸️ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos). No se envía, ni siquiera forzado manualmente.");
+    Logger.log("â¸ï¸ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, SÃ¡b 8:00-15:00, no domingos/festivos). No se envÃ­a, ni siquiera forzado manualmente.");
     return;
   }
 
@@ -1160,14 +1174,14 @@ function forzarPrimerContactoBiometriaManual() {
   var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
     var fase = String(datos[i][75]).trim();
-    if (fase !== "") continue; // solo primer contacto: fase vacía
+    if (fase !== "") continue; // solo primer contacto: fase vacÃ­a
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
     candidatos.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
   }
 
   if (candidatos.length === 0) {
-    Logger.log("No hay candidatos en fase vacía para forzar.");
+    Logger.log("No hay candidatos en fase vacÃ­a para forzar.");
     return;
   }
 
@@ -1182,7 +1196,7 @@ function forzarPrimerContactoBiometriaManual() {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para forzar primer contacto: " + e.message);
+    Logger.log("âŒ Lock no disponible para forzar primer contacto: " + e.message);
     return;
   }
 
@@ -1196,7 +1210,7 @@ function forzarPrimerContactoBiometriaManual() {
       var datosApi = resultados[r].datosApi;
 
       if (!datosApi) {
-        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+        Logger.log("âš ï¸ Sin respuesta API para " + item.consecutivo);
         continue;
       }
 
@@ -1206,7 +1220,7 @@ function forzarPrimerContactoBiometriaManual() {
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
         hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        Logger.log("✅ " + item.consecutivo + " ya no está pendiente (" + statusActual + ") → cerrado sin WA.");
+        Logger.log("âœ… " + item.consecutivo + " ya no estÃ¡ pendiente (" + statusActual + ") â†’ cerrado sin WA.");
         continue;
       }
 
@@ -1214,7 +1228,7 @@ function forzarPrimerContactoBiometriaManual() {
       filasParaWA.push(item.fila);
       hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
       hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-      Logger.log("📲 " + item.consecutivo + " forzado a WA_ENVIADO (sin esperar ventana).");
+      Logger.log("ðŸ“² " + item.consecutivo + " forzado a WA_ENVIADO (sin esperar ventana).");
     }
 
     SpreadsheetApp.flush();
@@ -1224,7 +1238,7 @@ function forzarPrimerContactoBiometriaManual() {
       enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);
     }
   } catch (e) {
-    Logger.log("❌ Error en forzarPrimerContactoBiometriaManual: " + e.message);
+    Logger.log("âŒ Error en forzarPrimerContactoBiometriaManual: " + e.message);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
@@ -1232,10 +1246,10 @@ function forzarPrimerContactoBiometriaManual() {
   Logger.log("=== FIN forzarPrimerContactoBiometriaManual ===");
 }
 
-// Escalación: pendientes que ya están en fase WA_ENVIADO (segundo contacto) y siguen
-// pendientes en SAI se escalan a la cola de asignación (llamada).
+// EscalaciÃ³n: pendientes que ya estÃ¡n en fase WA_ENVIADO (segundo contacto) y siguen
+// pendientes en SAI se escalan a la cola de asignaciÃ³n (llamada).
 function _procesarCortePendientes() {
-  Logger.log("--- Corte de escalación de pendientes de biometría ---");
+  Logger.log("--- Corte de escalaciÃ³n de pendientes de biometrÃ­a ---");
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -1271,7 +1285,7 @@ function _procesarCortePendientes() {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para procesar corte de pendientes: " + e.message);
+    Logger.log("âŒ Lock no disponible para procesar corte de pendientes: " + e.message);
     return;
   }
 
@@ -1284,7 +1298,7 @@ function _procesarCortePendientes() {
       var datosApi = resultados[r].datosApi;
 
       if (!datosApi) {
-        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+        Logger.log("âš ï¸ Sin respuesta API para " + item.consecutivo);
         continue;
       }
 
@@ -1294,14 +1308,14 @@ function _procesarCortePendientes() {
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
         hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
+        Logger.log("âœ… " + item.consecutivo + " se resolviÃ³ solo (" + statusActual + ") â†’ cerrado, sin llamada.");
         continue;
       }
 
       solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
       hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
       hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-      Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
+      Logger.log("ðŸ“ž " + item.consecutivo + " sigue pendiente tras WhatsApp â†’ escalado a asignaciÃ³n (llamada).");
     }
 
     SpreadsheetApp.flush();
@@ -1309,131 +1323,27 @@ function _procesarCortePendientes() {
 
     if (solicitudesParaAsignar.length > 0) {
       procesarYGuardarLote(solicitudesParaAsignar);
-      Logger.log("✅ " + solicitudesParaAsignar.length + " solicitudes escaladas a la cola de asignación.");
+      Logger.log("âœ… " + solicitudesParaAsignar.length + " solicitudes escaladas a la cola de asignaciÃ³n.");
     }
 
   } catch (e) {
-    Logger.log("❌ Error en _procesarCortePendientes: " + e.message);
+    Logger.log("âŒ Error en _procesarCortePendientes: " + e.message);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
 }
 
-// MIGRACIÓN ÚNICA — correr manualmente una sola vez al desplegar la columna 76.
-// Bajo la lógica anterior, consultar y asignar pasaban juntos en la misma corrida.
-// Para las filas de HOY (WhatsApp recién enviado el mismo día), todavía se puede
-// deshacer: si la solicitud sigue en la cola "solicitud" (ningún analista la ha
-// tomado aún), se saca de la cola y se deja en WA_ENVIADO para que espere el
-// próximo corte, como debía ser desde el principio. Si ya no está en la cola
-// (un analista ya la tomó) o es de un corte anterior a hoy, ya no es seguro
-// deshacerlo y se deja como ESCALADA.
-function migrarFaseSeguimientoBiometriaExistente() {
-  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
 
-  var lastRow = hojaBio.getLastRow();
-  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
-  var hoyStr = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
-  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para migrar: " + e.message);
-    return;
-  }
-
-  try {
-    var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
-    var idsEnCola = hojaSol ? getSetDeIds(hojaSol) : new Set();
-
-    var recuperadas = 0, escaladasDejadas = 0, resueltas = 0;
-
-    for (var i = 0; i < datos.length; i++) {
-      var faseActual = String(datos[i][75]).trim();
-      if (faseActual !== "") continue; // ya migrada, o ya la tocó el nuevo flujo
-
-      var nuevoEstadoSai = String(datos[i][62]).trim().toUpperCase();
-      if (!nuevoEstadoSai) continue; // nunca se re-consultó → se queda "", es correcto
-
-      if (nuevoEstadoSai !== "APROBADO_PENDIENTE_BIOMETRIA") {
-        hojaBio.getRange(i + 2, 76).setValue("RESUELTA");
-        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        resueltas++;
-        continue;
-      }
-
-      var solId = String(datos[i][0]).trim();
-      var fechaWA = datos[i][60]; // fecha_envio_brodcast
-      var fechaWAStr = fechaWA instanceof Date ? Utilities.formatDate(fechaWA, "GMT-5", "yyyy-MM-dd") : String(fechaWA || "").slice(0, 10);
-      var esDeHoy = fechaWAStr === hoyStr;
-
-      if (esDeHoy && solId && idsEnCola.has(solId)) {
-        _eliminarSolicitudDeCola(hojaSol, solId);
-        hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
-        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        recuperadas++;
-      } else {
-        hojaBio.getRange(i + 2, 76).setValue("ESCALADA");
-        hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        escaladasDejadas++;
-      }
-    }
-
-    SpreadsheetApp.flush();
-    Logger.log("✅ Migración completada — recuperadas de la cola: " + recuperadas + " | dejadas como escaladas: " + escaladasDejadas + " | resueltas: " + resueltas);
-
-  } finally {
-    if (lock.hasLock()) lock.releaseLock();
-  }
-}
-
-// CORRECCIÓN ÚNICA — correr una sola vez, después de migrarFaseSeguimientoBiometriaExistente().
-// Bajo la lógica anterior, el envío de WhatsApp era independiente de la re-consulta a SAI
-// (se le mandaba a cualquiera sin estado_brodcast=ENVIADO, sin importar nuevo_estado_sai).
-// Por eso hay filas que ya recibieron WhatsApp pero la migración las dejó con fase vacía
-// (porque nunca se les llenó nuevo_estado_sai). Sin esta corrección, el próximo corte las
-// trataría como "nunca contactadas" y les mandaría un segundo WhatsApp en vez de escalarlas.
-function corregirFaseParaBroadcastsPrevios() {
-  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
-
-  var lastRow = hojaBio.getLastRow();
-  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
-
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
-  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-  var corregidas = 0;
-
-  for (var i = 0; i < datos.length; i++) {
-    var fase = String(datos[i][75]).trim();
-    if (fase !== "") continue; // solo las que la migración dejó sin tocar
-
-    var estadoBroadcast = String(datos[i][61]).trim().toUpperCase(); // estado_brodcast
-    if (estadoBroadcast !== "ENVIADO") continue; // nunca recibió WhatsApp, se deja como está (correcto)
-
-    hojaBio.getRange(i + 2, 76).setValue("WA_ENVIADO");
-    hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-    corregidas++;
-  }
-
-  SpreadsheetApp.flush();
-  Logger.log("✅ Corrección aplicada: " + corregidas + " filas marcadas WA_ENVIADO (ya habían recibido WhatsApp bajo la lógica anterior).");
-}
-
-// CORRECCIÓN PUNTUAL — correr una sola vez (o cuantas veces haga falta, es idempotente)
+// CORRECCIÃ“N PUNTUAL â€” correr una sola vez (o cuantas veces haga falta, es idempotente)
 // para reparar casos que entraron a "solicitud" directo desde revisarEnEsperaCodeudor()
-// (Código.js) antes de que esa función enrutara APROBADO_PENDIENTE_BIOMETRIA hacia
+// (CÃ³digo.js) antes de que esa funciÃ³n enrutara APROBADO_PENDIENTE_BIOMETRIA hacia
 // pendiente_biometria. Busca en "solicitud" filas con ese estado que no tengan su
 // solicitud en pendiente_biometria, las re-consulta en SAI para reconstruir los datos
-// completos, y si SAI confirma que siguen pendientes de biometría las mueve a
-// pendiente_biometria (fase vacía, como si hubieran entrado por el camino correcto) y
-// las borra de "solicitud". Si SAI ya no dice pendiente, se deja la fila donde está y
-// se loguea para revisión manual (no se borra nada solo, para no perder el caso).
+// completos, y si SAI confirma que siguen pendientes de biometrÃ­a las mueve a
+// pendiente_biometria (fase vacÃ­a, como si hubieran entrado por el camino correcto) y
+// las borra de "solicitud". Si SAI ya no dice pendiente, se deja la fila donde estÃ¡ y
+// se loguea para revisiÃ³n manual (no se borra nada solo, para no perder el caso).
 function corregirBiometriasMalEnrutadas() {
   Logger.log("=== INICIO corregirBiometriasMalEnrutadas ===");
 
@@ -1456,13 +1366,13 @@ function corregirBiometriasMalEnrutadas() {
     if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
 
     var solId = String(datosSol[i][0]).trim();
-    if (!solId || setIdsBio.has(solId)) continue; // ya está en pendiente_biometria, no es un caso mal enrutado
+    if (!solId || setIdsBio.has(solId)) continue; // ya estÃ¡ en pendiente_biometria, no es un caso mal enrutado
 
     candidatos.push({ fila: i + 2, solicitud: solId });
   }
 
   if (candidatos.length === 0) {
-    Logger.log("✅ No hay biometrías mal enrutadas en 'solicitud'.");
+    Logger.log("âœ… No hay biometrÃ­as mal enrutadas en 'solicitud'.");
     return;
   }
 
@@ -1475,19 +1385,19 @@ function corregirBiometriasMalEnrutadas() {
   for (var c = 0; c < candidatos.length; c++) {
     var datosApi = _consultarSaiIndividual(candidatos[c].solicitud);
     if (!datosApi) {
-      Logger.log("⚠️ Sin respuesta API para " + candidatos[c].solicitud + ", se deja como está.");
+      Logger.log("âš ï¸ Sin respuesta API para " + candidatos[c].solicitud + ", se deja como estÃ¡.");
       continue;
     }
 
     var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
     if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
-      Logger.log("ℹ️ " + candidatos[c].solicitud + " ya no está pendiente de biometría (" + statusActual + "). Se deja en 'solicitud' para revisión manual.");
+      Logger.log("â„¹ï¸ " + candidatos[c].solicitud + " ya no estÃ¡ pendiente de biometrÃ­a (" + statusActual + "). Se deja en 'solicitud' para revisiÃ³n manual.");
       yaNoAplica++;
       continue;
     }
 
     if (!_esResultCodeBiometriaPendiente(datosApi.resultCode)) {
-      Logger.log("ℹ️ " + candidatos[c].solicitud + " sigue " + statusActual + " pero resultCode=" + datosApi.resultCode + " (no 500/503) — no se puede determinar a quién contactar. Se deja en 'solicitud' para revisión manual.");
+      Logger.log("â„¹ï¸ " + candidatos[c].solicitud + " sigue " + statusActual + " pero resultCode=" + datosApi.resultCode + " (no 500/503) â€” no se puede determinar a quiÃ©n contactar. Se deja en 'solicitud' para revisiÃ³n manual.");
       yaNoAplica++;
       continue;
     }
@@ -1500,15 +1410,15 @@ function corregirBiometriasMalEnrutadas() {
   if (idsAMover.size > 0) {
     var lock = LockService.getScriptLock();
     try { lock.waitLock(30000); } catch (e) {
-      Logger.log("❌ Lock no disponible para mover biometrías mal enrutadas: " + e.message);
+      Logger.log("âŒ Lock no disponible para mover biometrÃ­as mal enrutadas: " + e.message);
       return;
     }
     var filasBorradas = 0;
     try {
-      // Re-leer justo antes de borrar por ID (no por el índice capturado antes de las
+      // Re-leer justo antes de borrar por ID (no por el Ã­ndice capturado antes de las
       // consultas a SAI): entre esas consultas y este punto pudieron pasar varios
-      // segundos, tiempo en el que otro proceso (asignación, etc.) pudo mover filas y
-      // desfasar los índices originales.
+      // segundos, tiempo en el que otro proceso (asignaciÃ³n, etc.) pudo mover filas y
+      // desfasar los Ã­ndices originales.
       var lastRowActual = hojaSol.getLastRow();
       if (lastRowActual >= 2) {
         var datosActuales = hojaSol.getRange(2, 1, lastRowActual - 1, 17).getValues();
@@ -1529,22 +1439,22 @@ function corregirBiometriasMalEnrutadas() {
     }
 
     _guardarLoteBiometriaPendiente(paraMover);
-    Logger.log("✅ " + filasBorradas + " biometrías movidas de 'solicitud' a pendiente_biometria (de " + idsAMover.size + " candidatas confirmadas).");
+    Logger.log("âœ… " + filasBorradas + " biometrÃ­as movidas de 'solicitud' a pendiente_biometria (de " + idsAMover.size + " candidatas confirmadas).");
   }
 
-  Logger.log("Resumen — movidas: " + idsAMover.size + " | ya no aplica (dejadas para revisión manual): " + yaNoAplica);
+  Logger.log("Resumen â€” movidas: " + idsAMover.size + " | ya no aplica (dejadas para revisiÃ³n manual): " + yaNoAplica);
   Logger.log("=== FIN corregirBiometriasMalEnrutadas ===");
 }
 
-// CORRECCIÓN PUNTUAL — correr una sola vez (idempotente) para el caso contrario a
-// corregirBiometriasMalEnrutadas(): solicitudes que quedaron DUPLICADAS — presentes a la
+// CORRECCIÃ“N PUNTUAL â€” correr una sola vez (idempotente) para el caso contrario a
+// corregirBiometriasMalEnrutadas(): solicitudes que quedaron DUPLICADAS â€” presentes a la
 // vez en "solicitud" (ya disponibles para llamar) y en pendiente_biometria con una fase
-// que todavía no debería permitir eso ("" = nunca contactado, "WA_ENVIADO" = contactado
+// que todavÃ­a no deberÃ­a permitir eso ("" = nunca contactado, "WA_ENVIADO" = contactado
 // pero sin escalar, "RESUELTA" = ya cerrado en SAI). Solo cuando la fase es "ESCALADA" es
-// correcto que coexistan en ambas hojas — ese es el estado normal post-escalación.
-// Para los demás casos, se borra la fila de "solicitud" y se deja pendiente_biometria
-// intacta para que el caso siga su curso normal (WA en el próximo ciclo horario si aplica,
-// escalación en el próximo corte 8am/12pm). No se toca nada en pendiente_biometria.
+// correcto que coexistan en ambas hojas â€” ese es el estado normal post-escalaciÃ³n.
+// Para los demÃ¡s casos, se borra la fila de "solicitud" y se deja pendiente_biometria
+// intacta para que el caso siga su curso normal (WA en el prÃ³ximo ciclo horario si aplica,
+// escalaciÃ³n en el prÃ³ximo corte 8am/12pm). No se toca nada en pendiente_biometria.
 function corregirBiometriasDuplicadasEnCola() {
   Logger.log("=== INICIO corregirBiometriasDuplicadasEnCola ===");
 
@@ -1584,11 +1494,11 @@ function corregirBiometriasDuplicadasEnCola() {
     if (fase === "ESCALADA") continue; // coexistencia correcta, no tocar
 
     idsABorrar.add(solId);
-    detalle.push(solId + " (fase: " + (fase || "vacía") + ")");
+    detalle.push(solId + " (fase: " + (fase || "vacÃ­a") + ")");
   }
 
   if (idsABorrar.size === 0) {
-    Logger.log("✅ No hay duplicados indebidos entre 'solicitud' y pendiente_biometria.");
+    Logger.log("âœ… No hay duplicados indebidos entre 'solicitud' y pendiente_biometria.");
     return;
   }
 
@@ -1596,15 +1506,15 @@ function corregirBiometriasDuplicadasEnCola() {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(60000); } catch (e) {
-    Logger.log("❌ Lock no disponible para limpiar duplicados: " + e.message + " — vuelve a correrla en un momento con menos actividad.");
+    Logger.log("âŒ Lock no disponible para limpiar duplicados: " + e.message + " â€” vuelve a correrla en un momento con menos actividad.");
     return;
   }
   try {
-    // Re-leer justo antes de borrar (por ID, no por el índice calculado arriba): la
-    // espera del lock (hasta 60s bajo contención) es tiempo suficiente para que otro
-    // proceso mueva filas y desfase los índices originales. También se vuelve a
-    // consultar la fase en pendiente_biometria por si cambió a ESCALADA mientras se
-    // esperaba, en cuyo caso la coexistencia ya sería correcta y no hay que borrar.
+    // Re-leer justo antes de borrar (por ID, no por el Ã­ndice calculado arriba): la
+    // espera del lock (hasta 60s bajo contenciÃ³n) es tiempo suficiente para que otro
+    // proceso mueva filas y desfase los Ã­ndices originales. TambiÃ©n se vuelve a
+    // consultar la fase en pendiente_biometria por si cambiÃ³ a ESCALADA mientras se
+    // esperaba, en cuyo caso la coexistencia ya serÃ­a correcta y no hay que borrar.
     var lastRowBioActual = hojaBio.getLastRow();
     var fasesActuales = new Map();
     if (lastRowBioActual >= 2) {
@@ -1623,14 +1533,14 @@ function corregirBiometriasDuplicadasEnCola() {
         var idActual = String(datosSolActuales[k][0]).trim();
         var estadoActual = String(datosSolActuales[k][16]).toUpperCase().trim();
         if (!idsABorrar.has(idActual) || estadoActual !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
-        if (fasesActuales.get(idActual) === "ESCALADA") continue; // ya escaló mientras se esperaba, correcto dejarlo
+        if (fasesActuales.get(idActual) === "ESCALADA") continue; // ya escalÃ³ mientras se esperaba, correcto dejarlo
         filasABorrar.push(k + 2);
       }
     }
 
     filasABorrar.sort((a, b) => b - a).forEach(function(fila) { hojaSol.deleteRow(fila); });
     SpreadsheetApp.flush();
-    Logger.log("✅ " + filasABorrar.length + " filas duplicadas eliminadas de 'solicitud' (de " + idsABorrar.size + " candidatas confirmadas). Quedan intactas en pendiente_biometria siguiendo su fase actual.");
+    Logger.log("âœ… " + filasABorrar.length + " filas duplicadas eliminadas de 'solicitud' (de " + idsABorrar.size + " candidatas confirmadas). Quedan intactas en pendiente_biometria siguiendo su fase actual.");
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
@@ -1638,15 +1548,15 @@ function corregirBiometriasDuplicadasEnCola() {
   Logger.log("=== FIN corregirBiometriasDuplicadasEnCola ===");
 }
 
-// BACKFILL ÚNICO — correr una sola vez, después de agregarColumnaFechaActualizacionFase(),
-// para poblar fecha_actualizacion_fase en filas que ya tenían fase asignada antes de que
-// existiera la columna. No existe un registro exacto de cuándo cambió cada fase en el pasado
-// (esa es justamente la brecha que esta columna cierra hacia adelante), así que se usa el
+// BACKFILL ÃšNICO â€” correr una sola vez, despuÃ©s de agregarColumnaFechaActualizacionFase(),
+// para poblar fecha_actualizacion_fase en filas que ya tenÃ­an fase asignada antes de que
+// existiera la columna. No existe un registro exacto de cuÃ¡ndo cambiÃ³ cada fase en el pasado
+// (esa es justamente la brecha que esta columna cierra hacia adelante), asÃ­ que se usa el
 // mejor proxy disponible por caso:
-// - WA_ENVIADO → fecha_envio_brodcast (mismo evento, exacto).
-// - ESCALADA   → fecha de asignación del caso en Historico_Gestiones (aproximada: el caso
+// - WA_ENVIADO â†’ fecha_envio_brodcast (mismo evento, exacto).
+// - ESCALADA   â†’ fecha de asignaciÃ³n del caso en Historico_Gestiones (aproximada: el caso
 //                pudo escalar un poco antes de que un analista lo tomara).
-// - RESUELTA / cualquier otro valor → no hay ningún dato confiable, se deja vacía.
+// - RESUELTA / cualquier otro valor â†’ no hay ningÃºn dato confiable, se deja vacÃ­a.
 function backfillFechaActualizacionFase() {
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -1658,7 +1568,7 @@ function backfillFechaActualizacionFase() {
   var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
   var actuales = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
 
-  // Mapa solId → fechaAsig desde Historico_Gestiones, para aproximar ESCALADA.
+  // Mapa solId â†’ fechaAsig desde Historico_Gestiones, para aproximar ESCALADA.
   var mapaFechaAsignacion = new Map();
   try {
     var ssHist = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
@@ -1672,7 +1582,7 @@ function backfillFechaActualizacionFase() {
       }
     }
   } catch (e) {
-    Logger.log("⚠️ No se pudo leer Historico_Gestiones para aproximar ESCALADA: " + e.message);
+    Logger.log("âš ï¸ No se pudo leer Historico_Gestiones para aproximar ESCALADA: " + e.message);
   }
 
   var actualizaciones = [];
@@ -1714,11 +1624,11 @@ function backfillFechaActualizacionFase() {
     sinDatoOtraFase++; // RESUELTA u otro valor: sin dato confiable disponible
   }
 
-  Logger.log("Diagnóstico — filas con fase pero sin fecha_actualizacion_fase previa: " +
+  Logger.log("DiagnÃ³stico â€” filas con fase pero sin fecha_actualizacion_fase previa: " +
     "WA_ENVIADO sin fecha_envio_brodcast: " + sinDatoWA +
     " | ESCALADA sin match en Historico_Gestiones: " + sinDatoEscalada +
     " | RESUELTA/otro (esperado, sin proxy): " + sinDatoOtraFase +
-    " | filas leídas en Historico_Gestiones: " + mapaFechaAsignacion.size);
+    " | filas leÃ­das en Historico_Gestiones: " + mapaFechaAsignacion.size);
 
   if (actualizaciones.length === 0) {
     Logger.log("No hay filas para backfill (o ya todas tienen fecha_actualizacion_fase).");
@@ -1727,7 +1637,7 @@ function backfillFechaActualizacionFase() {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para backfill: " + e.message);
+    Logger.log("âŒ Lock no disponible para backfill: " + e.message);
     return;
   }
 
@@ -1736,7 +1646,7 @@ function backfillFechaActualizacionFase() {
       hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(u.valor);
     });
     SpreadsheetApp.flush();
-    Logger.log("✅ Backfill completado — WA_ENVIADO: " + contadorWA + " | ESCALADA (aproximada): " + contadorEscalada +
+    Logger.log("âœ… Backfill completado â€” WA_ENVIADO: " + contadorWA + " | ESCALADA (aproximada): " + contadorEscalada +
       " | sin dato disponible: " + (sinDatoWA + sinDatoEscalada + sinDatoOtraFase));
   } finally {
     if (lock.hasLock()) lock.releaseLock();
@@ -1756,27 +1666,27 @@ function _eliminarSolicitudDeCola(hojaSol, solId) {
   }
 }
 
-// PASO 2: Capturar nuevas biometrías desde la API
-// Únicos resultCode de SAI que indican biometría genuinamente pendiente para la persona
+// PASO 2: Capturar nuevas biometrÃ­as desde la API
+// Ãšnicos resultCode de SAI que indican biometrÃ­a genuinamente pendiente para la persona
 // evaluada en ese registro (500 = pendiente, 503 = igual pendiente por otro motivo).
 // Cualquier otro resultCode (aunque estadoGeneral siga APROBADO_PENDIENTE_BIOMETRIA) es
-// el resultado de otra acción no relacionada con biometría — p.ej. evaluación de un
-// codeudor, error de sistema — y NO debe usarse para decidir a quién escribirle por
+// el resultado de otra acciÃ³n no relacionada con biometrÃ­a â€” p.ej. evaluaciÃ³n de un
+// codeudor, error de sistema â€” y NO debe usarse para decidir a quiÃ©n escribirle por
 // WhatsApp ni para dejar entrar la solicitud a pendiente_biometria. Usado por los tres
 // puntos que pueden insertar en esa hoja: _capturarNuevasBiometrias(),
-// corregirBiometriasMalEnrutadas() y revisarEnEsperaCodeudor() (Código.js).
+// corregirBiometriasMalEnrutadas() y revisarEnEsperaCodeudor() (CÃ³digo.js).
 function _esResultCodeBiometriaPendiente(resultCode) {
   var rc = String(resultCode || "").trim();
   return rc === "500" || rc === "503";
 }
 
 function _capturarNuevasBiometrias() {
-  Logger.log("--- Paso 2: Captura de nuevas biometrías ---");
+  Logger.log("--- Paso 2: Captura de nuevas biometrÃ­as ---");
 
   var keyFull_ = getKeyFull();
   var endpointBase = getEndPointNewApiDate();
   if (!keyFull_ || !endpointBase) {
-    Logger.log("❌ Faltan credenciales o endpoint.");
+    Logger.log("âŒ Faltan credenciales o endpoint.");
     return;
   }
 
@@ -1794,7 +1704,7 @@ function _capturarNuevasBiometrias() {
   try {
     do {
       var url = endpointBase + '?startDate=' + sIni + '&endDate=' + sFin + '&page=' + paginaActual + '&size=200';
-      Logger.log("[Biometría] Página " + paginaActual + " consultando...");
+      Logger.log("[BiometrÃ­a] PÃ¡gina " + paginaActual + " consultando...");
 
       var response = UrlFetchApp.fetch(url, {
         method: 'get',
@@ -1803,7 +1713,7 @@ function _capturarNuevasBiometrias() {
       });
 
       if (response.getResponseCode() !== 200) {
-        Logger.log("❌ API error HTTP " + response.getResponseCode());
+        Logger.log("âŒ API error HTTP " + response.getResponseCode());
         break;
       }
 
@@ -1832,16 +1742,16 @@ function _capturarNuevasBiometrias() {
     } while (paginaActual <= totalPaginas);
 
   } catch (e) {
-    Logger.log("❌ Error en consulta API biometrías: " + e.message);
+    Logger.log("âŒ Error en consulta API biometrÃ­as: " + e.message);
     return;
   }
 
   if (biometriasNuevas.length === 0) {
-    Logger.log("No se encontraron nuevas biometrías pendientes.");
+    Logger.log("No se encontraron nuevas biometrÃ­as pendientes.");
     return;
   }
 
-  Logger.log(biometriasNuevas.length + " biometrías candidatas encontradas.");
+  Logger.log(biometriasNuevas.length + " biometrÃ­as candidatas encontradas.");
   _guardarLoteBiometriaPendiente(biometriasNuevas);
 }
 
@@ -1850,7 +1760,7 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
 
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para guardar biometrías: " + e.message);
+    Logger.log("âŒ Lock no disponible para guardar biometrÃ­as: " + e.message);
     return;
   }
 
@@ -1879,7 +1789,7 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
       }
 
       var est = String(item.estadoGeneral || "").toUpperCase();
-      var fila = new Array(76).fill(""); // índice 75 = fase_seguimiento_biometria, arranca vacía
+      var fila = new Array(76).fill(""); // Ã­ndice 75 = fase_seguimiento_biometria, arranca vacÃ­a
 
       fila[0]  = solId;
       fila[1]  = item.poliza || "";
@@ -1952,14 +1862,14 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
       rango.setNumberFormat("@");
       rango.setValues(filas);
       SpreadsheetApp.flush();
-      Logger.log("✅ " + filas.length + " nuevas biometrías guardadas en pendiente_biometria. Duplicados: " + duplicados);
+      Logger.log("âœ… " + filas.length + " nuevas biometrÃ­as guardadas en pendiente_biometria. Duplicados: " + duplicados);
 
     } else {
-      Logger.log("No se guardaron biometrías nuevas. Duplicados: " + duplicados);
+      Logger.log("No se guardaron biometrÃ­as nuevas. Duplicados: " + duplicados);
     }
 
   } catch (e) {
-    Logger.log("❌ Error guardando biometrías: " + e.message);
+    Logger.log("âŒ Error guardando biometrÃ­as: " + e.message);
     throw e;
   } finally {
     lock.releaseLock();
@@ -1973,21 +1883,10 @@ function configurarInfobip() {
   props.setProperty('INFOBIP_TEMPLATE_NAME', 'biometria_pendiente');
   props.setProperty('INFOBIP_SENDER', '573148390322');
   props.setProperty('INFOBIP_HEADER_IMAGE_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png');
-  Logger.log("✅ Propiedades de Infobip configuradas correctamente.");
+  Logger.log("âœ… Propiedades de Infobip configuradas correctamente.");
 }
 
-// MIGRACIÓN ÚNICA — correr manualmente una sola vez desde el editor. Reemplaza la
-// Script Property INFOBIP_HEADER_PDF_URL (header DOCUMENT, ya no se usa) por
-// INFOBIP_HEADER_IMAGE_URL (header IMAGE, lo que ahora pide la plantilla
-// biometria_pendiente en Infobip). El editor de Script Properties no permite
-// renombrar, por eso se hace por código.
-function migrarInfobipHeaderImageUrl() {
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty('INFOBIP_HEADER_IMAGE_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png');
-  props.deleteProperty('INFOBIP_HEADER_PDF_URL');
-  Logger.log("✅ INFOBIP_HEADER_IMAGE_URL configurada. INFOBIP_HEADER_PDF_URL eliminada.");
-}
-
+// MIGRACIÃ“N ÃšNICA â€” correr manualmente una sola vez desde el editor. Reemplaza la
 function testEnviarWhatsApp() {
   var props = PropertiesService.getScriptProperties();
   var apiKey = props.getProperty('INFOBIP_API_KEY');
@@ -1996,7 +1895,7 @@ function testEnviarWhatsApp() {
   var sender = props.getProperty('INFOBIP_SENDER');
   var headerImageUrl = props.getProperty('INFOBIP_HEADER_IMAGE_URL');
 
-  var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
+  var telefono = "573002720356";  // â† PON TU NÃšMERO AQUÃ (con 57)
   var nombre = "Santiago";
   var solicitud = "12345678";
 
@@ -2040,7 +1939,7 @@ function testEnviarWhatsAppDuplicado() {
   var sender = props.getProperty('INFOBIP_SENDER');
   var templateName = 'duplicado_de_biometria_pendiente';
 
-  var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
+  var telefono = "573002720356";  // â† PON TU NÃšMERO AQUÃ (con 57)
   var nombre = "Santiago";
   var solicitud = "12345678";
 
@@ -2075,24 +1974,24 @@ function testEnviarWhatsAppDuplicado() {
   Logger.log(response.getContentText());
 }
 
-// Vocabulario de la columna "estado" de gestión: SAI y los formularios manuales
-// ya hablan ambos en masculino (APROBADO/APLAZADO/RECHAZADO), así que no hace
+// Vocabulario de la columna "estado" de gestiÃ³n: SAI y los formularios manuales
+// ya hablan ambos en masculino (APROBADO/APLAZADO/RECHAZADO), asÃ­ que no hace
 // falta traducir nada al escribir el resultado de SAI.
 var ESTADOS_FINALES_GESTION = new Set(['APROBADO', 'RECHAZADO']);
 var VENTANA_DIAS_VERIFICACION_SAI = 3;
 
 // Alcance de verificarAprobacionDesaplazamientos(): por ahora solo desaplazamiento e
-// inducción (columna 61 de Historico_Gestiones, el "tipo asignado"), no digital/canones
-// altos. Ventana de 90 días porque esa es la vigencia real de una solicitud — más allá
-// de eso ya no tiene sentido seguir preguntándole a SAI.
+// inducciÃ³n (columna 61 de Historico_Gestiones, el "tipo asignado"), no digital/canones
+// altos. Ventana de 90 dÃ­as porque esa es la vigencia real de una solicitud â€” mÃ¡s allÃ¡
+// de eso ya no tiene sentido seguir preguntÃ¡ndole a SAI.
 var TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = new Set(['desaplazamiento', 'induccion']);
 var VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = 90;
 
 /**
- * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducción
- * (Historico_Gestiones principal) que un analista dejó sin resolución definitiva
+ * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducciÃ³n
+ * (Historico_Gestiones principal) que un analista dejÃ³ sin resoluciÃ³n definitiva
  * (aplazado, negado con motivo pendiente, etc.). No toca digital/canones altos.
- * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ * DiseÃ±ada para ejecutarse con trigger diario de 4 a 5 pm.
  */
 function verificarAprobacionDesaplazamientos() {
   const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -2123,7 +2022,7 @@ function verificarAprobacionDesaplazamientos() {
   }
 
   if (candidatos.length === 0) {
-    return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+    return { success: true, message: "No hay casos pendientes de verificaciÃ³n.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
   }
 
   var endpoint = getEndPointNewSai();
@@ -2132,7 +2031,7 @@ function verificarAprobacionDesaplazamientos() {
 
   // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
   // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
-  // también usan la asignación de casos y el resto del sistema.
+  // tambiÃ©n usan la asignaciÃ³n de casos y el resto del sistema.
   var actualizaciones = [];
   var detalles = [];
 
@@ -2168,7 +2067,7 @@ function verificarAprobacionDesaplazamientos() {
   if (actualizaciones.length === 0) {
     return {
       success: true,
-      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
+      message: "VerificaciÃ³n completada. 0 de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
       totalActualizados: 0,
       detalles: detalles
@@ -2179,7 +2078,7 @@ function verificarAprobacionDesaplazamientos() {
   try {
     lock.waitLock(30000);
   } catch (e) {
-    return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
+    return { success: false, message: "No se pudo adquirir el lock. Intenta mÃ¡s tarde." };
   }
 
   try {
@@ -2190,7 +2089,7 @@ function verificarAprobacionDesaplazamientos() {
 
     return {
       success: true,
-      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
+      message: "VerificaciÃ³n completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
       totalActualizados: actualizaciones.length,
       detalles: detalles
@@ -2205,19 +2104,19 @@ function verificarAprobacionDesaplazamientos() {
 function triggerVerificacionDesaplazamientos() {
   try {
     var resultado = verificarAprobacionDesaplazamientos();
-    Logger.log("Verificación desaplazamientos: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+    Logger.log("VerificaciÃ³n desaplazamientos: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
   } catch (e) {
-    Logger.log("Error en trigger verificación desaplazamientos: " + e.message);
+    Logger.log("Error en trigger verificaciÃ³n desaplazamientos: " + e.message);
   }
 }
 
 /**
- * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` explícitamente (mismo
- * Historico_Gestiones, mismo filtro de tipo). Este wrapper es 100% redundante — si el
+ * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` explÃ­citamente (mismo
+ * Historico_Gestiones, mismo filtro de tipo). Este wrapper es 100% redundante â€” si el
  * trigger `triggerVerificacionInducciones` sigue activo en la UI de Apps Script junto
  * al de `triggerVerificacionDesaplazamientos`, hay que borrar uno de los dos: ambos
  * corren exactamente el mismo trabajo y disparar los dos duplica innecesariamente las
- * llamadas a SAI (y el riesgo de que la ejecución se pase del tiempo límite).
+ * llamadas a SAI (y el riesgo de que la ejecuciÃ³n se pase del tiempo lÃ­mite).
  */
 function verificarResultadoInducciones() {
   return verificarAprobacionDesaplazamientos();
@@ -2226,16 +2125,16 @@ function verificarResultadoInducciones() {
 function triggerVerificacionInducciones() {
   try {
     var resultado = verificarResultadoInducciones();
-    Logger.log("Verificación inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+    Logger.log("VerificaciÃ³n inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
   } catch (e) {
-    Logger.log("Error en trigger verificación inducciones: " + e.message);
+    Logger.log("Error en trigger verificaciÃ³n inducciones: " + e.message);
   }
 }
 
 /**
  * Verifica contra SAI el resultado real de los casos de reestudio/nuevaUar/deudorUar
- * que un analista dejó sin resolución definitiva. Estos tipos viven en una hoja de
- * cálculo distinta (ID_HOJA_REESTUDIOS), con su propio esquema de columnas:
+ * que un analista dejÃ³ sin resoluciÃ³n definitiva. Estos tipos viven en una hoja de
+ * cÃ¡lculo distinta (ID_HOJA_REESTUDIOS), con su propio esquema de columnas:
  * solicitudId en B (2), fechaAsignacion en I (9), estadoGestion en K (11).
  * Requiere un trigger de tiempo propio (agregar manualmente en la UI de Apps Script,
  * 16:00-17:00, apuntando a triggerVerificacionReestudiosUar).
@@ -2267,7 +2166,7 @@ function verificarAprobacionReestudiosUar() {
   }
 
   if (candidatos.length === 0) {
-    return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
+    return { success: true, message: "No hay casos pendientes de verificaciÃ³n.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
   }
 
   var endpoint = getEndPointNewSai();
@@ -2276,7 +2175,7 @@ function verificarAprobacionReestudiosUar() {
 
   // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
   // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
-  // también usan la asignación de casos y el resto del sistema.
+  // tambiÃ©n usan la asignaciÃ³n de casos y el resto del sistema.
   var actualizaciones = [];
   var detalles = [];
 
@@ -2312,7 +2211,7 @@ function verificarAprobacionReestudiosUar() {
   if (actualizaciones.length === 0) {
     return {
       success: true,
-      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
+      message: "VerificaciÃ³n completada. 0 de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
       totalActualizados: 0,
       detalles: detalles
@@ -2323,7 +2222,7 @@ function verificarAprobacionReestudiosUar() {
   try {
     lock.waitLock(30000);
   } catch (e) {
-    return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
+    return { success: false, message: "No se pudo adquirir el lock. Intenta mÃ¡s tarde." };
   }
 
   try {
@@ -2334,7 +2233,7 @@ function verificarAprobacionReestudiosUar() {
 
     return {
       success: true,
-      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
+      message: "VerificaciÃ³n completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
       totalRevisados: candidatos.length,
       totalActualizados: actualizaciones.length,
       detalles: detalles
@@ -2349,8 +2248,8 @@ function verificarAprobacionReestudiosUar() {
 function triggerVerificacionReestudiosUar() {
   try {
     var resultado = verificarAprobacionReestudiosUar();
-    Logger.log("Verificación reestudios/UAR: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+    Logger.log("VerificaciÃ³n reestudios/UAR: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
   } catch (e) {
-    Logger.log("Error en trigger verificación reestudios/UAR: " + e.message);
+    Logger.log("Error en trigger verificaciÃ³n reestudios/UAR: " + e.message);
   }
 }
