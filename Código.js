@@ -377,6 +377,7 @@ function getTableData() {
           filaAdaptada[27] = asignado;                         // email asignado
           filaAdaptada[28] = "";                               // fechaFin (vacía = pendiente)
           filaAdaptada[30] = String(dataReest[i][7]).trim();   // nombre analista
+          if (numCols > 37) filaAdaptada[37] = String(dataReest[i][13]).trim(); // observacionesOrigen
           filaAdaptada.push("");                                // CategoriaScore
           misFilasPendientes.push(filaAdaptada);
         }
@@ -422,6 +423,7 @@ function getTableData() {
         filaAdaptada[27] = asignado;
         filaAdaptada[28] = "";
         filaAdaptada[30] = String(dataHistReest[i][7]).trim();
+        if (numCols > 37) filaAdaptada[37] = String(dataHistReest[i][13]).trim(); // observacionesOrigen
         filaAdaptada.push("");
         misFilasPendientes.push(filaAdaptada);
       }

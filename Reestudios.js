@@ -71,7 +71,8 @@ function getReestudiosData() {
           tipoProceso: String(fila[4]).trim(),
           claseSolicitud: String(fila[5]).trim(),
           fechaAsignacion: fechaAsignacion,
-          fechaRadicacion: String(fila[0]).trim()
+          fechaRadicacion: String(fila[0]).trim(),
+          observacionesOrigen: String(fila[13]).trim()
         });
       }
     }
@@ -105,7 +106,8 @@ function getReestudiosData() {
             tipoProceso: String(fila[4]).trim(),
             claseSolicitud: String(fila[5]).trim(),
             fechaAsignacion: fechaAsignacion,
-            fechaRadicacion: String(fila[0]).trim()
+            fechaRadicacion: String(fila[0]).trim(),
+            observacionesOrigen: String(fila[13]).trim()
           });
         }
       }

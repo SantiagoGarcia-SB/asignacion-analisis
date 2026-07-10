@@ -718,6 +718,7 @@ function _normalizarFilasReestudios(filas) {
     fila[17] = o.fechaRadicacion || '';
     fila[20] = o.tipoProceso || o.claseSolicitud || o.clase || '';
     fila[26] = o.fechaAsignacion || '';
+    fila[37] = o.observacionesOrigen || '';
     fila.push('');
     return fila;
   });
@@ -1698,6 +1699,7 @@ function poblarModalRst(fila) {
   setTxt('rst_fechaAsignacion', esAdaptada ? fila[26] : fila[8]);
   setTxt('rst_tipoProceso', fila[4]);
   setTxt('rst_clase', fila[5]);
+  setTxt('rst_observacionesOrigen', fila[37]);
   setVal('rst_solicitud_id', solicitudId);
   setVal('rst_poliza', '');
   setVal('rst_estado_q', '');
