@@ -117,7 +117,7 @@ function limpiarBiometriasResueltas() {
 
     const datos = hoja.getRange(2, 1, lastRow - 1, 19).getValues();
 
-    const bioIds = new Set();
+    const bioIds = [];
 
     for (let i = 0; i < datos.length; i++) {
       const estado = String(datos[i][16]).toUpperCase().trim();
@@ -125,66 +125,34 @@ function limpiarBiometriasResueltas() {
 
       const solicitud = String(datos[i][0]).trim();
       if (!solicitud) continue;
-      bioIds.add(solicitud);
+      bioIds.push(solicitud);
     }
 
-    if (bioIds.size === 0) {
+    if (bioIds.length === 0) {
       Logger.log("✅ No hay biometrías pendientes para revisar.");
       return;
     }
 
-    Logger.log("📋 " + bioIds.size + " biometrías pendientes a verificar contra SAI.");
+    Logger.log("📋 " + bioIds.length + " biometrías pendientes a verificar contra SAI (consulta individual).");
 
-    const endpointBase = getEndPointNewApiDate();
-    const keyFull = getKeyFull();
-    if (!endpointBase || !keyFull) { Logger.log("❌ Faltan credenciales API."); return; }
-
-    const hace4Dias = new Date();
-    hace4Dias.setDate(hace4Dias.getDate() - 4);
-    const sIni = formatDateCustom(hace4Dias);
-    const sFin = formatDateCustom(new Date());
-
+    // Consulta individual por solicitud (mismo patrón que _procesarCortePendientes()) en vez
+    // de la búsqueda paginada por rango de fechas: con la cola típica (decenas, no miles de
+    // pendientes) es mucho más rápido y no depende de que la solicitud se haya radicado
+    // dentro de una ventana de días — antes, una solicitud radicada hace más de 4 días
+    // quedaba fuera del rango de búsqueda y nunca se revisaba.
     const estadosSai = new Map();
     const fechasSai = new Map();
-    let paginaActual = 1;
-    let totalPaginas = 1;
-
-    do {
-      const url = endpointBase + '?startDate=' + sIni + '&endDate=' + sFin + '&page=' + paginaActual + '&size=200';
-      const response = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
-        muteHttpExceptions: true
-      });
-
-      if (response.getResponseCode() !== 200) {
-        Logger.log("❌ API error HTTP " + response.getResponseCode() + " en página " + paginaActual);
-        break;
+    for (let i = 0; i < bioIds.length; i++) {
+      const datosApi = _consultarSaiIndividual(bioIds[i]);
+      if (datosApi) {
+        estadosSai.set(bioIds[i], String(datosApi.studyStatus || "").toUpperCase().trim());
+        const fechaResultadoApi = datosApi.lastResultDate || datosApi.lastMovementDate || "";
+        if (fechaResultadoApi) fechasSai.set(bioIds[i], fechaResultadoApi);
+      } else {
+        Logger.log("⚠️ Sin respuesta API para " + bioIds[i]);
       }
-
-      const json = JSON.parse(response.getContentText());
-      totalPaginas = json.totalPages || 1;
-      const contenido = json.content || [];
-
-      contenido.forEach(function(item) {
-        const id = String(item.consecutive || "").trim();
-        if (id && bioIds.has(id)) {
-          estadosSai.set(id, String(item.studyStatus || "").toUpperCase().trim());
-          const fechaResultadoApi = item.lastResultDate || item.lastMovementDate || "";
-          if (fechaResultadoApi) fechasSai.set(id, fechaResultadoApi);
-        }
-      });
-
-      Logger.log("Página " + paginaActual + "/" + totalPaginas + " — " + contenido.length + " registros. Encontradas: " + estadosSai.size + "/" + bioIds.size);
-
-      if (estadosSai.size >= bioIds.size) {
-        Logger.log("✅ Todas las biometrías encontradas en SAI. Deteniendo paginación.");
-        break;
-      }
-
-      paginaActual++;
-      if (paginaActual <= totalPaginas) Utilities.sleep(2000);
-    } while (paginaActual <= totalPaginas);
+      Utilities.sleep(1000);
+    }
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
     const idsAEliminar = new Set();
@@ -634,12 +602,17 @@ function cicloPrimerContactoBiometria() {
 
 // Calcula el inicio de la ventana de ~12h que se abre en el corte actual (8am o 12pm),
 // usada por _archivarColaBiometriaVencida() para decidir qué queda fuera de plazo.
-// Corte 8am (hora < 12): la ventana que se abre es "ayer 12:00pm–11:59pm" → umbral = ayer 12:00pm.
-// Corte 12pm (hora >= 12): la ventana que se abre es "hoy 00:00–11:59am" → umbral = hoy 00:00.
+// Los triggers reales corren en las ventanas 7-8am y 11-12pm (Apps Script no dispara al
+// minuto exacto), así que el corte de "12pm" normalmente se ejecuta con hora=11, todavía
+// menor a 12. Por eso el corte se separa en el punto medio entre ambas ventanas (hora < 9),
+// no en el mediodía exacto — de lo contrario el corte de 11-12 se clasificaba como si fuera
+// el de 8am y usaba el umbral equivocado (más laxo: "ayer 12:00pm" en vez de "hoy 00:00").
+// Corte 8am (hora < 9): la ventana que se abre es "ayer 12:00pm–11:59pm" → umbral = ayer 12:00pm.
+// Corte 12pm (hora >= 9): la ventana que se abre es "hoy 00:00–11:59am" → umbral = hoy 00:00.
 // Se deriva de la hora real de ejecución (no de un parámetro fijo) para poder probarla manualmente.
 function _calcularUmbralArchivoColaBiometria(ahora) {
   var base = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-  if (ahora.getHours() < 12) {
+  if (ahora.getHours() < 9) {
     var ayerMediodia = new Date(base.getTime() - 12 * 60 * 60 * 1000);
     return { umbral: ayerMediodia, corteOrigen: "CORTE_8AM" };
   }
@@ -808,7 +781,7 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
   var baseUrl = props.getProperty('INFOBIP_BASE_URL');
   var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
   var sender = props.getProperty('INFOBIP_SENDER');
-  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
+  var headerImageUrl = props.getProperty('INFOBIP_HEADER_IMAGE_URL');
 
   if (!apiKey || !baseUrl || !templateName || !sender) {
     Logger.log("⚠️ Infobip no configurado. Broadcast no enviado.");
@@ -841,8 +814,8 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
         body: { placeholders: [nombre, solicitudId] },
         buttons: [{ type: "QUICK_REPLY", parameter: solicitudId }]
       };
-      if (headerPdfUrl) {
-        templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
+      if (headerImageUrl) {
+        templateData.header = { type: "IMAGE", mediaUrl: headerImageUrl };
       }
 
       var payload = {
@@ -910,6 +883,64 @@ function _consultarSaiIndividual(consecutivo) {
     Logger.log("⚠️ Error consultando SAI para " + consecutivo + ": " + e.message);
     return null;
   }
+}
+
+// Wrapper sin argumentos: el botón "Ejecutar" del editor no permite pasar parámetros,
+// así que este es el que hay que seleccionar y correr directamente.
+function diagnosticarDestinosBiometriaTest() {
+  diagnosticarDestinosBiometria('12236327');
+}
+
+// DIAGNÓSTICO MANUAL — correr desde el editor pasando un consecutivo, p.ej.
+// diagnosticarDestinosBiometria('12236327'). Muestra en el log el resultCode real
+// del inquilino y de cada codeudor tal como los devuelve SAI, para entender por qué
+// un caso queda sin destinatarios de WhatsApp (bio_destino_1..4 vacíos → estado ERROR).
+function diagnosticarDestinosBiometria(consecutivo) {
+  var item = _consultarSaiIndividual(String(consecutivo).trim());
+  if (!item) {
+    Logger.log("❌ Sin respuesta de SAI para " + consecutivo);
+    return;
+  }
+  Logger.log("studyStatus: " + item.studyStatus + " | mainResultCode: " + item.mainResultCode);
+  Logger.log("Inquilino: " + item.tenantName + " | tel: " + item.tenantPhone + " | resultCode: " + item.resultCode);
+  var codebtors = item.codebtors || [];
+  Logger.log("Total codeudores en payload: " + codebtors.length);
+  codebtors.forEach(function(c, i) {
+    Logger.log("Codeudor " + (i + 1) + ": " + c.name + " | tel: " + c.phone + " | resultCode: " + c.resultCode);
+  });
+  Logger.log("JSON completo: " + JSON.stringify(item));
+}
+
+function diagnosticarFilaPendienteBiometriaTest() {
+  diagnosticarFilaPendienteBiometria('12236327');
+}
+
+// DIAGNÓSTICO MANUAL — lee la fila realmente guardada en pendiente_biometria (no lo
+// que SAI dice ahora, que ya pudo haber cambiado): estado, fase de seguimiento, cuándo
+// se consultó por última vez, y qué quedó en las columnas bio_destino_1..4.
+function diagnosticarFilaPendienteBiometria(consecutivo) {
+  var id = String(consecutivo).trim();
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("Hoja vacía."); return; }
+
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  for (var i = 0; i < datos.length; i++) {
+    if (String(datos[i][0]).trim() !== id) continue;
+    var row = datos[i];
+    Logger.log("Fila " + (i + 2) + " | estadoGeneral: " + row[16] + " | fechaResultado: " + row[18]);
+    Logger.log("fecha_consulta_sai: " + row[59] + " | fecha_envio_brodcast: " + row[60] + " | estado_brodcast: " + row[61] + " | nuevo_estado_sai: " + row[62]);
+    Logger.log("fase_seguimiento_biometria: " + row[75]);
+    for (var d = 0; d < 4; d++) {
+      var base = 63 + (d * 3);
+      Logger.log("bio_destino_" + (d + 1) + ": rol=" + row[base] + " nombre=" + row[base + 1] + " telefono=" + row[base + 2]);
+    }
+    return;
+  }
+  Logger.log("⚠️ No se encontró la solicitud " + id + " en pendiente_biometria.");
 }
 
 function _homologarDatosApi(item) {
@@ -1455,6 +1486,12 @@ function corregirBiometriasMalEnrutadas() {
       continue;
     }
 
+    if (!_esResultCodeBiometriaPendiente(datosApi.resultCode)) {
+      Logger.log("ℹ️ " + candidatos[c].solicitud + " sigue " + statusActual + " pero resultCode=" + datosApi.resultCode + " (no 500/503) — no se puede determinar a quién contactar. Se deja en 'solicitud' para revisión manual.");
+      yaNoAplica++;
+      continue;
+    }
+
     paraMover.push(_homologarDatosApi(datosApi));
     idsAMover.add(candidatos[c].solicitud);
     Utilities.sleep(1000);
@@ -1720,6 +1757,19 @@ function _eliminarSolicitudDeCola(hojaSol, solId) {
 }
 
 // PASO 2: Capturar nuevas biometrías desde la API
+// Únicos resultCode de SAI que indican biometría genuinamente pendiente para la persona
+// evaluada en ese registro (500 = pendiente, 503 = igual pendiente por otro motivo).
+// Cualquier otro resultCode (aunque estadoGeneral siga APROBADO_PENDIENTE_BIOMETRIA) es
+// el resultado de otra acción no relacionada con biometría — p.ej. evaluación de un
+// codeudor, error de sistema — y NO debe usarse para decidir a quién escribirle por
+// WhatsApp ni para dejar entrar la solicitud a pendiente_biometria. Usado por los tres
+// puntos que pueden insertar en esa hoja: _capturarNuevasBiometrias(),
+// corregirBiometriasMalEnrutadas() y revisarEnEsperaCodeudor() (Código.js).
+function _esResultCodeBiometriaPendiente(resultCode) {
+  var rc = String(resultCode || "").trim();
+  return rc === "500" || rc === "503";
+}
+
 function _capturarNuevasBiometrias() {
   Logger.log("--- Paso 2: Captura de nuevas biometrías ---");
 
@@ -1767,10 +1817,9 @@ function _capturarNuevasBiometrias() {
 
         var estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
         var tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
-        var rc = String(item.resultCode || "").trim();
 
         if (estadoGeneral !== "APROBADO_PENDIENTE_BIOMETRIA") return;
-        if (rc !== "500" && rc !== "503") return;
+        if (!_esResultCodeBiometriaPendiente(item.resultCode)) return;
         if (String(item.mainResultCode) !== "2") return;
         if (TIPOS_EXCLUIR.has(tipoSolicitud)) return;
 
@@ -1917,107 +1966,26 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
   }
 }
 
-function enviarBroadcastInfobip(filasBiometria, hojaBio, rowInicio) {
-  var props = PropertiesService.getScriptProperties();
-  var apiKey = props.getProperty('INFOBIP_API_KEY');
-  var baseUrl = props.getProperty('INFOBIP_BASE_URL');
-  var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
-  var sender = props.getProperty('INFOBIP_SENDER');
-  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
-
-  if (!apiKey || !baseUrl || !templateName || !sender) {
-    Logger.log("⚠️ Infobip no configurado — faltan Script Properties. Broadcast no enviado.");
-    return;
-  }
-
-  var url = "https://" + baseUrl + "/whatsapp/1/message/template";
-  var enviados = 0;
-  var errores = 0;
-  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-
-  for (var i = 0; i < filasBiometria.length; i++) {
-    var fila = filasBiometria[i];
-    var solicitudId = String(fila[0] || "").trim();
-    var filaEnvioOk = false;
-
-    for (var d = 0; d < 4; d++) {
-      var base = 63 + (d * 3);
-      var rol = String(fila[base] || "").trim();
-      if (!rol) continue;
-      var nombre = String(fila[base + 1] || "").trim();
-      var telefono = String(fila[base + 2] || "").trim().replace(/\D/g, "");
-      if (!telefono || !nombre) continue;
-
-      if (telefono.length === 10 && telefono.charAt(0) === "3") {
-        telefono = "57" + telefono;
-      }
-
-      var templateData = {
-        body: { placeholders: [nombre, solicitudId] },
-        buttons: [{ type: "QUICK_REPLY", parameter: solicitudId }]
-      };
-      if (headerPdfUrl) {
-        templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
-      }
-
-      var payload = {
-        messages: [{
-          from: sender,
-          to: telefono,
-          content: {
-            templateName: templateName,
-            templateData: templateData,
-            language: "es_CO"
-          }
-        }]
-      };
-
-      try {
-        var response = UrlFetchApp.fetch(url, {
-          method: "POST",
-          contentType: "application/json",
-          headers: { "Authorization": "App " + apiKey },
-          payload: JSON.stringify(payload),
-          muteHttpExceptions: true
-        });
-
-        var code = response.getResponseCode();
-        if (code >= 200 && code < 300) {
-          enviados++;
-          filaEnvioOk = true;
-          Logger.log("✅ WA enviado → " + rol + ": " + nombre + " | Tel: " + telefono + " | Sol: " + solicitudId);
-        } else {
-          errores++;
-          Logger.log("❌ WA falló → " + telefono + " | HTTP " + code + " | " + response.getContentText());
-        }
-      } catch (e) {
-        errores++;
-        Logger.log("❌ Error WA → " + telefono + " | " + e.message);
-      }
-
-      Utilities.sleep(500);
-    }
-
-    if (hojaBio && rowInicio) {
-      var filaSheet = rowInicio + i;
-      var estado = filaEnvioOk ? "ENVIADO" : "ERROR";
-      hojaBio.getRange(filaSheet, 61).setValue(ahora);    // fecha_envio_brodcast
-      hojaBio.getRange(filaSheet, 62).setValue(estado);    // estado_brodcast
-    }
-  }
-
-  if (hojaBio) SpreadsheetApp.flush();
-  Logger.log("📱 Broadcast finalizado: " + enviados + " enviados, " + errores + " errores.");
-}
-
 function configurarInfobip() {
   var props = PropertiesService.getScriptProperties();
   props.setProperty('INFOBIP_API_KEY', 'cc0c476419eea6d179ad2136c13c0072-a919e025-1367-4775-bd25-7d69973a0df7');
   props.setProperty('INFOBIP_BASE_URL', 'yrrzxg.api.infobip.com');
   props.setProperty('INFOBIP_TEMPLATE_NAME', 'biometria_pendiente');
   props.setProperty('INFOBIP_SENDER', '573148390322');
-  props.setProperty('INFOBIP_HEADER_PDF_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/cc80086a-3754-40f0-a50e-5163febeeb84.pdf');
+  props.setProperty('INFOBIP_HEADER_IMAGE_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png');
   Logger.log("✅ Propiedades de Infobip configuradas correctamente.");
+}
+
+// MIGRACIÓN ÚNICA — correr manualmente una sola vez desde el editor. Reemplaza la
+// Script Property INFOBIP_HEADER_PDF_URL (header DOCUMENT, ya no se usa) por
+// INFOBIP_HEADER_IMAGE_URL (header IMAGE, lo que ahora pide la plantilla
+// biometria_pendiente en Infobip). El editor de Script Properties no permite
+// renombrar, por eso se hace por código.
+function migrarInfobipHeaderImageUrl() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('INFOBIP_HEADER_IMAGE_URL', 'https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png');
+  props.deleteProperty('INFOBIP_HEADER_PDF_URL');
+  Logger.log("✅ INFOBIP_HEADER_IMAGE_URL configurada. INFOBIP_HEADER_PDF_URL eliminada.");
 }
 
 function testEnviarWhatsApp() {
@@ -2026,7 +1994,7 @@ function testEnviarWhatsApp() {
   var baseUrl = props.getProperty('INFOBIP_BASE_URL');
   var templateName = props.getProperty('INFOBIP_TEMPLATE_NAME');
   var sender = props.getProperty('INFOBIP_SENDER');
-  var headerPdfUrl = props.getProperty('INFOBIP_HEADER_PDF_URL');
+  var headerImageUrl = props.getProperty('INFOBIP_HEADER_IMAGE_URL');
 
   var telefono = "573002720356";  // ← PON TU NÚMERO AQUÍ (con 57)
   var nombre = "Santiago";
@@ -2036,8 +2004,8 @@ function testEnviarWhatsApp() {
     body: { placeholders: [nombre, solicitud] },
     buttons: [{ type: "QUICK_REPLY", parameter: solicitud }]
   };
-  if (headerPdfUrl) {
-    templateData.header = { type: "DOCUMENT", mediaUrl: headerPdfUrl, filename: "Instructivo.pdf" };
+  if (headerImageUrl) {
+    templateData.header = { type: "IMAGE", mediaUrl: headerImageUrl };
   }
 
   var url = "https://" + baseUrl + "/whatsapp/1/message/template";

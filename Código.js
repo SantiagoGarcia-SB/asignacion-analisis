@@ -944,8 +944,10 @@ function revisarEnEsperaCodeudor() {
 
         // Si salió de CODEUDORES_REQUERIDOS directo a pendiente de biometría, debe seguir
         // el mismo camino que cualquier otra biometría (WA + cortes 8am/12pm), no entrar
-        // directo a la cola de llamada saltándose ese control.
-        if (estado === "APROBADO_PENDIENTE_BIOMETRIA") {
+        // directo a la cola de llamada saltándose ese control. Pero solo si resultCode
+        // confirma que hay alguien pendiente de verdad (500/503) — si no, a pendiente_biometria
+        // no debe llegar y se deja como reactivación normal hacia la cola de llamada.
+        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && _esResultCodeBiometriaPendiente(item.resultCode)) {
           reactivadasBiometria.push(item);
         } else {
           reactivadas.push(item);
