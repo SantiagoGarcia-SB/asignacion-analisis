@@ -265,12 +265,14 @@ function test_E2_DesempatePorModo() {
 
 function test_F1_RotacionVIP() {
   _seccion('F1. Rotación VIP');
-  _assert('MAX_VIP = 2', 2, MAX_VIP_CONSECUTIVAS);
+  // MAX_VIP_CONSECUTIVAS y CATEGORIAS_ROTACION (sin sufijo) eran del motor legado
+  // ModeloAsignación.js, ya removido del proyecto — el motor vigente es MotorAsignacion.js,
+  // con las constantes _UNIF.
   _assert('Motor MAX_VIP = 2', 2, MAX_VIP_CONSECUTIVAS_UNIF);
-  _assert('7 categorías', 7, CATEGORIAS_ROTACION.length);
+  _assert('7 categorías', 7, CATEGORIAS_ROTACION_UNIF.length);
   var cnt = 0, ptr = 0, seq = [];
   for (var i = 0; i < 8; i++) {
-    if (cnt >= 2) { seq.push(CATEGORIAS_ROTACION[ptr % 7]); cnt = 0; ptr++; }
+    if (cnt >= 2) { seq.push(CATEGORIAS_ROTACION_UNIF[ptr % 7]); cnt = 0; ptr++; }
     else { seq.push('vip'); cnt++; }
   }
   _assert('Secuencia VIP-rot', ['vip','vip','mediana','vip','vip','grande','vip','vip'], seq);
@@ -402,7 +404,7 @@ function test_L1_HojasExisten() {
     _assert(hojas[i] + ' existe', true, h !== null);
   }
   try {
-    var ssR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
+    var ssR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     _assert('ORIGEN reestudios', true, ssR.getSheetByName('ORIGEN') !== null);
   } catch (e) { _totalFail++; }
 }
@@ -510,7 +512,7 @@ function _dryRun(eqId) {
 
 function _dryRunReest() {
   try {
-    var ssR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS_API);
+    var ssR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     var h = ssR.getSheetByName('ORIGEN');
     if (!h || h.getLastRow() < 2) { _assert('OK', true, true); return; }
     var data = h.getRange(2, 1, h.getLastRow() - 1, 14).getValues();
@@ -749,6 +751,96 @@ function test_U2_SetCuposIndividualDinamico() {
 }
 
 // ============================================================
+// BLOQUE V: CONTADORES INCREMENTALES (cupo hoy + carga pendiente)
+// ============================================================
+// Usa un email ficticio exclusivo de las pruebas y limpia sus propias claves al
+// final — _incrementarContadorCupo/_ajustarCargaPendiente hacen lectura+merge+
+// escritura (no reemplazan el bloque completo), así que no pueden pisar los
+// contadores reales de otros analistas, pero igual se limpia por prolijidad.
+var _TEST_EMAIL_CONTADORES = 'zzz_test_contadores@no-existe.invalido';
+
+function test_V1_DerivarTipoReestudio() {
+  _seccion('V1. _derivarTipoReestudio clasifica correctamente');
+  _assert('Biometría fallida', 'biometriaFallida', _derivarTipoReestudio('CUALQUIERA', 'BIOMETRIA FALLIDA'));
+  _assert('Correo + Nueva → nuevaUar', 'nuevaUar', _derivarTipoReestudio('CORREO', 'NUEVA'));
+  _assert('Correo + Adicional → deudorUar', 'deudorUar', _derivarTipoReestudio('CORREO', 'ADICIONAL'));
+  _assert('Reestudio', 'reestudio', _derivarTipoReestudio('VICTORIA', 'REESTUDIO'));
+  _assert('Sin match → null', null, _derivarTipoReestudio('X', 'Y'));
+}
+
+function test_V2_FechaEsHoyYMD() {
+  _seccion('V2. _fechaEsHoyYMD distingue hoy de otros días');
+  _assert('Ahora mismo es hoy', true, _fechaEsHoyYMD(new Date()));
+  _assert('Hace 10 días NO es hoy', false, _fechaEsHoyYMD(new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)));
+  _assert('Vacío NO es hoy', false, _fechaEsHoyYMD(''));
+  _assert('null NO es hoy', false, _fechaEsHoyYMD(null));
+}
+
+function test_V3_ContadorCupoHoy() {
+  _seccion('V3. Contador de cupo del día (email de prueba aislado)');
+  var antes = _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital;
+  _incrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _incrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  var despues = _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital;
+  _assert('Sube de a 1 por llamada', antes + 2, despues);
+
+  // Limpieza: quita solo las claves de prueba, sin tocar las de nadie más.
+  var estado = _leerContadoresCupoHoy();
+  delete estado.datos[_TEST_EMAIL_CONTADORES + '|digital'];
+  _guardarContadoresCupoHoy(estado);
+  _assert('Limpieza dejó el contador en 0', 0, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital);
+}
+
+function test_V4_CargaPendiente() {
+  _seccion('V4. Carga pendiente (email de prueba aislado)');
+  _assert('Arranca en 0', 0, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+  _ajustarCargaPendiente(_TEST_EMAIL_CONTADORES, 1);
+  _ajustarCargaPendiente(_TEST_EMAIL_CONTADORES, 1);
+  _assert('Sube con asignaciones', 2, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+  _ajustarCargaPendiente(_TEST_EMAIL_CONTADORES, -1);
+  _assert('Baja al cerrar un caso', 1, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+  _ajustarCargaPendiente(_TEST_EMAIL_CONTADORES, -5);
+  _assert('Nunca baja de 0', 0, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+
+  // Limpieza.
+  var datos = _leerCargaPendienteTodos();
+  delete datos[_TEST_EMAIL_CONTADORES];
+  _guardarCargaPendienteTodos(datos);
+}
+
+function test_V5_RegistrarAsignacionYCierre() {
+  _seccion('V5. _registrarAsignacionContador + _registrarCierreContador end-to-end');
+  var ayer = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  _registrarAsignacionContador(_TEST_EMAIL_CONTADORES, 'induccion');
+  _assert('Asignar suma cupo hoy', 1, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).induccion);
+  _assert('Asignar suma carga pendiente', 1, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+
+  // Cerrar un caso asignado HOY no debe sumar cupo otra vez (ya se contó al asignar).
+  _registrarCierreContador(_TEST_EMAIL_CONTADORES, 'induccion', new Date());
+  _assert('Cerrar caso de hoy no duplica el cupo', 1, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).induccion);
+  _assert('Cerrar descuenta carga pendiente', 0, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
+
+  // Cerrar hoy un caso asignado un día distinto SÍ debe sumar cupo (mismo criterio
+  // de negocio que el escaneo original: cuenta lo cerrado hoy aunque sea viejo).
+  _registrarAsignacionContador(_TEST_EMAIL_CONTADORES, 'reestudio');
+  var estadoIntermedio = _leerContadoresCupoHoy();
+  delete estadoIntermedio.datos[_TEST_EMAIL_CONTADORES + '|reestudio']; // simula que ese cupo no se contó hoy
+  _guardarContadoresCupoHoy(estadoIntermedio);
+  _registrarCierreContador(_TEST_EMAIL_CONTADORES, 'reestudio', ayer);
+  _assert('Cerrar caso viejo hoy sí suma cupo', 1, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).reestudio);
+
+  // Limpieza completa de las claves de prueba.
+  var estado = _leerContadoresCupoHoy();
+  delete estado.datos[_TEST_EMAIL_CONTADORES + '|induccion'];
+  delete estado.datos[_TEST_EMAIL_CONTADORES + '|reestudio'];
+  _guardarContadoresCupoHoy(estado);
+  var datos = _leerCargaPendienteTodos();
+  delete datos[_TEST_EMAIL_CONTADORES];
+  _guardarCargaPendienteTodos(datos);
+}
+
+// ============================================================
 // RUNNER
 // ============================================================
 
@@ -782,6 +874,7 @@ function EJECUTAR_TODAS_LAS_PRUEBAS() {
   test_S1_CanonConDigital();
   test_T1_FuncionesExisten(); test_T2_LockServiceEnFunciones();
   test_U1_RegistrarHistoricoCuposDinamico(); test_U2_SetCuposIndividualDinamico();
+  test_V1_DerivarTipoReestudio(); test_V2_FechaEsHoyYMD(); test_V3_ContadorCupoHoy(); test_V4_CargaPendiente(); test_V5_RegistrarAsignacionYCierre();
 
   Logger.log('\n╔══════════════════════════════════════════╗');
   Logger.log('║   ✅ PASS: ' + _totalPass);

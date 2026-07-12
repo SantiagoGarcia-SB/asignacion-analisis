@@ -455,6 +455,8 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
 
+        _registrarCierreContador(userEmail, 'desaplazamiento', fechaAsignacion);
+
         SpreadsheetApp.flush();
         lock.releaseLock();
 

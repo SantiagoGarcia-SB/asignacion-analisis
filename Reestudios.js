@@ -352,6 +352,17 @@ function guardarGestionReestudio(datos) {
     hojaActiva.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
     hojaActiva.getRange(targetRow, 15, 1, 3).setNumberFormat("0.00");
 
+    // Solo la ruta HISTORICO está cubierta por los contadores incrementales: los
+    // casos legados que aún viven en ORIGEN nunca se sumaron ahí (siguen contados
+    // por el escaneo en vivo de _contarDesdeHojaReestudios), así que no hay nada
+    // que descontar para ellos.
+    if (fuenteRuta === 'HISTORICO') {
+      var origenNormReest = String(filaBase[3]).toUpperCase().trim();
+      var tipoPNormReest = String(filaBase[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      var tipoCierreReest = _derivarTipoReestudio(origenNormReest, tipoPNormReest) || 'reestudio';
+      _registrarCierreContador(emailAnalista, tipoCierreReest, fechaAsignacion);
+    }
+
     SpreadsheetApp.flush();
 
     if (fuenteRuta === 'ORIGEN') {

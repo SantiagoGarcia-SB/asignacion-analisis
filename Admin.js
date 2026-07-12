@@ -438,6 +438,7 @@ function admin_actualizarAnalista(correo, datos) {
           admin_sincronizarEstado(correoBuscado, estadoUpper);
         }
 
+        _invalidarCacheUsuarios();
         return { success: true, message: "Usuario actualizado correctamente" };
       }
     }
@@ -471,9 +472,82 @@ function admin_crearUsuario(datos) {
     filaCompleta[6]  = Number(datos.capacidad) || 10; 
     
     hoja.appendRow(filaCompleta);
-    hoja.getRange(hoja.getLastRow(), 7).setNumberFormat("0"); 
+    hoja.getRange(hoja.getLastRow(), 7).setNumberFormat("0");
+    _invalidarCacheUsuarios();
     return { success: true, message: "Usuario #" + nuevoNumeroAsesor + " creado." };
   } catch (e) { return { success: false, message: e.message }; }
+}
+
+/**
+ * Reconstruye desde cero los contadores incrementales de cupo del día y carga
+ * pendiente (ver Código.js), escaneando Historico_Gestiones (principal y
+ * reestudios) una sola vez. Es la red de seguridad si algo desincroniza los
+ * contadores (edición manual de una hoja, un caso raro no cubierto). Llamarla
+ * no tiene efectos secundarios más allá de dejar los contadores al día — es
+ * seguro correrla en cualquier momento, incluso con analistas trabajando.
+ */
+function admin_recalcularContadores() {
+  verificarPermisoAdmin();
+
+  var cargaPendiente = {};
+  var cupoHoy = {};
+  var hoy = _hoyYMD();
+
+  function acumular(email, tipo, esPendiente, esHoy) {
+    email = String(email).toLowerCase().trim();
+    if (!email) return;
+    if (esPendiente) cargaPendiente[email] = (cargaPendiente[email] || 0) + 1;
+    if (esHoy) {
+      var key = email + '|' + tipo;
+      cupoHoy[key] = (cupoHoy[key] || 0) + 1;
+    }
+  }
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaHist = ss.getSheetByName("Historico_Gestiones");
+  if (hojaHist && hojaHist.getLastRow() > 1) {
+    var cols = Math.max(61, hojaHist.getLastColumn());
+    var data = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, cols).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var row = data[i];
+      if (!row[25]) continue;
+      var tipo = String(row[60] || '').trim() || 'digital';
+      var tieneFin = row[26] instanceof Date || String(row[26]).trim() !== "";
+      var esHoy = _fechaEsHoyYMD(row[24]) || _fechaEsHoyYMD(row[26]);
+      acumular(row[25], tipo, !tieneFin, esHoy);
+    }
+  }
+
+  var idReest = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
+  var ssR = SpreadsheetApp.openById(idReest);
+  var hojaHistR = ssR.getSheetByName("Historico_Gestiones");
+  if (hojaHistR && hojaHistR.getLastRow() > 1) {
+    var colsR = Math.max(19, hojaHistR.getLastColumn());
+    var dataR = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, colsR).getValues();
+    for (var j = 0; j < dataR.length; j++) {
+      var rowR = dataR[j];
+      if (!rowR[6]) continue;
+      var tipoR = String(rowR[18] || '').trim();
+      if (!tipoR) {
+        var origenR = String(rowR[3]).toUpperCase().trim();
+        var tipoPNormR = String(rowR[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        tipoR = _derivarTipoReestudio(origenR, tipoPNormR) || 'reestudio';
+      }
+      var tieneFinR = rowR[9] instanceof Date || String(rowR[9]).trim() !== "";
+      var esHoyR = _fechaEsHoyYMD(rowR[8]) || _fechaEsHoyYMD(rowR[9]);
+      acumular(rowR[6], tipoR, !tieneFinR, esHoyR);
+    }
+  }
+
+  _guardarCargaPendienteTodos(cargaPendiente);
+  _guardarContadoresCupoHoy({ fecha: hoy, datos: cupoHoy });
+
+  return {
+    success: true,
+    message: "Contadores recalculados.",
+    analistasConCargaPendiente: Object.keys(cargaPendiente).length,
+    entradasCupoHoy: Object.keys(cupoHoy).length
+  };
 }
 
 /**
@@ -527,6 +601,10 @@ function desasignarSolicitud(idSolicitud){
             sheet.appendRow(filaSol);
             sheet.getRange(sheet.getLastRow(), 1, 1, filaSol.length).setNumberFormat("@");
             hojaHist.deleteRow(filaH);
+
+            var emailAnaOriginal = String(filaCompleta[25] || '').toLowerCase().trim();
+            if (emailAnaOriginal) _ajustarCargaPendiente(emailAnaOriginal, -1);
+
             SpreadsheetApp.flush();
             return { success: true, message: "Solicitud desasignada desde Historico_Gestiones y devuelta a cola." };
           }
@@ -602,11 +680,16 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
       for (let i = 0; i < dataR.length; i++) {
         if (String(dataR[i][0]).trim() === String(idSolicitud).trim() && String(dataR[i][8]).trim() === '') {
           const fila = i + 2;
+          const emailAnteriorR = String(dataR[i][5] || '').toLowerCase().trim();
           hojaHR.getRange(fila, 7).setValue(correoNorm);
           hojaHR.getRange(fila, 8).setValue(nombreNuevo);
           hojaHR.getRange(fila, 9).setValue(ahora);
           hojaHR.getRange(fila, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
           hojaHR.getRange(fila, 20).setValue("ADMIN:" + adminEmail + "|" + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm"));
+          if (emailAnteriorR && emailAnteriorR !== correoNorm) {
+            _ajustarCargaPendiente(emailAnteriorR, -1);
+            _ajustarCargaPendiente(correoNorm, 1);
+          }
           SpreadsheetApp.flush();
           lock.releaseLock();
           return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };
@@ -623,11 +706,16 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
       for (let i = 0; i < dataP.length; i++) {
         if (String(dataP[i][0]).trim() === String(idSolicitud).trim() && String(dataP[i][26]).trim() === '') {
           const fila = i + 2;
+          const emailAnteriorP = String(dataP[i][25] || '').toLowerCase().trim();
           hojaHP.getRange(fila, 25).setValue(ahora);
           hojaHP.getRange(fila, 25).setNumberFormat("dd/MM/yyyy HH:mm:ss");
           hojaHP.getRange(fila, 26).setValue(correoNorm);
           hojaHP.getRange(fila, 28).setValue(nombreNuevo);
           hojaHP.getRange(fila, 38).setValue("ADMIN:" + adminEmail + "|" + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm"));
+          if (emailAnteriorP && emailAnteriorP !== correoNorm) {
+            _ajustarCargaPendiente(emailAnteriorP, -1);
+            _ajustarCargaPendiente(correoNorm, 1);
+          }
           SpreadsheetApp.flush();
           lock.releaseLock();
           return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };

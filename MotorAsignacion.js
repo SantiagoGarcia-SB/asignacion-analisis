@@ -131,32 +131,11 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
     if (tieneAsig && !tieneFin) cargaPendiente++;
   }
 
-  // Historico_Gestiones (principal)
-  try {
-    var hojaHist = ss.getSheetByName("Historico_Gestiones");
-    if (hojaHist && hojaHist.getLastRow() > 1) {
-      var colsHist = Math.max(61, hojaHist.getLastColumn());
-      var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, colsHist).getValues();
-      for (var j = 0; j < dataHist.length; j++) {
-        var rh = dataHist[j];
-        var asigH = String(rh[25]).trim().toLowerCase();
-        if (asigH !== userEmail) continue;
-        var tipoH = String(rh[60] || '').trim();
-        if (!tipoH || !conteoHoy.hasOwnProperty(tipoH)) {
-          var claseH = String(rh[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          var estadoH = String(rh[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          var estadoHSinGuion = estadoH.replace(/_/g, ' ');
-          tipoH = 'digital';
-          if (estadoHSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoH === 'APROBADO_PENDIENTE_BIOMETRIA') tipoH = 'desaplazamiento';
-          else if (claseH === "INDUCCION") tipoH = 'induccion';
-        }
-        if (_cumpleHoyUnif(rh[24], ctx) || _cumpleHoyUnif(rh[26], ctx)) conteoHoy[tipoH]++;
-        var tieneAsigH = rh[24] instanceof Date || String(rh[24]).trim() !== "";
-        var tieneFinH = rh[26] instanceof Date || String(rh[26]).trim() !== "";
-        if (tieneAsigH && !tieneFinH) cargaPendiente++;
-      }
-    }
-  } catch (e) { Logger.log("_contarDesdeHojaPrincipal Hist: " + e.message); }
+  // Nota: lo que antes vivía en Historico_Gestiones (que solo crece y nunca se
+  // archiva) ya no se escanea aquí en cada asignación — se lee de contadores
+  // incrementales (_obtenerConteoHoyAnalista / _obtenerCargaPendienteAnalista,
+  // Código.js), sumados en RequestLeadUnificado. Ver admin_recalcularContadores()
+  // en Admin.js si alguna vez hace falta reconstruirlos desde cero.
 
   return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, hojaRef: hoja, dataSolicitudes: data };
 }
@@ -189,34 +168,8 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
     if (tieneAsig && !tieneFin) cargaPendiente++;
   }
 
-  // Historico_Gestiones (reestudios)
-  try {
-    var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
-    if (hojaHistR && hojaHistR.getLastRow() > 1) {
-      var colsHistR = Math.max(19, hojaHistR.getLastColumn());
-      var dataHistR = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, colsHistR).getValues();
-      for (var j = 0; j < dataHistR.length; j++) {
-        var rr = dataHistR[j];
-        var asigHR = String(rr[6]).trim().toLowerCase();
-        if (asigHR !== userEmail) continue;
-        var tipoHR = String(rr[18] || '').trim();
-        if (!tipoHR || !conteoHoy.hasOwnProperty(tipoHR)) {
-          var origenHR = String(rr[3]).toUpperCase().trim();
-          var tipoPHRNorm = String(rr[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-          tipoHR = null;
-          if (tipoPHRNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoHR = 'biometriaFallida';
-          else if (origenHR === "CORREO" && tipoPHRNorm === "NUEVA") tipoHR = 'nuevaUar';
-          else if (origenHR === "CORREO" && tipoPHRNorm === "ADICIONAL") tipoHR = 'deudorUar';
-          else if (tipoPHRNorm === "REESTUDIO") tipoHR = 'reestudio';
-        }
-        if (!tipoHR) continue;
-        if (_cumpleHoyUnif(rr[8], ctx) || _cumpleHoyUnif(rr[9], ctx)) conteoHoy[tipoHR]++;
-        var tieneAsigHR = rr[8] instanceof Date ? true : String(rr[8]).trim() !== "";
-        var tieneFinHR = rr[9] instanceof Date ? true : String(rr[9]).trim() !== "";
-        if (tieneAsigHR && !tieneFinHR) cargaPendiente++;
-      }
-    }
-  } catch (e) { Logger.log("_contarDesdeHojaReestudios Hist: " + e.message); }
+  // Nota: igual que en _contarDesdeHojaPrincipal, el escaneo de Historico_Gestiones
+  // de reestudios se reemplazó por los contadores incrementales (ver Código.js).
 
   return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, hojaRef: hoja, dataReestudios: data };
 }
@@ -375,8 +328,10 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
   solicitudesSheet.getRange(lead.rowIndex, 27, 1, 5).setValues([[fechaHora, userEmail, "", "", nombreUsuario]]);
   solicitudesSheet.getRange(lead.rowIndex, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
   solicitudesSheet.getRange(lead.rowIndex, 59).clearContent();
-  SpreadsheetApp.flush();
 
+  // Dentro de la misma ejecución, las lecturas ya ven las escrituras anteriores
+  // sin necesidad de flush() — el flush real se hace una sola vez al final del
+  // lote completo, en RequestLeadUnificado (evita decenas de confirmaciones sueltas).
   var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 58).getValues()[0];
   var histRow = [
     s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
@@ -397,13 +352,12 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
   hojaHist.appendRow(histRow);
   hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
   solicitudesSheet.deleteRow(lead.rowIndex);
-  SpreadsheetApp.flush();
+  _registrarAsignacionContador(userEmail, lead.tipo);
 }
 
 function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios) {
   reestudiosSheet.getRange(lead.rowIndex, 7, 1, 3).setValues([[userEmail, nombreUsuario, fechaHora]]);
   reestudiosSheet.getRange(lead.rowIndex, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
-  SpreadsheetApp.flush();
 
   var filaCompleta = reestudiosSheet.getRange(lead.rowIndex, 1, 1, 18).getValues()[0];
   filaCompleta.push(lead.tipo);
@@ -411,7 +365,7 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
   if (!hojaHistR) hojaHistR = ssReestudios.insertSheet("Historico_Gestiones");
   hojaHistR.appendRow(filaCompleta);
   reestudiosSheet.deleteRow(lead.rowIndex);
-  SpreadsheetApp.flush();
+  _registrarAsignacionContador(userEmail, lead.tipo);
 }
 
 // ============================================================
@@ -428,9 +382,8 @@ function RequestLeadUnificado(equipoIdOverride) {
 
   try {
     var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    var usuariosSheet = ss.getSheetByName("Usuarios");
     var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    var dataUsuarios = usuariosSheet.getDataRange().getDisplayValues();
+    var dataUsuarios = _getDataUsuarios();
     var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
 
     if (!usuarioInfo) return { success: false, message: "❌ Usuario no registrado en el sistema." };
@@ -483,6 +436,12 @@ function RequestLeadUnificado(equipoIdOverride) {
     for (var k2 in cReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2]; }
     capPendienteReal += cReestudios.cargaPendiente;
     refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
+
+    // Suma lo que ya se cerró/asignó hoy vía Historico_Gestiones — de los contadores
+    // incrementales, no de un escaneo completo de la hoja (ver Código.js).
+    var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
+    for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
+    capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
 
     Logger.log("Motor Unificado [" + equipoId + "] | Analista: " + userEmail + " | Cupos: " + JSON.stringify(cuotas) + " | Conteo: " + JSON.stringify(conteoHoyTotal));
 
@@ -627,6 +586,9 @@ function RequestLeadUnificado(equipoIdOverride) {
     reestudios.forEach(function(lead) {
       _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
     });
+
+    // Una sola confirmación para todo el lote (antes era hasta 2 por caso asignado).
+    SpreadsheetApp.flush();
 
     // Registrar en pendiente_biometria las biometrías asignadas (tipo 'desaplazamiento').
     var idsBioAsignadas = principales

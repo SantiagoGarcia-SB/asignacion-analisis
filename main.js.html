@@ -53,7 +53,17 @@ function _loaderOcultar() {
 var _timerFinTurno = null;
 var _pollingTablaVacia = null;
 var _POLLING_INTERVALO_MS = 2 * 60 * 1000;
+var _POLLING_INTERVALO_MAX_MS = 6 * 60 * 1000;
+var _pollingDelayActualMs = _POLLING_INTERVALO_MS;
+var _pollingTimeoutId = null;
 var _pollingEnCurso = false;
+var _cargarDatosEnCurso = false;
+
+// +/- 20s: evita que todos los analistas con bandeja vacía pregunten al servidor
+// en el mismo segundo exacto (eso generaba ráfagas cada 2 minutos en punto).
+function _pollingJitterMs() {
+  return Math.floor((Math.random() - 0.5) * 40 * 1000);
+}
 
 var _yaAlmorzoHoy = false;
 var _ultimoRecordatorioAlmuerzoMin = -1;
@@ -125,38 +135,67 @@ function _iniciarPollingTablaVacia() {
   if (_pollingTablaVacia) return;
   _mostrarBannerPolling(true);
   _actualizarHoraPolling();
-  _pollingTablaVacia = setInterval(function() {
-    if (estadoGlobalAsesor !== 'ACTIVO') return;
-    if (datosGlobales && datosGlobales.length > 0) {
-      _detenerPollingTablaVacia();
-      return;
-    }
-    if (_pollingEnCurso) return;
-    _pollingEnCurso = true;
-    _actualizarHoraPolling();
-    var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
-    google.script.run
-      .withSuccessHandler(function(res) {
-        _pollingEnCurso = false;
-        _actualizarHoraPolling();
-        if (res && res.success && res.nueva) {
-          var msgEl = document.getElementById('pollingMensaje');
-          if (msgEl) msgEl.textContent = '¡Caso encontrado! Cargando solicitud...';
-          Swal.fire({ icon: 'success', title: '¡Nuevo caso asignado!', text: res.message || 'Cargando solicitud...', toast: true, position: 'top-end', showConfirmButton: false, timer: 6000, timerProgressBar: true });
-          yaSeIntentoAsignar = false;
-          setTimeout(function() { cargarDatos(); }, 2000);
-        }
-      })
-      .withFailureHandler(function() {
-        _pollingEnCurso = false;
-        _actualizarHoraPolling();
-      })
-      [fnName]();
-  }, _POLLING_INTERVALO_MS);
+  _pollingTablaVacia = true;
+  _pollingDelayActualMs = _POLLING_INTERVALO_MS;
+  _programarSiguientePoll();
+}
+
+// En vez de un setInterval de intervalo fijo, cada vuelta se reprograma sola con
+// jitter y, si el servidor respondió "ocupado", con más espera que la anterior
+// (hasta _POLLING_INTERVALO_MAX_MS). Vuelve al intervalo normal en cuanto una
+// consulta responde sin congestión.
+function _programarSiguientePoll() {
+  if (!_pollingTablaVacia) return;
+  var delay = Math.max(20000, _pollingDelayActualMs + _pollingJitterMs());
+  _pollingTimeoutId = setTimeout(_ejecutarPoll, delay);
+}
+
+function _ejecutarPoll() {
+  _pollingTimeoutId = null;
+  if (!_pollingTablaVacia) return;
+
+  if (estadoGlobalAsesor !== 'ACTIVO') { _programarSiguientePoll(); return; }
+  if (datosGlobales && datosGlobales.length > 0) {
+    _detenerPollingTablaVacia();
+    return;
+  }
+  if (_pollingEnCurso) { _programarSiguientePoll(); return; }
+
+  _pollingEnCurso = true;
+  _actualizarHoraPolling();
+  var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _pollingEnCurso = false;
+      _actualizarHoraPolling();
+
+      var estabaOcupado = !!(res && res.success === false && res.message && res.message.toLowerCase().indexOf('ocupado') !== -1);
+      _pollingDelayActualMs = estabaOcupado
+        ? Math.min(_POLLING_INTERVALO_MAX_MS, Math.round(_pollingDelayActualMs * 1.5))
+        : _POLLING_INTERVALO_MS;
+
+      if (res && res.success && res.nueva) {
+        var msgEl = document.getElementById('pollingMensaje');
+        if (msgEl) msgEl.textContent = '¡Caso encontrado! Cargando solicitud...';
+        Swal.fire({ icon: 'success', title: '¡Nuevo caso asignado!', text: res.message || 'Cargando solicitud...', toast: true, position: 'top-end', showConfirmButton: false, timer: 6000, timerProgressBar: true });
+        yaSeIntentoAsignar = false;
+        setTimeout(function() { cargarDatos(); }, 2000);
+        return;
+      }
+      _programarSiguientePoll();
+    })
+    .withFailureHandler(function() {
+      _pollingEnCurso = false;
+      _actualizarHoraPolling();
+      _pollingDelayActualMs = Math.min(_POLLING_INTERVALO_MAX_MS, Math.round(_pollingDelayActualMs * 1.5));
+      _programarSiguientePoll();
+    })
+    [fnName]();
 }
 
 function _detenerPollingTablaVacia() {
-  if (_pollingTablaVacia) { clearInterval(_pollingTablaVacia); _pollingTablaVacia = null; }
+  if (_pollingTimeoutId) { clearTimeout(_pollingTimeoutId); _pollingTimeoutId = null; }
+  _pollingTablaVacia = null;
   _pollingEnCurso = false;
   _mostrarBannerPolling(false);
 }
@@ -495,6 +534,12 @@ function sincronizarEstadoInicial(debeCargarTabla = false) {
 }
 
 function cargarDatos() {
+  // Evita que un clic repetido en "Refrescar" (u otra llamada solapada) dispare
+  // varias cargas pesadas en paralelo — el polling automático ya tenía este
+  // resguardo (_pollingEnCurso), pero el refresco manual no lo tenía.
+  if (_cargarDatosEnCurso) return;
+  _cargarDatosEnCurso = true;
+
   const loader = document.getElementById('loader-container');
   if (!cargaInicialHecha) {
     if (loader) { loader.classList.remove('loader-hidden'); loader.style.display = 'flex'; }
@@ -502,22 +547,23 @@ function cargarDatos() {
     _miniLoader(true);
   }
 
-  // Cargar conteo cruzado de gestiones del día (todas las vistas)
+  // Antes esto eran 4 llamadas independientes (obtenerGestionesHoyCruzadas,
+  // getUnifiedTableData, verificarMisCupos, obtenerCasosPendientesAnalista),
+  // cada una releyendo hojas por su cuenta. cargarPanelAnalista() (Código.js)
+  // las junta en un solo viaje al servidor y reusa las mismas lecturas.
   google.script.run
-    .withSuccessHandler(function(cruzado) {
+    .withSuccessHandler(function (panel) {
+      _cargarDatosEnCurso = false;
+      if (!cargaInicialHecha) _loaderSetPaso(3);
+
+      var cruzado = panel.gestionesHoyCruzadas;
       if (cruzado && typeof cruzado.hoyTotal === 'number') {
         if (typeof animarNumero === "function") {
           animarNumero("countHoy", cruzado.hoyTotal);
         }
       }
-    })
-    .obtenerGestionesHoyCruzadas();
 
-  var _dataFetchFn = (window.__IS_UNIFIED_VIEW__) ? 'getUnifiedTableData' : 'getTableData';
-  google.script.run
-    .withSuccessHandler(function (response) {
-      if (!cargaInicialHecha) _loaderSetPaso(3);
-
+      var response = panel.tabla || {};
       if (response.error) {
         console.error("getUnifiedTableData error:", response.error);
         Swal.fire({ icon: "warning", title: "Error al cargar datos", text: response.error, confirmButtonColor: "#253150" });
@@ -571,25 +617,21 @@ function cargarDatos() {
 
       // Cupos restantes (solo vista unificada)
       if (window.__IS_UNIFIED_VIEW__ && document.getElementById('countCupos')) {
-        google.script.run.withSuccessHandler(function(cuposInfo) {
-          if (cuposInfo && typeof cuposInfo.totalLimite === 'number') {
-            var restantes = cuposInfo.totalLimite - cuposInfo.totalUsado;
-            if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
-            var det = document.getElementById('cuposDetalle');
-            if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
-            if (cuposInfo.cumplido && typeof UX !== 'undefined') {
-              UX.showToast('Has cumplido todos tus cupos del día (' + cuposInfo.totalUsado + '/' + cuposInfo.totalLimite + ')', 'success');
-            }
+        var cuposInfo = panel.cupos;
+        if (cuposInfo && typeof cuposInfo.totalLimite === 'number') {
+          var restantes = cuposInfo.totalLimite - cuposInfo.totalUsado;
+          if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
+          var det = document.getElementById('cuposDetalle');
+          if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
+          if (cuposInfo.cumplido && typeof UX !== 'undefined') {
+            UX.showToast('Has cumplido todos tus cupos del día (' + cuposInfo.totalUsado + '/' + cuposInfo.totalLimite + ')', 'success');
           }
-        }).verificarMisCupos();
+        }
       }
 
-      // Cargar pendientes de validación/evidente
+      // Pendientes de validación/evidente
       if (window.__IS_UNIFIED_VIEW__) {
-        google.script.run
-          .withSuccessHandler(function(pendientes) { actualizarBannerPendientes(pendientes || []); })
-          .withFailureHandler(function(e) { console.warn('obtenerCasosPendientesAnalista:', e); })
-          .obtenerCasosPendientesAnalista();
+        actualizarBannerPendientes(panel.pendientesValidacion || []);
       }
 
       const tablaRealmenteVacia = registrosPendientes <= 0;
@@ -650,6 +692,7 @@ function cargarDatos() {
       }
     })
     .withFailureHandler(function (e) {
+      _cargarDatosEnCurso = false;
       if (!cargaInicialHecha) {
         _loaderError('No se pudieron cargar los datos: ' + (e && e.message ? e.message : 'revisa tu conexión.'));
         setTimeout(_loaderOcultar, 2200);
@@ -657,7 +700,7 @@ function cargarDatos() {
         loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800);
       }
       _miniLoader(false);
-      console.error("Error crítico en getTableData:", e);
+      console.error("Error crítico en cargarPanelAnalista:", e);
       Swal.fire({
         icon: 'error',
         title: 'Error de Conexión',
@@ -666,7 +709,7 @@ function cargarDatos() {
       });
       _asegurarPollingActivo();
     })
-    [_dataFetchFn]();
+    .cargarPanelAnalista();
 }
 
 // Convierte las filas-objeto de getReestudiosData() a la estructura posicional

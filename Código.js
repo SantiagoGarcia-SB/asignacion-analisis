@@ -107,6 +107,145 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
   };
 }
 
+// ============================================================
+// CONTADORES INCREMENTALES DE CUPO Y CARGA
+// ============================================================
+// En vez de recontar Historico_Gestiones completo (hoja que solo crece) en
+// cada asignación, se mantienen dos valores que se actualizan en el instante
+// exacto en que cambian:
+//  - Cupo del día (analista+tipo): +1 al asignar un caso. Si un caso se cierra
+//    un día distinto al que fue asignado, +1 también al cerrarlo — mismo
+//    criterio que el escaneo original (cuenta lo asignado HOY y lo cerrado HOY).
+//  - Carga pendiente (analista): +1 al asignar, -1 al cerrar/desasignar/reasignar.
+//    No se reinicia por día — mide casos abiertos ahora mismo.
+// Si algo se desincroniza (edición manual, error), admin_recalcularContadores()
+// (Admin.js) los reconstruye desde cero escaneando el histórico una sola vez.
+
+const _PROP_CONTADORES_CUPO = 'CONTADORES_CUPO_HOY';
+const _PROP_CARGA_PENDIENTE = 'CARGA_PENDIENTE_ANALISTA';
+
+function _hoyYMD() {
+  return Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+}
+
+function _fechaEsHoyYMD(fecha) {
+  if (!fecha) return false;
+  var d = (fecha instanceof Date) ? fecha : new Date(fecha);
+  if (isNaN(d.getTime())) return false;
+  return Utilities.formatDate(d, TIMEZONE, 'yyyy-MM-dd') === _hoyYMD();
+}
+
+function _leerContadoresCupoHoy() {
+  var raw = PropertiesService.getScriptProperties().getProperty(_PROP_CONTADORES_CUPO);
+  var hoy = _hoyYMD();
+  if (raw) {
+    try {
+      var parsed = JSON.parse(raw);
+      if (parsed.fecha === hoy) return parsed;
+    } catch (e) {}
+  }
+  return { fecha: hoy, datos: {} };
+}
+
+function _guardarContadoresCupoHoy(obj) {
+  PropertiesService.getScriptProperties().setProperty(_PROP_CONTADORES_CUPO, JSON.stringify(obj));
+}
+
+function _incrementarContadorCupo(userEmail, tipo) {
+  if (!tipo) return;
+  var email = String(userEmail).toLowerCase().trim();
+  if (!email) return;
+  var estado = _leerContadoresCupoHoy();
+  var key = email + '|' + tipo;
+  estado.datos[key] = (estado.datos[key] || 0) + 1;
+  _guardarContadoresCupoHoy(estado);
+}
+
+function _obtenerConteoHoyAnalista(userEmail) {
+  var email = String(userEmail).toLowerCase().trim();
+  var estado = _leerContadoresCupoHoy();
+  var conteo = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  for (var tipo in conteo) {
+    conteo[tipo] = estado.datos[email + '|' + tipo] || 0;
+  }
+  return conteo;
+}
+
+function _leerCargaPendienteTodos() {
+  var raw = PropertiesService.getScriptProperties().getProperty(_PROP_CARGA_PENDIENTE);
+  if (raw) {
+    try { return JSON.parse(raw); } catch (e) {}
+  }
+  return {};
+}
+
+function _guardarCargaPendienteTodos(obj) {
+  PropertiesService.getScriptProperties().setProperty(_PROP_CARGA_PENDIENTE, JSON.stringify(obj));
+}
+
+function _ajustarCargaPendiente(userEmail, delta) {
+  var email = String(userEmail).toLowerCase().trim();
+  if (!email) return;
+  var datos = _leerCargaPendienteTodos();
+  datos[email] = Math.max(0, (datos[email] || 0) + delta);
+  _guardarCargaPendienteTodos(datos);
+}
+
+function _obtenerCargaPendienteAnalista(userEmail) {
+  var email = String(userEmail).toLowerCase().trim();
+  var datos = _leerCargaPendienteTodos();
+  return datos[email] || 0;
+}
+
+// Se llama justo al asignar un caso nuevo (MotorAsignacion.js).
+function _registrarAsignacionContador(userEmail, tipo) {
+  _incrementarContadorCupo(userEmail, tipo);
+  _ajustarCargaPendiente(userEmail, 1);
+}
+
+// Se llama al cerrar un caso (las 3 funciones de "guardar gestión").
+// fechaAsignacionOriginal es la fecha que ya tenía el caso antes de cerrarlo.
+function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal) {
+  _ajustarCargaPendiente(userEmail, -1);
+  if (!_fechaEsHoyYMD(fechaAsignacionOriginal)) {
+    _incrementarContadorCupo(userEmail, tipo);
+  }
+}
+
+function _derivarTipoReestudio(origenNorm, tipoPNorm) {
+  if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) return 'biometriaFallida';
+  if (origenNorm === "CORREO" && tipoPNorm === "NUEVA") return 'nuevaUar';
+  if (origenNorm === "CORREO" && tipoPNorm === "ADICIONAL") return 'deudorUar';
+  if (tipoPNorm === "REESTUDIO") return 'reestudio';
+  return null;
+}
+
+// ============================================================
+// CACHÉ CORTA DE USUARIOS (evita releer la hoja completa en cada acción)
+// ============================================================
+// TTL de 30s: si un admin cambia equipo/estado/cupos de un analista, el
+// cambio tarda como máximo 30s en reflejarse (además se invalida al instante
+// desde admin_actualizarAnalista / admin_crearUsuario en Admin.js).
+
+function _getDataUsuarios(forzarRelectura) {
+  var cache = CacheService.getScriptCache();
+  if (!forzarRelectura) {
+    try {
+      var cached = cache.get('USUARIOS_DATA');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+  }
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Usuarios");
+  var datos = hoja ? hoja.getDataRange().getDisplayValues() : [];
+  try { cache.put('USUARIOS_DATA', JSON.stringify(datos), 30); } catch (e) {}
+  return datos;
+}
+
+function _invalidarCacheUsuarios() {
+  try { CacheService.getScriptCache().remove('USUARIOS_DATA'); } catch (e) {}
+}
+
 function doGet() {
   const userEmail = Session.getActiveUser().getEmail();
   const info = getRolUsuario(userEmail);
@@ -134,11 +273,8 @@ function doGet() {
 }
 
 function getRolUsuario(email) {
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-  const hoja = ss.getSheetByName("Usuarios");
-  if (!hoja) return null;
-
-  const datos = hoja.getDataRange().getValues();
+  const datos = _getDataUsuarios();
+  if (!datos || !datos.length) return null;
   email = email.toLowerCase().trim();
   
   for (let i = 1; i < datos.length; i++) {
@@ -233,6 +369,41 @@ function getUnifiedTableData() {
     equipoNombre: equipo.nombre,
     tipoVista: 'DIGITAL'
   };
+}
+
+// Junta en una sola llamada al servidor lo que antes eran 4 llamadas separadas
+// desde cargarDatos() (main.js.html): tabla, cupos, pendientes de validación y
+// conteo cruzado del día. Cada pieza queda en su propio try/catch para que si
+// una falla, no tumbe a las demás — el cliente revisa response.tabla.error,
+// etc., igual que revisaba cada respuesta individual antes.
+function cargarPanelAnalista() {
+  var resultado = { tabla: null, cupos: null, pendientesValidacion: [], gestionesHoyCruzadas: null };
+
+  try {
+    resultado.tabla = getUnifiedTableData();
+  } catch (e) {
+    resultado.tabla = { error: e.message, tabla: [] };
+  }
+
+  try {
+    resultado.cupos = verificarMisCupos();
+  } catch (e) {
+    resultado.cupos = { cumplido: false, totalUsado: 0, totalLimite: 0, resumen: [], mensaje: '' };
+  }
+
+  try {
+    resultado.pendientesValidacion = obtenerCasosPendientesAnalista();
+  } catch (e) {
+    resultado.pendientesValidacion = [];
+  }
+
+  try {
+    resultado.gestionesHoyCruzadas = obtenerGestionesHoyCruzadas();
+  } catch (e) {
+    resultado.gestionesHoyCruzadas = { hoyTotal: 0, detalle: { digital: 0, reestudios: 0 } };
+  }
+
+  return resultado;
 }
 
 function autoAsignarDesdeEquipo() {
@@ -866,110 +1037,116 @@ function revisarEnEsperaCodeudor() {
     return;
   }
 
+  const ss = SpreadsheetApp.openById(ID_SHEET_GESTION_DIRECTA);
+  const hoja = ss.getSheetByName(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
+  if (!hoja || hoja.getLastRow() < 2) return;
+
+  const lastRow = hoja.getLastRow();
+  const datos = hoja.getRange(2, 1, lastRow - 1, 5).getValues();
+  const ahora = new Date();
+  const TRES_MESES_MS = 90 * 24 * 60 * 60 * 1000;
+  const filasAEliminar = [];
+  const actualizacionesFecha = [];
   let reactivadas = [];
   let reactivadasBiometria = [];
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    Logger.log("❌ Lock no disponible para revisar pendiente_codeudor: " + e.message);
-    return;
-  }
 
-  try {
-    const ss = SpreadsheetApp.openById(ID_SHEET_GESTION_DIRECTA);
-    const hoja = ss.getSheetByName(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
-    if (!hoja || hoja.getLastRow() < 2) return;
+  // === FASE 1: consultar SAI para cada solicitud pendiente. Sin candado tomado —
+  // esto puede tardar varios segundos y no debe bloquear a los analistas mientras tanto. ===
+  for (let i = 0; i < datos.length; i++) {
+    const solicitud = String(datos[i][0]).trim();
+    if (!solicitud) continue;
 
-    const lastRow = hoja.getLastRow();
-    const datos = hoja.getRange(2, 1, lastRow - 1, 5).getValues();
-    const ahora = new Date();
-    const TRES_MESES_MS = 90 * 24 * 60 * 60 * 1000;
-    const filasAEliminar = [];
+    const fechaRadicacion = new Date(datos[i][1]);
+    if (!isNaN(fechaRadicacion.getTime()) && (ahora - fechaRadicacion) > TRES_MESES_MS) {
+      filasAEliminar.push(i);
+      Logger.log(`🧹 Solicitud ${solicitud} expiró en pendiente_codeudor (>3 meses de radicación).`);
+      continue;
+    }
 
-    for (let i = 0; i < datos.length; i++) {
-      const solicitud = String(datos[i][0]).trim();
-      if (!solicitud) continue;
+    try {
+      const response = UrlFetchApp.fetch(endpointBase + solicitud, {
+        method: 'get',
+        headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
+        muteHttpExceptions: true
+      });
 
-      const fechaRadicacion = new Date(datos[i][1]);
-      if (!isNaN(fechaRadicacion.getTime()) && (ahora - fechaRadicacion) > TRES_MESES_MS) {
-        filasAEliminar.push(i);
-        Logger.log(`🧹 Solicitud ${solicitud} expiró en pendiente_codeudor (>3 meses de radicación).`);
+      if (response.getResponseCode() !== 200) {
+        Logger.log(`⚠️ HTTP ${response.getResponseCode()} verificando solicitud ${solicitud} en pendiente_codeudor.`);
         continue;
       }
 
-      try {
-        const response = UrlFetchApp.fetch(endpointBase + solicitud, {
-          method: 'get',
-          headers: { 'x-api-key': keyFull, 'Accept': 'application/json' },
-          muteHttpExceptions: true
-        });
+      const data = JSON.parse(response.getContentText());
+      const estado = String(data.studyStatus || "").toUpperCase().trim();
 
-        if (response.getResponseCode() !== 200) {
-          Logger.log(`⚠️ HTTP ${response.getResponseCode()} verificando solicitud ${solicitud} en pendiente_codeudor.`);
-          continue;
-        }
-
-        const data = JSON.parse(response.getContentText());
-        const estado = String(data.studyStatus || "").toUpperCase().trim();
-
-        if (estado === "CODEUDORES_REQUERIDOS") {
-          hoja.getRange(i + 2, 4).setValue(Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss"));
-          continue;
-        }
-
-        if (estado === "RECHAZADO" || estado === "APROBADO") {
-          filasAEliminar.push(i);
-          continue;
-        }
-
-        let item;
-        try {
-          item = JSON.parse(datos[i][4]);
-        } catch (eParse) {
-          item = {};
-        }
-        item.estadoGeneral = data.studyStatus;
-        item.resultCode = String(data.resultCode || "").trim();
-        item.codeudores = (data.codebtors || []).slice(0, 3).map(c => ({
-          nombre: c.name || "",
-          documento: c.document || "",
-          tipoDoc: c.documentType || "",
-          email: c.email || "",
-          telefono: c.phone || "",
-          estado: c.studyStatus || "",
-          resultado: c.resultDescription || "",
-          resultCode: String(c.resultCode || "").trim()
-        }));
-
-        // Si salió de CODEUDORES_REQUERIDOS directo a pendiente de biometría, debe seguir
-        // el mismo camino que cualquier otra biometría (WA + cortes 8am/12pm), no entrar
-        // directo a la cola de llamada saltándose ese control. Pero solo si resultCode
-        // confirma que hay alguien pendiente de verdad (500/503) — si no, a pendiente_biometria
-        // no debe llegar y se descarta (no es biometría real pendiente).
-        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && _esResultCodeBiometriaPendiente(item.resultCode)) {
-          reactivadasBiometria.push(item);
-        } else if (estado === "APROBADO_PENDIENTE_BIOMETRIA") {
-          Logger.log("ℹ️ Solicitud " + solicitud + " tiene estado APROBADO_PENDIENTE_BIOMETRIA pero resultCode " + item.resultCode + " — no es biometría real, se descarta.");
-        } else {
-          reactivadas.push(item);
-        }
-        filasAEliminar.push(i);
-
-      } catch (e) {
-        Logger.log(`❌ Error verificando solicitud ${solicitud} en pendiente_codeudor: ${e.message}`);
+      if (estado === "CODEUDORES_REQUERIDOS") {
+        actualizacionesFecha.push({ fila: i + 2, valor: Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss") });
+        continue;
       }
-    }
 
-    for (let i = filasAEliminar.length - 1; i >= 0; i--) {
-      hoja.deleteRow(filasAEliminar[i] + 2);
-    }
-    if (filasAEliminar.length > 0) SpreadsheetApp.flush();
+      if (estado === "RECHAZADO" || estado === "APROBADO") {
+        filasAEliminar.push(i);
+        continue;
+      }
 
-  } catch (err) {
-    Logger.log("❌ Error en revisarEnEsperaCodeudor: " + err.message);
-  } finally {
-    lock.releaseLock();
+      let item;
+      try {
+        item = JSON.parse(datos[i][4]);
+      } catch (eParse) {
+        item = {};
+      }
+      item.estadoGeneral = data.studyStatus;
+      item.resultCode = String(data.resultCode || "").trim();
+      item.codeudores = (data.codebtors || []).slice(0, 3).map(c => ({
+        nombre: c.name || "",
+        documento: c.document || "",
+        tipoDoc: c.documentType || "",
+        email: c.email || "",
+        telefono: c.phone || "",
+        estado: c.studyStatus || "",
+        resultado: c.resultDescription || "",
+        resultCode: String(c.resultCode || "").trim()
+      }));
+
+      // Si salió de CODEUDORES_REQUERIDOS directo a pendiente de biometría, debe seguir
+      // el mismo camino que cualquier otra biometría (WA + cortes 8am/12pm), no entrar
+      // directo a la cola de llamada saltándose ese control. Pero solo si resultCode
+      // confirma que hay alguien pendiente de verdad (500/503) — si no, a pendiente_biometria
+      // no debe llegar y se descarta (no es biometría real pendiente).
+      if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && _esResultCodeBiometriaPendiente(item.resultCode)) {
+        reactivadasBiometria.push(item);
+      } else if (estado === "APROBADO_PENDIENTE_BIOMETRIA") {
+        Logger.log("ℹ️ Solicitud " + solicitud + " tiene estado APROBADO_PENDIENTE_BIOMETRIA pero resultCode " + item.resultCode + " — no es biometría real, se descarta.");
+      } else {
+        reactivadas.push(item);
+      }
+      filasAEliminar.push(i);
+
+    } catch (e) {
+      Logger.log(`❌ Error verificando solicitud ${solicitud} en pendiente_codeudor: ${e.message}`);
+    }
+  }
+
+  // === FASE 2: aplicar los cambios a la hoja. Ya no hay llamadas HTTP de por medio,
+  // así que el candado dura milisegundos en vez de minutos. ===
+  if (actualizacionesFecha.length > 0 || filasAEliminar.length > 0) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+    } catch (e) {
+      Logger.log("❌ Lock no disponible para actualizar pendiente_codeudor: " + e.message);
+      return;
+    }
+    try {
+      actualizacionesFecha.forEach(function(u) { hoja.getRange(u.fila, 4).setValue(u.valor); });
+      for (let i = filasAEliminar.length - 1; i >= 0; i--) {
+        hoja.deleteRow(filasAEliminar[i] + 2);
+      }
+      SpreadsheetApp.flush();
+    } catch (err) {
+      Logger.log("❌ Error en revisarEnEsperaCodeudor (escritura): " + err.message);
+    } finally {
+      lock.releaseLock();
+    }
   }
 
   // Las filas correspondientes en pendiente_codeudor ya se borraron arriba, así que si
@@ -1231,8 +1408,6 @@ function guardarCambiosInternos(data) {
       hojaHistorico.getRange(targetRow, 29, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
       hojaHistorico.getRange(targetRow, 31).setValue(fechaSoloDia);
 
-      SpreadsheetApp.flush();
-
       const fechaDiligenciada = (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion')
         ? (tAsiParsed || '')
         : (data.fecha_radicacion_sai || '');
@@ -1240,6 +1415,8 @@ function guardarCambiosInternos(data) {
       if (fechaDiligenciada instanceof Date) hojaHistorico.getRange(targetRow, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
       hojaHistorico.getRange(targetRow, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
       hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
+
+      _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion);
 
       SpreadsheetApp.flush();
 
@@ -1286,6 +1463,11 @@ function guardarCambiosInternos(data) {
       ]]);
       hojaHistoricoR.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
       hojaHistoricoR.getRange(targetRowReest, 15, 1, 3).setNumberFormat("0.00");
+
+      var origenNormR = String(filaReest[3]).toUpperCase().trim();
+      var tipoPNormR = String(filaReest[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      var tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
+      _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR);
 
       SpreadsheetApp.flush();
     }
@@ -1782,8 +1964,7 @@ function verificarMisCupos(equipo) {
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
     const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const hojaUsuarios = ss.getSheetByName("Usuarios");
-    const dataUsuarios = hojaUsuarios.getDataRange().getValues();
+    const dataUsuarios = _getDataUsuarios();
 
     // Auto-detectar equipo si no se pasa, usando resolverEquipoDesdeEspecialidad
     let equipoFinal = equipo;
@@ -1841,31 +2022,11 @@ function verificarMisCupos(equipo) {
       }
     }
 
-    // También contar desde Historico_Gestiones (casos asignados movidos al asignar)
-    try {
-      const hojaHistV = ss.getSheetByName("Historico_Gestiones");
-      if (hojaHistV && hojaHistV.getLastRow() > 1) {
-        const colsHistV = Math.max(61, hojaHistV.getLastColumn());
-        const dataHistV = hojaHistV.getRange(2, 1, hojaHistV.getLastRow() - 1, colsHistV).getValues();
-        for (let i = 0; i < dataHistV.length; i++) {
-          const asignado = String(dataHistV[i][25]).trim().toLowerCase();
-          if (asignado !== userEmail) continue;
-          const fechaAsig = dataHistV[i][24];
-          const fechaFin  = dataHistV[i][26];
-          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
-          let tipo = String(dataHistV[i][60] || '').trim();
-          if (!tipo || !conteoHoy.hasOwnProperty(tipo)) {
-            const claseNorm  = String(dataHistV[i][20]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-            const estadoNorm = String(dataHistV[i][16]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-            const estadoSinGuion = estadoNorm.replace(/_/g, ' ');
-            tipo = 'digital';
-            if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
-            else if (claseNorm === "INDUCCION") tipo = 'induccion';
-          }
-          conteoHoy[tipo]++;
-        }
-      }
-    } catch(e) {}
+    // Lo que ya está en Historico_Gestiones (asignado o cerrado hoy) se lee de los
+    // contadores incrementales en vez de reescanear la hoja completa (ver Código.js,
+    // sección "CONTADORES INCREMENTALES DE CUPO Y CARGA").
+    const conteoHoyContadorV = _obtenerConteoHoyAnalista(userEmail);
+    for (const kv in conteoHoyContadorV) { conteoHoy[kv] = (conteoHoy[kv] || 0) + conteoHoyContadorV[kv]; }
 
     // Contar desde hoja reestudios (Reestudios + Nueva UAR + Deudor UAR + Biometría Fallida)
     try {
@@ -1894,33 +2055,8 @@ function verificarMisCupos(equipo) {
       }
     } catch(e) {}
 
-    // Contar desde Historico_Gestiones de reestudios (casos movidos al asignar)
-    try {
-      const ssReestH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-      const hojaHistReestC = ssReestH.getSheetByName("Historico_Gestiones");
-      if (hojaHistReestC && hojaHistReestC.getLastRow() > 1) {
-        const colsHRC = Math.max(19, hojaHistReestC.getLastColumn());
-        const dataHistReestC = hojaHistReestC.getRange(2, 1, hojaHistReestC.getLastRow() - 1, colsHRC).getValues();
-        for (let i = 0; i < dataHistReestC.length; i++) {
-          const asignado = String(dataHistReestC[i][6]).trim().toLowerCase();
-          if (asignado !== userEmail) continue;
-          const fechaAsig = dataHistReestC[i][8];
-          const fechaFin = dataHistReestC[i][9];
-          if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
-          let tipo = String(dataHistReestC[i][18] || '').trim();
-          if (!tipo || !conteoHoy.hasOwnProperty(tipo)) {
-            const origenR = String(dataHistReestC[i][3]).toUpperCase().trim();
-            const tipoPNorm = String(dataHistReestC[i][4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-            tipo = null;
-            if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
-            else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
-            else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
-            else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
-          }
-          if (tipo) conteoHoy[tipo]++;
-        }
-      }
-    } catch(e) {}
+    // El histórico de reestudios también sale de los contadores incrementales
+    // (ya sumado arriba junto con el histórico principal).
 
     // Comparar con cupos
     const resumen = [
