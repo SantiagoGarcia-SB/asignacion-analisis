@@ -1911,7 +1911,7 @@ function verificarTurnoActivo(userEmail, ss) {
       if (!dataTurnos[i][boolCol]) {
         return {
           ok: false,
-          message: '⏰ Tu turno (' + (nombreTurno || idTurnoActivo) + ') no aplica hoy. No puedes recibir casos.'
+          message: 'Tu turno (' + (nombreTurno || idTurnoActivo) + ') no aplica hoy. No puedes recibir casos.'
         };
       }
       horaIniStr = String(dispTurnos[i][iniCol] || '').trim().replace(/(:\d{2}):\d{2}$/, '$1');
@@ -1921,7 +1921,7 @@ function verificarTurnoActivo(userEmail, ss) {
     if (!horaFinStr) {
       return {
         ok: false,
-        message: '⏰ Tu turno (' + (nombreTurno || idTurnoActivo) + ') no tiene hora de fin configurada. Contacta a tu administrador.'
+        message: 'Tu turno (' + (nombreTurno || idTurnoActivo) + ') no tiene hora de fin configurada. Contacta a tu administrador.'
       };
     }
 

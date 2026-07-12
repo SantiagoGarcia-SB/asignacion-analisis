@@ -1322,7 +1322,7 @@ function admin_desactivarTodosAsesores() {
     const rangoEstados = hoja.getRange(2, 6, lastRow - 1, 1);
     const nuevosValores = new Array(lastRow - 1).fill(["INACTIVO"]);
     rangoEstados.setValues(nuevosValores);
-    return { success: true, message: "⚠️ Sistema pausado: Todos los analistas han sido pasados a INACTIVO." };
+    return { success: true, message: "Sistema pausado: Todos los analistas han sido pasados a INACTIVO." };
   } catch (e) {
     return { success: false, message: e.message };
   }

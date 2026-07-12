@@ -386,20 +386,20 @@ function RequestLeadUnificado(equipoIdOverride) {
     var dataUsuarios = _getDataUsuarios();
     var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
 
-    if (!usuarioInfo) return { success: false, message: "❌ Usuario no registrado en el sistema." };
+    if (!usuarioInfo) return { success: false, message: "Usuario no registrado en el sistema." };
 
     var nombreUsuario = usuarioInfo[1];
     var especialidad = usuarioInfo[4];
     var estadoUsuario = usuarioInfo[5].toString().trim().toUpperCase();
     var capTotal = parseInt(usuarioInfo[6]) || 0;
 
-    if (estadoUsuario !== "ACTIVO") return { success: false, message: "❌ Tu usuario no está Activo." };
+    if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
 
     var turnoCheck = verificarTurnoActivo(userEmail, ss);
     if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
 
     var permisoCheck = verificarPermisoVigenteHoy();
-    if (permisoCheck.tienePermiso) return { success: false, message: "⛔ Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
+    if (permisoCheck.tienePermiso) return { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
 
     // Resolver equipo
     var equipo;
@@ -467,9 +467,9 @@ function RequestLeadUnificado(equipoIdOverride) {
 
     if (pendientes.length === 0) {
       if (cuposLlenosHoy.length > 0) {
-        return { success: false, message: "⚠️ Sin casos disponibles. Cupos del día completados: " + cuposLlenosHoy.join(', ') + "." };
+        return { success: false, message: "Sin casos disponibles. Cupos del día completados: " + cuposLlenosHoy.join(', ') + "." };
       }
-      return { success: false, message: "⚠️ No hay casos en bandeja para tus subcategorías disponibles." };
+      return { success: false, message: "No hay casos en bandeja para tus subcategorías disponibles." };
     }
 
     // === ORDENAR ===
@@ -567,7 +567,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     }
 
     if (seleccionados.length === 0) {
-      return { success: false, message: "⚠️ Error interno: no se pudo seleccionar un caso." };
+      return { success: false, message: "Error interno: no se pudo seleccionar un caso." };
     }
 
     // LOG DIAGNÓSTICO
@@ -604,10 +604,10 @@ function RequestLeadUnificado(equipoIdOverride) {
     var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');
 
     var msgAsignacion = seleccionados.length === 1
-      ? "✅ Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionados[0].tipo] || seleccionados[0].tipo.toUpperCase()) + "."
-      : "✅ Asignados: " + seleccionados.length + " casos (" + _detalleTipos + ").";
+      ? "Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionados[0].tipo] || seleccionados[0].tipo.toUpperCase()) + "."
+      : "Asignados: " + seleccionados.length + " casos (" + _detalleTipos + ").";
     if (cuposLlenosHoy.length > 0) {
-      msgAsignacion += "\n⚠️ Cupos del día completados: " + cuposLlenosHoy.join(', ');
+      msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
     }
 
     return { success: true, nueva: true, message: msgAsignacion };
