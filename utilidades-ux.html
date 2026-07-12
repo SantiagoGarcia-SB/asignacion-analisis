@@ -1040,8 +1040,17 @@ const NotifSound = (function() {
             try { _ctx = new (window.AudioContext || window.webkitAudioContext)(); }
             catch(e) { return null; }
         }
-        if (_ctx && _ctx.state === 'suspended') _ctx.resume();
         return _ctx;
+    }
+
+    // Los navegadores bloquean el audio hasta el primer gesto del usuario (clic/tecla).
+    // Si el contexto sigue "suspended", no hay gesto todavía: no intentamos sonar
+    // (evita el warning en consola y una nota fantasma), pero sí disparamos el
+    // resume() para que quede listo apenas el usuario interactúe.
+    function ctxListo(ctx) {
+        if (ctx.state === 'running') return true;
+        if (ctx.state === 'suspended') ctx.resume().catch(function() {});
+        return false;
     }
 
     function playNote(ctx, master, freq, startTime, dur, type) {
@@ -1061,7 +1070,7 @@ const NotifSound = (function() {
 
     function playChord(notes, volume) {
         var ctx = getCtx();
-        if (!ctx) return;
+        if (!ctx || !ctxListo(ctx)) return;
         var master = ctx.createGain();
         master.gain.value = volume || 0.08;
         master.connect(ctx.destination);
@@ -1107,7 +1116,7 @@ const NotifSound = (function() {
             if (fn) fn();
             else this.info();
         },
-        warmUp: function() { getCtx(); }
+        warmUp: function() { var ctx = getCtx(); if (ctx) ctxListo(ctx); }
     };
 })();
 

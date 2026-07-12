@@ -603,7 +603,16 @@ function desasignarSolicitud(idSolicitud){
             hojaHist.deleteRow(filaH);
 
             var emailAnaOriginal = String(filaCompleta[25] || '').toLowerCase().trim();
-            if (emailAnaOriginal) _ajustarCargaPendiente(emailAnaOriginal, -1);
+            if (emailAnaOriginal) {
+              _ajustarCargaPendiente(emailAnaOriginal, -1);
+              // Si el caso se había asignado hoy, también libera el cupo diario que
+              // ya se le había descontado al momento de asignarlo — de lo contrario
+              // le queda contando contra su cupo un caso que nunca gestionó.
+              if (_fechaEsHoyYMD(filaCompleta[24])) {
+                var tipoOriginal = String(filaCompleta[60] || '').trim() || 'digital';
+                _decrementarContadorCupo(emailAnaOriginal, tipoOriginal);
+              }
+            }
 
             SpreadsheetApp.flush();
             return { success: true, message: "Solicitud desasignada desde Historico_Gestiones y devuelta a cola." };

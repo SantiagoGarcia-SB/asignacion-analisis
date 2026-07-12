@@ -598,6 +598,16 @@
       margin-top: 24px;
     }
 
+    /* Equipos donde solo se asigna un caso a la vez: oculta los controles de
+       lista (buscar, longitud, paginación) que no tienen sentido con 0-1 fila.
+       Reaparecen solos si algún día llegan a mostrarse varios casos a la vez. */
+    .tabla-modo-unico .dataTables_length,
+    .tabla-modo-unico .dataTables_filter,
+    .tabla-modo-unico .dataTables_info,
+    .tabla-modo-unico .dataTables_paginate {
+      display: none !important;
+    }
+
     /*Paginacion re re re forzada jeje*/
     .dataTables_wrapper .dataTables_length,
     .dataTables_wrapper .dataTables_filter,

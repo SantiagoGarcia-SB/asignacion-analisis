@@ -3004,6 +3004,9 @@ function refrescarDashboard() {
                 html += '<td class="text-center">';
                 html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirReasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\', \'' + (item.tipo || 'digital') + '\')" title="Reasignar a otro analista">';
                 html += '<i class="bi bi-person-lines-fill"></i> Reasignar';
+                html += '</button> ';
+                html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignar(\'' + item.id + '\')" title="Quitar del analista y devolver a la cola">';
+                html += '<i class="bi bi-x-circle"></i> Desasignar';
                 html += '</button>';
                 html += '</td>';
                 
@@ -3531,6 +3534,33 @@ function guardarNuevoUsuario() {
             Swal.fire('Error', res.message, 'error');
         }
     }).admin_crearUsuario(datos);
+}
+
+function confirmarDesasignar(idSolicitud) {
+    Swal.fire({
+        title: '¿Quitar esta solicitud del analista?',
+        html: '<div style="text-align:left;font-size:0.88rem;">' +
+            '<p>La solicitud <b>' + idSolicitud + '</b> volverá a la cola general, disponible para asignarse a cualquier analista. Úsalo cuando el caso ya no deba seguir con este analista (novedad, error de asignación, etc.).</p>' +
+            '<p class="text-muted mb-0" style="font-size:0.8rem;">A diferencia de borrar la fila directamente en la hoja, esto mantiene los contadores de cupos y capacidad del analista correctos automáticamente.</p>' +
+            '</div>',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, desasignar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#BD0F14'
+    }).then(function(result) {
+        if (!result.isConfirmed) return;
+        google.script.run.withSuccessHandler(function(res) {
+            if (res && res.success) {
+                Swal.fire({ icon: 'success', title: 'Desasignada', text: res.message, timer: 2000, showConfirmButton: false });
+                refrescarDashboard();
+            } else {
+                Swal.fire('Error', (res && res.message) || 'No se pudo desasignar.', 'error');
+            }
+        }).withFailureHandler(function(e) {
+            Swal.fire('Error', e.message, 'error');
+        }).desasignarSolicitud(idSolicitud);
+    });
 }
 
 function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {

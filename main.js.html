@@ -788,6 +788,12 @@ function renderizarTabla(data) {
 
   const registros = data.slice(1);
 
+  const contenedorTabla = document.getElementById('tablaPrincipalContainer');
+  if (contenedorTabla) {
+    const modoUnico = (window.__MAX_ASIGNAR__ || 1) <= 1 && registros.length <= 1;
+    contenedorTabla.classList.toggle('tabla-modo-unico', modoUnico);
+  }
+
   if ($.fn.DataTable.isDataTable('#miTabla') && _tablaModoActual === 'principal') {
     const dt = $('#miTabla').DataTable();
     dt.clear();
@@ -1605,6 +1611,7 @@ function poblarModalDig(fila) {
   var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
 
   setTxt('dig_solicitud', fila[0]);
+  setTxt('dig_solicitud_card', fila[0]);
   setTxt('dig_estadoGeneral', fila[16]);
   setTxt('dig_fechaRadicacion', fila[17]);
   _verificarAlertaScore(fila, 'dig_poliza', fila[1] || '');
@@ -1740,6 +1747,8 @@ function poblarModalBio(fila) {
   document.getElementById('bio_solicitudId').value = solId;
   var dispEl = document.getElementById('bio_displaySol');
   if (dispEl) dispEl.textContent = solId;
+  var cardEl = document.getElementById('bio_solicitud_card');
+  if (cardEl) cardEl.textContent = solId;
 
   var setTxt = function(id, val) { var el = document.getElementById(id); if (!el) return; var v = (val !== undefined && val !== null) ? String(val).trim() : ''; el.innerHTML = v ? v.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '<span class="nd-badge">Sin dato</span>'; };
 

@@ -208,13 +208,13 @@
 
 <!-- TABLA PRINCIPAL -->
 <div class="container mb-5">
-  <div class="table-container">
+  <div class="table-container" id="tablaPrincipalContainer">
     <div class="mb-4">
       <h4 class="fw-bold mb-0" style="color:var(--text-main);font-size:1.2rem;">
-        <i class="bi bi-list-stars me-2" style="color:var(--color-primario);"></i>Mis Solicitudes Asignadas
+        <i class="bi bi-list-stars me-2" style="color:var(--color-primario);"></i><span id="miTablaTitulo">Mis Solicitudes Asignadas</span>
       </h4>
       <div class="d-flex align-items-center justify-content-between">
-        <p class="text-muted small mt-1 mb-0">Selecciona un registro para gestionar</p>
+        <p class="text-muted small mt-1 mb-0" id="miTablaSubtitulo">Selecciona un registro para gestionar</p>
         <div class="d-flex align-items-center gap-2">
           <div class="sync-indicator"><div class="sync-dot"></div> Sincronizado <span id="syncTime">--:--</span></div>
           <button id="btnRefrescar" onclick="cargarDatos()" title="Actualizar tabla"
@@ -243,7 +243,7 @@
           </div>
           <div>
             <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Solicitud <span id="dig_tipoBadge"></span></h5>
-            <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Solicitud: <span id="dig_solicitud" class="badge bg-white text-dark fw-bold ms-1"></span></p>
+            <span id="dig_solicitud" class="d-none"></span>
           </div>
           <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
         </div>
@@ -260,10 +260,11 @@
           <!-- General -->
           <div class="tab-pane fade show active" id="dig_tab_general" role="tabpanel">
             <div class="row g-3 mb-4 text-center">
-              <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100" style="border-left:4px solid var(--color-primario) !important;"><label class="d-block mb-1"><i class="bi bi-activity me-1"></i>Estado General</label><div id="dig_estadoGeneral" class="fw-bold fs-6 text-dark"></div></div></div>
-              <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-shield-check me-1"></i>Póliza</label><span class="fw-bold text-dark fs-6" id="dig_poliza"></span></div></div>
-              <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-event me-1"></i>Radicación</label><span class="fw-bold text-dark fs-6" id="dig_fechaRadicacion"></span></div></div>
-              <div class="col-md-3"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-check me-1"></i>Resultado</label><span class="fw-bold text-dark fs-6" id="dig_fechaResultado"></span></div></div>
+              <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100" style="border-left:4px solid var(--color-primario) !important;"><label class="d-block mb-1"><i class="bi bi-hash me-1"></i>Solicitud</label><div id="dig_solicitud_card" class="fw-bold fs-6 text-dark"></div></div></div>
+              <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-activity me-1"></i>Estado General</label><div id="dig_estadoGeneral" class="fw-bold fs-6 text-dark"></div></div></div>
+              <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-shield-check me-1"></i>Póliza</label><span class="fw-bold text-dark fs-6" id="dig_poliza"></span></div></div>
+              <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-event me-1"></i>Radicación</label><span class="fw-bold text-dark fs-6" id="dig_fechaRadicacion"></span></div></div>
+              <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-check me-1"></i>Resultado</label><span class="fw-bold text-dark fs-6" id="dig_fechaResultado"></span></div></div>
             </div>
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Solicitante e Ingresos</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
@@ -310,7 +311,7 @@
 
           <!-- Gestión -->
           <div class="tab-pane fade" id="dig_tab_gestion" role="tabpanel">
-            <div class="gestion-card p-4">
+            <div class="gestion-card p-4" style="border-left:5px solid var(--color-primario) !important;">
               <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
               <div class="row">
                 <div class="col-md-6 gestion-group" id="dig_contenedor_fecha_radicacion">
@@ -326,7 +327,7 @@
                   </select>
                 </div>
                 <div class="col-12 gestion-group">
-                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del estudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo correspondiente." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión <span class="text-danger">*</span><i class="bi bi-question-circle-fill" title="Resultado definitivo del estudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo correspondiente." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <div class="estado-btn-group" id="dig_estado_btns">
                     <button type="button" class="estado-btn" data-value="APROBADO"><i class="bi bi-check-circle me-1"></i>APROBADO</button>
                     <button type="button" class="estado-btn" data-value="APLAZADO"><i class="bi bi-pause-circle me-1"></i>APLAZADO</button>
@@ -344,7 +345,7 @@
                   </select>
                 </div>
                 <div class="col-md-6 gestion-group d-none" id="dig_contenedor_aplazamiento">
-                  <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
+                  <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento <span class="text-danger">*</span></label>
                   <select id="dig_motivo_aplazamiento" class="motivo-picker-hidden"><option value="">Sin aplazamiento</option></select>
                   <div id="picker_dig_motivo_aplazamiento" class="motivo-picker">
                     <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
@@ -352,7 +353,7 @@
                   </div>
                 </div>
                 <div class="col-md-6 gestion-group d-none" id="dig_contenedor_negacion">
-                  <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
+                  <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación <span class="text-danger">*</span></label>
                   <select id="dig_motivo_negacion" class="motivo-picker-hidden"><option value="">Sin negación</option></select>
                   <div id="picker_dig_motivo_negacion" class="motivo-picker">
                     <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
@@ -407,7 +408,7 @@
           </div>
           <div>
             <h5 class="modal-title fw-bold text-white mb-0" style="font-size:1.1rem;">Gestión de Solicitud <span class="badge ms-2" style="background:rgba(255,255,255,0.2);font-size:0.7rem;padding:4px 10px;border-radius:8px;vertical-align:middle;">Biometría</span></h5>
-            <p class="small mb-0" style="color:rgba(255,255,255,0.6);">Solicitud: <span id="bio_displaySol" class="badge bg-white text-dark fw-bold ms-1"></span></p>
+            <span id="bio_displaySol" class="d-none"></span>
           </div>
           <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
         </div>
@@ -424,6 +425,10 @@
           <!-- Información -->
           <div class="tab-pane fade show active" id="bio_tab_info">
             <input type="hidden" id="bio_solicitudId">
+            <div class="d-flex align-items-center gap-3 p-3 mb-4 border rounded-4 bg-white" style="border-left:4px solid var(--color-primario) !important;">
+              <div><i class="bi bi-hash" style="color:var(--text-muted);"></i></div>
+              <div><label class="d-block mb-0" style="font-size:0.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Solicitud</label><div id="bio_solicitud_card" class="fw-bold fs-6 text-dark"></div></div>
+            </div>
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Inquilino</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
               <div class="row g-4">
@@ -508,7 +513,7 @@
       <div class="modal-footer border-0 p-4" style="background:var(--bg-page);border-radius:0 0 20px 20px;">
         <button class="btn btn-outline-secondary px-4 fw-bold" data-bs-dismiss="modal" style="border-radius:10px;">Cancelar</button>
         <span id="bio_btnGuardarWrap" class="d-inline-block" title="Completa los campos requeridos en la pestaña Gestión">
-        <button type="button" class="btn text-white px-5 fw-bold shadow-sm" id="bio_btnGuardar" onclick="manejarGuardarBiometria()" style="border-radius:10px;background:#253150;" disabled>
+        <button type="button" class="btn text-white px-5 fw-bold shadow-sm" id="bio_btnGuardar" onclick="manejarGuardarBiometria()" style="border-radius:10px;background:var(--grad-azul);" disabled>
           <i class="bi bi-cloud-arrow-up-fill me-2"></i>Guardar Gestión <span class="kbd-badge"><kbd>Ctrl</kbd>+<kbd>↵</kbd></span>
         </button>
         </span>
@@ -573,12 +578,12 @@
             <input type="hidden" id="rst_filaReal">
             <input type="hidden" id="rst_fuente" value="REESTUDIO">
             <input type="hidden" id="rst_solicitud_id" value="">
-            <div class="gestion-card p-4">
+            <div class="gestion-card p-4" style="border-left:5px solid var(--color-primario) !important;">
               <h6 class="fw-bold mb-4" style="color:var(--color-primario);font-size:0.95rem;"><i class="bi bi-pencil-square me-2"></i>Actualizar Calificación</h6>
               <div class="row g-3">
-                <div class="col-md-4 gestion-group"><label class="gestion-label"><i class="bi bi-shield-check me-1"></i>Póliza<i class="bi bi-question-circle-fill" title="Número de póliza resultante del reestudio. Respeta los ceros a la izquierda si los tiene." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><input type="text" inputmode="numeric" id="rst_poliza" class="form-control gestion-select" placeholder="Ej: 483" autocomplete="off"></div>
+                <div class="col-md-4 gestion-group"><label class="gestion-label"><i class="bi bi-shield-check me-1"></i>Póliza <span class="text-danger">*</span><i class="bi bi-question-circle-fill" title="Número de póliza resultante del reestudio. Respeta los ceros a la izquierda si los tiene." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><input type="text" inputmode="numeric" id="rst_poliza" class="form-control gestion-select" placeholder="Ej: 483" autocomplete="off"></div>
                 <div class="col-12 gestion-group">
-                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión<i class="bi bi-question-circle-fill" title="Resultado definitivo del reestudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
+                  <label class="gestion-label" style="color:var(--color-primario);"><i class="bi bi-check2-circle me-1"></i>Estado Final de Gestión <span class="text-danger">*</span><i class="bi bi-question-circle-fill" title="Resultado definitivo del reestudio. Al elegir APLAZADO o RECHAZADO deberás indicar el motivo." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label>
                   <div class="estado-btn-group" id="rst_estado_btns">
                     <button type="button" class="estado-btn" data-value="APROBADO"><i class="bi bi-check-circle me-1"></i>APROBADO</button>
                     <button type="button" class="estado-btn" data-value="APLAZADO"><i class="bi bi-pause-circle me-1"></i>APLAZADO</button>
@@ -596,7 +601,7 @@
                   </select>
                 </div>
                 <div class="col-md-6 gestion-group d-none" id="rst_contenedor_aplazamiento">
-                  <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento</label>
+                  <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento <span class="text-danger">*</span></label>
                   <select id="rst_motivo_aplazamiento" class="motivo-picker-hidden"><option value="">Sin aplazamiento</option></select>
                   <div id="picker_rst_motivo_aplazamiento" class="motivo-picker">
                     <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
@@ -604,7 +609,7 @@
                   </div>
                 </div>
                 <div class="col-md-6 gestion-group d-none" id="rst_contenedor_negacion">
-                  <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación</label>
+                  <label class="gestion-label"><i class="bi bi-x-octagon me-1"></i>Motivo Negación <span class="text-danger">*</span></label>
                   <select id="rst_motivo_negacion" class="motivo-picker-hidden"><option value="">Sin negación</option></select>
                   <div id="picker_rst_motivo_negacion" class="motivo-picker">
                     <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
@@ -931,6 +936,16 @@ window.__IS_UNIFIED_VIEW__ = true;
 (function() {
   var eq = window.__EQUIPO_CONFIG__;
   if (!eq) return;
+
+  // Cuántos casos entrega este equipo por asignación (1 = "un caso a la vez",
+  // configurable por equipo desde el panel Admin sin tocar código).
+  window.__MAX_ASIGNAR__ = parseInt(eq.maxAsignarPorLlamada, 10) || 1;
+  var tituloEl = document.getElementById('miTablaTitulo');
+  var subtituloEl = document.getElementById('miTablaSubtitulo');
+  if (window.__MAX_ASIGNAR__ <= 1) {
+    if (tituloEl) tituloEl.textContent = 'Tu Caso Actual';
+    if (subtituloEl) subtituloEl.textContent = 'El caso que tienes asignado en este momento';
+  }
 
   // Navbar - equipo
   var iconEl = document.getElementById('navEquipoIcono');

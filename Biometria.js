@@ -414,16 +414,21 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
 
     const lastRow = hojaHist.getLastRow();
     if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
-    const matrizDatos = hojaHist.getRange(2, 1, lastRow - 1, 34).getValues();
 
-    for (let i = 0; i < matrizDatos.length; i++) {
-      const fila = matrizDatos[i];
+    // Antes leía 34 columnas de toda la hoja para ubicar el ID. Ahora usa
+    // TextFinder acotado a la columna del ID.
+    const colIdBio = hojaHist.getRange(2, 1, lastRow - 1, 1);
+    const matchesIdBio = colIdBio.createTextFinder(String(idSolicitud).trim()).matchEntireCell(true).findAll();
+
+    for (let i = 0; i < matchesIdBio.length; i++) {
+      const filaReal0 = matchesIdBio[i].getRow();
+      const fila = hojaHist.getRange(filaReal0, 1, 1, 34).getValues()[0];
       const solId = String(fila[0]).trim();
       const emailH = String(fila[25]).trim().toLowerCase();
       const fechaFin = String(fila[26]).trim();
 
       if (solId === String(idSolicitud).trim() && emailH === userEmail && fechaFin === '') {
-        const filaReal = i + 2;
+        const filaReal = filaReal0;
         const ahora = new Date();
         const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", "dd/MM/yyyy");
         const resFinal = String(datosFormulario.resFinal || '').toUpperCase();

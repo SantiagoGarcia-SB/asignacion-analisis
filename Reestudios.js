@@ -77,28 +77,26 @@ function getReestudiosData() {
     }
 
     // --- Casos asignados ya movidos a Historico_Gestiones (MotorAsignacion los mueve al asignar) ---
+    // Antes esto leía y recorría TODA la hoja (crece sin límite). Ahora, como ya
+    // sabemos por el contador de carga pendiente si este analista tiene algo
+    // abierto, solo buscamos cuando corresponde, y con TextFinder acotado a la
+    // columna de analista asignado en vez de traer todas las columnas a memoria.
     try {
       const hojaHistR = ssReestudios.getSheetByName('Historico_Gestiones');
-      if (hojaHistR && hojaHistR.getLastRow() > 1) {
-        const lastRowH = hojaHistR.getLastRow();
-        const dataH = hojaHistR.getRange(2, 1, lastRowH - 1, 14).getDisplayValues();
-        for (let i = 0; i < dataH.length; i++) {
-          const fila = dataH[i];
-          const asignado = String(fila[6]).trim().toLowerCase();
+      const lastRowH = hojaHistR ? hojaHistR.getLastRow() : 0;
+      if (hojaHistR && lastRowH > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
+        const colAsignado = hojaHistR.getRange(2, 7, lastRowH - 1, 1);
+        const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
+        matches.forEach(function(m) {
+          const row = m.getRow();
+          const fila = hojaHistR.getRange(row, 1, 1, 14).getDisplayValues()[0];
           const fechaAsignacion = String(fila[8]).trim();
           const fechaFin = String(fila[9]).trim();
-
-          if (asignado !== userEmail) continue;
-          if (fechaAsignacion === '') continue;
-
-          if (fechaFin !== '') {
-            if (fechaFin.includes(hoyStr)) conteoHoy++;
-            continue;
-          }
+          if (fechaAsignacion === '' || fechaFin !== '') return;
 
           listaPendientes.push({
             fuente: 'REESTUDIO',
-            filaReal: i + 2,
+            filaReal: row,
             solicitud: String(fila[1]).trim(),
             linkDrive: String(fila[2]).trim(),
             origen: String(fila[3]).trim(),
@@ -107,7 +105,7 @@ function getReestudiosData() {
             fechaAsignacion: fechaAsignacion,
             fechaRadicacion: String(fila[0]).trim()
           });
-        }
+        });
       }
     } catch (eHistR) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones reestudios: ' + eHistR.toString());
@@ -197,26 +195,24 @@ function getReestudiosData() {
     }
 
     // --- Historico_Gestiones principal (casos movidos al asignar desde solicitud) ---
+    // Mismo cambio que arriba: se salta la lectura completa si el contador de
+    // carga pendiente dice que este analista no tiene nada abierto, y si sí
+    // tiene, ubica la fila con TextFinder en vez de recorrer toda la hoja.
     try {
       const ssPrincipal = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
       const hojaHistPrincipal = ssPrincipal.getSheetByName('Historico_Gestiones');
-      if (hojaHistPrincipal && hojaHistPrincipal.getLastRow() > 1) {
-        const lastRowHP = hojaHistPrincipal.getLastRow();
+      const lastRowHP = hojaHistPrincipal ? hojaHistPrincipal.getLastRow() : 0;
+      if (hojaHistPrincipal && lastRowHP > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
         const colsHP = Math.max(61, hojaHistPrincipal.getLastColumn());
-        const dataHP = hojaHistPrincipal.getRange(2, 1, lastRowHP - 1, colsHP).getDisplayValues();
-        for (let i = 0; i < dataHP.length; i++) {
-          const fila = dataHP[i];
-          const asignado = String(fila[25]).trim().toLowerCase();
+        const colAsignadoHP = hojaHistPrincipal.getRange(2, 26, lastRowHP - 1, 1);
+        const matchesHP = colAsignadoHP.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
+        matchesHP.forEach(function(m) {
+          const rowHP = m.getRow();
+          const fila = hojaHistPrincipal.getRange(rowHP, 1, 1, colsHP).getDisplayValues()[0];
           const fechaAsig = String(fila[24]).trim();
           const fechaFin  = String(fila[26]).trim();
 
-          if (asignado !== userEmail) continue;
-          if (fechaAsig === '') continue;
-
-          if (fechaFin !== '') {
-            if (fechaFin.includes(hoyStr)) conteoHoy++;
-            continue;
-          }
+          if (fechaAsig === '' || fechaFin !== '') return;
 
           var polHP = String(fila[1]).trim();
           var polHPNorm = polHP.replace(/\D/g, '').replace(/^0+/, '');
@@ -250,7 +246,7 @@ function getReestudiosData() {
             categoriaScore: mapaScoreR.get(polHP) || mapaScoreR.get(polHPNorm) || '',
             inmobiliaria: mapaInmobiliariaR.get(polHP) || mapaInmobiliariaR.get(polHPNorm) || ''
           });
-        }
+        });
       }
     } catch (eHistPrincipal) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones principal: ' + eHistPrincipal.toString());
@@ -296,14 +292,16 @@ function guardarGestionReestudio(datos) {
 
     if (hojaHistorico && hojaHistorico.getLastRow() > 1) {
       const lastRowH = hojaHistorico.getLastRow();
-      const dataH = hojaHistorico.getRange(2, 2, lastRowH - 1, 9).getValues(); // cols B–J
       const targetId = String(datos.solicitud || datos.filaReal).trim();
-      for (let i = 0; i < dataH.length; i++) {
-        const idMatch  = String(dataH[i][0]).trim() === targetId;
-        const fechaFin = String(dataH[i][8]).trim(); // col J = fechaFinGestion
-        if (idMatch && fechaFin === '') {
-          targetRow = i + 2; fuenteRuta = 'HISTORICO'; break;
-        }
+      // Antes esto leía columnas B-J de toda la hoja para buscar el ID. Ahora
+      // usa la búsqueda nativa de Sheets (TextFinder) acotada a la columna del
+      // ID, y solo lee la fila que realmente coincide.
+      const colSolicitud = hojaHistorico.getRange(2, 2, lastRowH - 1, 1);
+      const matchesH = colSolicitud.createTextFinder(targetId).matchEntireCell(true).findAll();
+      for (let mh = 0; mh < matchesH.length; mh++) {
+        const rowH = matchesH[mh].getRow();
+        const fechaFinH = String(hojaHistorico.getRange(rowH, 10).getDisplayValue()).trim();
+        if (fechaFinH === '') { targetRow = rowH; fuenteRuta = 'HISTORICO'; break; }
       }
     }
 
