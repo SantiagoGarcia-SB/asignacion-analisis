@@ -1098,15 +1098,17 @@ particlesJS("particles-js", {
   retina_detect: true
 });
 
-// Cargar nombre del usuario (el saludo del loader ya lo pone main.js.html en $(document).ready)
+// Cargar nombre del usuario (el saludo del loader ya lo pone main.js.html en $(document).ready).
+// Usa _obtenerEmailUsuario (main.js.html) para reusar esa misma llamada al servidor
+// en vez de disparar una segunda petición idéntica.
 window.addEventListener('load', function() {
-  google.script.run.withSuccessHandler(function(email) {
+  _obtenerEmailUsuario(function(email) {
     if (email) {
       var prefijo = email.split('@')[0];
       var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
       document.getElementById('userEmailNav').innerText = nombre;
     }
-  }).getEmailUsuario();
+  });
 });
 
 // Mostrar/ocultar motivo aplazamiento en biometría

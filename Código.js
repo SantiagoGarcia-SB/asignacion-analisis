@@ -87,6 +87,11 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
     return def;
   }
 
+  // Red de seguridad para los 5 equipos actuales: si un equipo no tiene Script
+  // Properties de cupos configuradas, cae aquí en vez de fallar. Un equipo nuevo
+  // agregado solo en la hoja Equipos (sin tocar código) que tampoco tenga sus
+  // propiedades de cupos configuradas caerá en defaults.DIGITAL — revisar esta
+  // tabla al agregar un 6º equipo si sus cupos por defecto deberían ser otros.
   const defaults = {
     DIGITAL: { digital: 70, reestudio: 10, induccion: 8, desaplazamiento: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
     CANONES_ALTOS: { digital: 70, reestudio: 10, induccion: 8, desaplazamiento: 0, nuevaUar: 2, deudorUar: 2, biometriaFallida: 0 },
@@ -332,7 +337,10 @@ function resolverEquipoDesdeEspecialidad(especialidad) {
   var encontrado = equipos.find(function(e) { return e.id === equipoId; });
 
   if (!encontrado) {
-    // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún
+    // Fallback hardcoded para compatibilidad si la hoja Equipos no existe aún o si
+    // el equipo resuelto no está en ella. Cubre solo los 5 equipos actuales — un
+    // 6º equipo agregado únicamente en la hoja Equipos, si por algún motivo no se
+    // encuentra aquí (p.ej. `equipos` llegó vacío), caerá en defaults['DIGITAL'].
     var defaults = {
       'DIGITAL': { id: 'DIGITAL', nombre: 'Estudios Digitales', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 0, canonHasta: 0, canonTipos: [] },
       'CANONES_ALTOS': { id: 'CANONES_ALTOS', nombre: 'Cánones Altos', icono: 'bi-shield-check', colorHex: '#253150', activo: true, modalTipo: 'DIGITAL_FULL', funcionGuardar: 'guardarCambiosInternos', usarVipRotacion: true, usarScoreCategories: true, maxAsignarPorLlamada: 1, ordenPrioridad: [], fuentesDatos: [], canonDesde: 8000000, canonHasta: 0, canonTipos: ['digital'] },
@@ -1823,7 +1831,7 @@ function getResumenGestionesHoy() {
 
   // Digital — Historico_Gestiones del warehouse
   try {
-    const hojaHist = SpreadsheetApp.openById("1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB8bJ0")
+    const hojaHist = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
                        .getSheetByName("Historico_Gestiones");
     if (hojaHist && hojaHist.getLastRow() > 1) {
       const data = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 30).getValues();
@@ -1845,7 +1853,7 @@ function getResumenGestionesHoy() {
 
   // Reestudios — Historico_Gestiones de ssReestudios
   try {
-    const hojaHistR = SpreadsheetApp.openById("1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U")
+    const hojaHistR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS)
                         .getSheetByName("Historico_Gestiones");
     if (hojaHistR && hojaHistR.getLastRow() > 1) {
       const data = hojaHistR.getRange(2, 1, hojaHistR.getLastRow() - 1, 13).getValues();

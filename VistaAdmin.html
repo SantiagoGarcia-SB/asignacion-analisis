@@ -37,7 +37,8 @@
     --text-light:  #A3A2A2;
     --border:      #e5e7eb;
     --sidebar-w:   240px;
-    --radius:      20px;
+    --radius:      16px;
+    --radius-lg:   20px;
     --radius-sm:   12px;
     --shadow:      0 2px 12px rgba(37,49,80,0.08);
     --shadow-md:   0 8px 28px rgba(37,49,80,0.14);
@@ -401,6 +402,17 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
     border-radius:6px; padding:2px 7px; font-size:0.67rem; font-weight:700;
 }
 
+/* Ícono que marca que este enlace sale a otra herramienta, no cambia de sección */
+.nav-external-icon {
+    margin-left:auto; font-size:0.72rem !important; width:auto !important;
+    opacity:0.55; flex-shrink:0;
+}
+#sidebar .nav-external-icon {
+    display:inline-block; overflow:hidden; white-space:nowrap;
+    max-width:0; opacity:0; transition:max-width 0.28s ease, opacity 0.2s ease 0.06s;
+}
+#sidebar:hover .nav-external-icon { max-width:20px; opacity:0.55; }
+
 /* ================================================================
    SIDEBAR PROFILE (Footer)
    ================================================================ */
@@ -452,6 +464,15 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 .seg-btn.active i { color:white; }
 .seg-btn i { font-size:0.9rem; }
 
+/* Agrupa cada control segmentado con su etiqueta, para que se entienda a qué
+   afecta cada uno sin depender solo del tooltip. */
+.toolbar-group { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+.toolbar-group-label {
+    font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:0.4px;
+    color:var(--text-muted); padding-left:4px;
+}
+.toolbar-divider { width:1.5px; align-self:stretch; background:var(--border); margin:0 4px; }
+
 /* ================================================================
    MAIN CONTENT
    ================================================================ */
@@ -482,6 +503,11 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 .metrics-row { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
 .metrics-row-5 { grid-template-columns:repeat(5,1fr); }
 @media (max-width: 1200px) { .metrics-row { grid-template-columns:repeat(2,1fr); } .metrics-row-5 { grid-template-columns:repeat(3,1fr); } }
+
+/* La barra de herramientas del dashboard tenía ~10 controles en una sola fila
+   sin ningún punto de quiebre — en pantallas angostas se apretaba o se
+   desbordaba. Ahora envuelve a una segunda línea en vez de desbordarse. */
+#dashboardToolbarControles { flex-wrap: wrap; row-gap: 10px; }
 @media (max-width: 768px) { .metrics-row { grid-template-columns:1fr; } .metrics-row-5 { grid-template-columns:1fr; } }
 .metric-card {
     background:var(--bg-card); border-radius:var(--radius); padding:22px;
@@ -768,6 +794,14 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 .kanban-card .kc-estado {
     display:inline-block; width:7px; height:7px; border-radius:50%; flex-shrink:0;
 }
+.kc-ficha-btn {
+    flex-shrink:0; width:26px; height:26px; border-radius:8px;
+    border:1.5px solid var(--border); background:white; color:var(--text-muted);
+    display:flex; align-items:center; justify-content:center; font-size:0.75rem;
+    cursor:pointer; transition:all 0.15s;
+}
+.kc-ficha-btn:hover { background:var(--azul); color:white; border-color:var(--azul); }
+#tablaNovedades td.novedades-desglose-col { max-width: 380px; }
 .kanban-col-footer {
     padding:8px 12px; border-top:1px solid var(--border);
     display:flex; align-items:center; gap:6px;
@@ -789,6 +823,36 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 }
 .kanban-col-body.drag-over .kanban-drop-hint { display:block; }
 .kanban-card.kanban-highlight { border-color:var(--azul); box-shadow:0 0 0 2px rgba(37,49,80,0.18); }
+
+/* ================================================================
+   UNIFICACIÓN CON EL RESTO DE LA APP
+   Mismas reglas pequeñas y aditivas que estilos-compartidos.html —
+   no se fusiona el archivo (este panel tiene su propio sistema de
+   componentes) pero sí se comparte la sensación: modales, foco y
+   respeto a "menos movimiento".
+   ================================================================ */
+.modal.fade .modal-dialog {
+    transform: scale(0.94) translateY(16px);
+    transition: transform 0.28s cubic-bezier(0.34, 1.4, 0.64, 1), opacity 0.2s ease;
+}
+.modal.show .modal-dialog { transform: scale(1) translateY(0); }
+
+a:focus-visible, button:focus-visible, .btn:focus-visible,
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--azul);
+    outline-offset: 2px;
+}
+
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
 </style>
 </head>
 <body>
@@ -894,8 +958,9 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
         <a href="#" id="link-catalogo" class="nav-link-admin" onclick="mostrarSeccion('catalogo', event)">
             <i class="bi bi-collection-fill"></i><span class="nav-text">Catálogo</span>
         </a>
-        <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin">
+        <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin" title="Abre una herramienta distinta en una pestaña nueva">
             <i class="bi bi-bar-chart-line-fill"></i><span class="nav-text">Métricas</span>
+            <i class="bi bi-box-arrow-up-right nav-external-icon"></i>
         </a>
     </div>
     <div class="sidebar-profile">
@@ -909,34 +974,42 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 
 <div class="main-content">
     <div id="seccion-dashboard" class="seccion-admin">
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
     <h1 class="page-title">Dashboard</h1>
-    <div class="d-flex gap-2 align-items-center">
-        <div class="segmented-control" id="segmentedPrioridad">
-            <button class="seg-btn active" data-value="DIGITAL_PRIMERO" onclick="seleccionarPrioridad(this)">
-                <i class="bi bi-laptop"></i> Digital
-            </button>
-            <button class="seg-btn" data-value="DESAPLAZAMIENTO_PRIMERO" onclick="seleccionarPrioridad(this)">
-                <i class="bi bi-fingerprint"></i> Desaplazamiento
-            </button>
-            <button class="seg-btn" data-value="INDUCCION_PRIMERO" onclick="seleccionarPrioridad(this)">
-                <i class="bi bi-mortarboard"></i> Inducciones
-            </button>
+    <div class="d-flex gap-2 align-items-center" id="dashboardToolbarControles">
+        <div class="toolbar-group">
+            <span class="toolbar-group-label">Prioridad de asignación</span>
+            <div class="segmented-control" id="segmentedPrioridad">
+                <button class="seg-btn active" data-value="DIGITAL_PRIMERO" onclick="seleccionarPrioridad(this)">
+                    <i class="bi bi-laptop"></i> Digital
+                </button>
+                <button class="seg-btn" data-value="DESAPLAZAMIENTO_PRIMERO" onclick="seleccionarPrioridad(this)">
+                    <i class="bi bi-fingerprint"></i> Desaplazamiento
+                </button>
+                <button class="seg-btn" data-value="INDUCCION_PRIMERO" onclick="seleccionarPrioridad(this)">
+                    <i class="bi bi-mortarboard"></i> Inducciones
+                </button>
+            </div>
         </div>
-        <div class="segmented-control" id="segmentedOrdenBio" title="Dentro de Desaplazamiento/Biometría, ¿a quién se llama primero según la fecha de resultado de SAI?">
-            <button class="seg-btn active" data-value="RECIENTE_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
-                <i class="bi bi-sort-numeric-down-alt"></i> Bio: Reciente
-            </button>
-            <button class="seg-btn" data-value="ANTIGUO_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
-                <i class="bi bi-sort-numeric-down"></i> Bio: Antiguo
-            </button>
+        <div class="toolbar-group">
+            <span class="toolbar-group-label">Orden Biometría</span>
+            <div class="segmented-control" id="segmentedOrdenBio" title="Dentro de Desaplazamiento/Biometría, ¿a quién se llama primero según la fecha de resultado de SAI?">
+                <button class="seg-btn active" data-value="RECIENTE_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                    <i class="bi bi-sort-numeric-down-alt"></i> Reciente
+                </button>
+                <button class="seg-btn" data-value="ANTIGUO_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                    <i class="bi bi-sort-numeric-down"></i> Antiguo
+                </button>
+            </div>
         </div>
         <button class="btn-outline-brand" id="btn-ayuda-orden" onclick="mostrarAyudaOrdenAsignacion()" title="¿Qué hacen estos botones?">
             <i class="bi bi-question-circle"></i>
         </button>
-        <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()">
+        <div class="toolbar-divider"></div>
+        <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()" title="Pausa a TODOS los analistas del sistema">
             <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
         </button>
+        <div class="toolbar-divider"></div>
         <button class="btn-outline-brand" onclick="verificarDesaplazamientosManual()">
             <i class="bi bi-clipboard-check"></i> Verificar Bio
         </button>
@@ -949,7 +1022,7 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
         </span>
     </div>
 </div>
-        <div class="metrics-row">
+        <div class="metrics-row metrics-row-5">
             <div class="metric-card filled" style="cursor:pointer;" onclick="verDetalleTarjeta('sinAsignar')">
                 <div class="card-top">
                     <span class="metric-label">Sin Asignar (Total)</span>
@@ -996,20 +1069,6 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
                 </div>
             </div>
         </div>
-        <div class="table-container" style="margin-bottom:20px;padding:20px 28px;">
-            <div class="d-flex align-items-center gap-3">
-                <div class="d-flex align-items-center gap-2 flex-grow-1" style="position:relative;">
-                    <i class="bi bi-search" style="position:absolute;left:14px;color:var(--text-muted);font-size:1rem;"></i>
-                    <input type="text" id="inputBuscarSolicitud" class="form-control" placeholder="Buscar solicitud por número..." 
-                        style="padding-left:42px !important;border-radius:14px;font-size:0.88rem;font-weight:600;border:2px solid var(--border);height:48px;"
-                        onkeydown="if(event.key==='Enter') buscarSolicitudAdmin()">
-                </div>
-                <button class="btn-primary-brand" onclick="buscarSolicitudAdmin()" style="height:48px;border-radius:14px;padding:0 24px;white-space:nowrap;">
-                    <i class="bi bi-search me-1"></i> Buscar
-                </button>
-            </div>
-            <div id="resultadoBusqueda" style="display:none;margin-top:16px;"></div>
-        </div>
         <div class="table-container">
             <div class="table-header">
                 <div>
@@ -1025,6 +1084,18 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
                     </select>
                 </div>
             </div>
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="d-flex align-items-center gap-2 flex-grow-1" style="position:relative;">
+                    <i class="bi bi-search" style="position:absolute;left:14px;color:var(--text-muted);font-size:1rem;"></i>
+                    <input type="text" id="inputBuscarSolicitud" class="form-control" placeholder="Ir directo a una solicitud por número..."
+                        style="padding-left:42px !important;border-radius:14px;font-size:0.88rem;font-weight:600;border:2px solid var(--border);height:44px;"
+                        onkeydown="if(event.key==='Enter') buscarSolicitudAdmin()">
+                </div>
+                <button class="btn-primary-brand" onclick="buscarSolicitudAdmin()" style="height:44px;border-radius:14px;padding:0 24px;white-space:nowrap;">
+                    <i class="bi bi-search me-1"></i> Buscar
+                </button>
+            </div>
+            <div id="resultadoBusqueda" style="display:none;margin-bottom:16px;"></div>
             <div class="table-responsive">
                 <table id="tablaMonitoreo" class="table align-middle w-100">
                     <thead>
@@ -1644,6 +1715,10 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <span class="text-muted" style="font-size:0.85rem;">Días festivos excluidos del cálculo de SLA y tiempos hábiles</span>
                     <div class="d-flex gap-2">
+                        <input type="number" id="anioImportarFestivosCO" class="form-control form-control-sm" style="border-radius:10px;width:100px;" min="2000" max="2100">
+                        <button class="btn btn-sm btn-outline-primary" onclick="importarFestivosColombia()" style="border-radius:10px;">
+                            <i class="bi bi-cloud-download me-1"></i>Importar festivos CO
+                        </button>
                         <input type="date" id="nuevoFestivoFecha" class="form-control form-control-sm" style="border-radius:10px;width:160px;">
                         <input type="text" id="nuevoFestivoDesc" class="form-control form-control-sm" placeholder="Descripción (opcional)" style="border-radius:10px;width:200px;">
                         <button class="btn btn-sm btn-primary" onclick="agregarFestivo()" style="border-radius:10px;">
@@ -2126,6 +2201,36 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 // las tablas, solo evita el popup nativo del navegador.
 if (window.jQuery && $.fn.dataTable) { $.fn.dataTable.ext.errMode = 'none'; }
 
+// Traduce excepciones técnicas crudas (las que llegan a withFailureHandler cuando algo
+// falla de forma inesperada, no las respuestas curadas {success:false,message}) a
+// lenguaje cercano. El detalle técnico queda en la consola para poder reportarlo.
+function mensajeErrorAmigable(err) {
+    var raw = (err && (err.message || String(err))) || '';
+    try { console.error('Error técnico:', raw); } catch (e) {}
+    var m = raw.toLowerCase();
+
+    if (m.indexOf('is not a function') !== -1 || m.indexOf('script function not found') !== -1) {
+        return 'Hubo un problema interno al procesar la solicitud. Si sigue pasando, revísalo con el equipo técnico.';
+    }
+    if (m.indexOf('timeout') !== -1 || m.indexOf('timed out') !== -1 || m.indexOf('exceeded maximum execution') !== -1) {
+        return 'La operación tardó demasiado y no se completó. Intenta de nuevo en unos segundos.';
+    }
+    if (m.indexOf('lock') !== -1 || m.indexOf('ocupado') !== -1) {
+        return 'El sistema está ocupado procesando otra operación. Intenta de nuevo en unos segundos.';
+    }
+    if (m.indexOf('permission') !== -1 || m.indexOf('permiso') !== -1 || m.indexOf('autoriza') !== -1) {
+        return 'No tienes permiso para realizar esta acción.';
+    }
+    if (m.indexOf('network') !== -1 || m.indexOf('failed to fetch') !== -1 || m.indexOf('conexión') !== -1 || m.indexOf('conexion') !== -1) {
+        return 'Hubo un problema de conexión. Revisa tu internet e intenta de nuevo.';
+    }
+    if (m.indexOf('cannot read propert') !== -1 || m.indexOf('undefined') !== -1 || m.indexOf('null') !== -1) {
+        return 'Ocurrió un problema inesperado al cargar los datos. Intenta de nuevo en unos segundos.';
+    }
+    if (!raw) return 'Ocurrió un problema inesperado. Intenta de nuevo en unos segundos.';
+    return 'Ocurrió un problema inesperado. Intenta de nuevo; si sigue pasando, revísalo con el equipo técnico.';
+}
+
 var _equiposCacheAdmin = [];
 function badgeEspecialidad(v) {
     var mapeoLegacy = { 'ESTUDIO DIGITAL': 'DIGITAL', 'ESTUDIO_DIGITAL': 'DIGITAL', 'PENDIENTE_BIOMETRIA': 'DESAPLAZAMIENTO', 'BIOMETRIA': 'DESAPLAZAMIENTO', 'REESTUDIOS': 'REESTUDIOS' };
@@ -2224,7 +2329,7 @@ window.onload = function() {
         }
         _loaderSetPaso(2);
     }).withFailureHandler(function(e) {
-        _loaderError('No se pudo validar tu sesión: ' + (e.message || 'intenta recargar la página.'));
+        _loaderError('No se pudo validar tu sesión. ' + mensajeErrorAmigable(e));
     }).getEmailUsuario();
 
     google.script.run.withSuccessHandler(function(res) {
@@ -2280,7 +2385,7 @@ function seleccionarPrioridad(botonClick) {
                     }
                 })
                 .withFailureHandler(function(err) {
-                    Swal.fire('Error de conexión', err.message, 'error');
+                    Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
                     cargarPrioridadActual();
                 })
                 .admin_setPrioridadGlobal(nuevaPrioridad);
@@ -2394,7 +2499,7 @@ function seleccionarOrdenDesaplazamiento(botonClick) {
                     }
                 })
                 .withFailureHandler(function(err) {
-                    Swal.fire('Error de conexión', err.message, 'error');
+                    Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
                     cargarOrdenDesaplazamientoActual();
                 })
                 .admin_setOrdenDesaplazamiento(nuevoOrden);
@@ -2533,7 +2638,7 @@ function verificarDesaplazamientosManual() {
                 refrescarDashboard();
             })
             .withFailureHandler(function(err) {
-                Swal.fire('Error', err.message || 'Error inesperado', 'error');
+                Swal.fire('Error', mensajeErrorAmigable(err), 'error');
             })
             .admin_verificarDesaplazamientos();
     });
@@ -2573,7 +2678,7 @@ function cargarTurnos() {
             if (!res.success) { Swal.fire('Error', res.message, 'error'); return; }
             renderTurnosFromData(res);
         })
-        .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+        .withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
         .admin_getTurnosData();
 }
 
@@ -2778,7 +2883,7 @@ function guardarTurno() {
             if (res.success) { Swal.fire({ icon:'success', title:'Turno guardado', timer:1500, showConfirmButton:false }); cargarTurnos(); }
             else Swal.fire('Error', res.message, 'error');
         })
-        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+        .withFailureHandler(function(err){ Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
         .admin_guardarTurno(turno);
 }
 
@@ -2800,7 +2905,7 @@ function desactivarTurno(idTurno, nombre) {
                     cargarTurnos();
                 } else Swal.fire('Error', res.message, 'error');
             })
-            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .withFailureHandler(function(err){ Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
             .admin_desactivarTurno(idTurno);
     });
 }
@@ -2846,7 +2951,7 @@ function confirmarAsignacion() {
             if (res.success) { Swal.fire({ icon:'success', title:'Asignado', timer:1200, showConfirmButton:false }); cargarTurnos(); }
             else Swal.fire('Error', res.message, 'error');
         })
-        .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+        .withFailureHandler(function(err){ Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
         .admin_asignarTurnoAnalista(_emailAsignando, idTurno, desde);
 }
 
@@ -2884,7 +2989,7 @@ function onChipDrop(event, el, idTurnoDestino, nombreTurno) {
                 if (res.success) { Swal.fire({ icon:'success', title:'Movido', timer:1000, showConfirmButton:false }); cargarTurnos(); }
                 else Swal.fire('Error', res.message, 'error');
             })
-            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .withFailureHandler(function(err){ Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
             .admin_asignarTurnoAnalista(_dragEmail, idTurnoDestino, fechaDesde);
     });
 }
@@ -2914,7 +3019,7 @@ function agregarTodosSinTurno(idTurno, nombreTurno) {
                 if (res.success) { Swal.fire({ icon:'success', title:'Listo', text: res.message, confirmButtonColor:'#253150' }); cargarTurnos(); }
                 else Swal.fire('Error', res.message, 'error');
             })
-            .withFailureHandler(function(err){ Swal.fire('Error', err.message, 'error'); })
+            .withFailureHandler(function(err){ Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
             .admin_asignarTodosSinTurno(idTurno, result.value);
     });
 }
@@ -2926,6 +3031,69 @@ function filtrarSinTurno(texto) {
     chips.forEach(function(chip) {
         var nombre = (chip.querySelector('span') || {}).textContent || '';
         chip.style.display = !q || nombre.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+// Antes esto destruía y reconstruía toda la tabla en cada refresco (parpadeo
+// visible). Ahora usa el patrón de columnas/datos de DataTables: si la tabla
+// ya existe, solo actualiza las filas; si no, la crea una vez.
+function _renderMonitoreo(listaGestion) {
+    var registros = (listaGestion || []).filter(function(item) {
+        return item.correo && item.correo !== "Sin analista" && item.correo.trim() !== "";
+    });
+
+    if ($.fn.DataTable.isDataTable('#tablaMonitoreo')) {
+        var dt = $('#tablaMonitoreo').DataTable();
+        dt.clear();
+        dt.rows.add(registros);
+        dt.draw(false);
+        return;
+    }
+
+    $('#tablaMonitoreo').DataTable({
+        data: registros,
+        columns: [
+            { data: 'id', className: 'fw-bold text-info' },
+            { data: 'poliza' },
+            { data: null, render: function(d, t, r) { return getBadgeTipo(r.tipo); } },
+            { data: null, render: function(d, t, r) {
+                var estadoTexto = r.estado;
+                var detalleHora = '';
+                if (estadoTexto && estadoTexto.toString().indexOf('[') === 0) {
+                    try {
+                        var historial = JSON.parse(estadoTexto);
+                        if (historial.length > 0) {
+                            var ult = historial[historial.length - 1];
+                            estadoTexto = ult.estado;
+                            if (ult.fecha) {
+                                var partes = ult.fecha.split(' ');
+                                detalleHora = '<br><small style="font-size:0.68rem;color:var(--gris)">' + (partes[1] || '') + '</small>';
+                            }
+                        }
+                    } catch(err) {}
+                }
+                return badgeEstado(estadoTexto) + detalleHora;
+            }},
+            { data: null, render: function(d, t, r) { return '<span style="font-size:0.85rem">' + (r.asesor || '') + '</span>'; } },
+            { data: null, orderable: false, className: 'text-center', render: function(d, t, r) {
+                var idEsc = String(r.id).replace(/'/g, "\\'");
+                var asesorEsc = (r.asesor || '').replace(/'/g, "\\'");
+                var tipoEsc = (r.tipo || 'digital').replace(/'/g, "\\'");
+                return '<button class="btn btn-sm btn-outline-primary" onclick="abrirReasignacion(\'' + idEsc + '\', \'' + asesorEsc + '\', \'' + tipoEsc + '\')" title="Reasignar a otro analista">'
+                    + '<i class="bi bi-person-lines-fill"></i> Reasignar</button> '
+                    + '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignar(\'' + idEsc + '\')" title="Quitar del analista y devolver a la cola">'
+                    + '<i class="bi bi-x-circle"></i> Desasignar</button>';
+            }}
+        ],
+        language: {
+            url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json',
+            lengthMenu: "Mostrar _MENU_ registros"
+        },
+        pageLength: 10,
+        lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "Todos"]],
+        order: [[0, 'desc']],
+        responsive: true,
+        dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
     });
 }
 
@@ -2967,69 +3135,12 @@ function refrescarDashboard() {
             badge.style.display = 'none';
         }
 
-        if ($.fn.DataTable.isDataTable('#tablaMonitoreo')) {
-            $('#tablaMonitoreo').DataTable().destroy();
-        }
-
-        let html = '';
-        if (res.listaGestion && res.listaGestion.length > 0) {
-            for (let i = 0; i < res.listaGestion.length; i++) {
-                let item = res.listaGestion[i];
-                if (!item.correo || item.correo === "Sin analista" || item.correo.trim() === "") continue;
-                let estadoTexto = item.estado;
-                let detalleHora = '';
-                if (estadoTexto && estadoTexto.toString().indexOf('[') === 0) {
-                    try {
-                        let historial = JSON.parse(estadoTexto);
-                        if (historial.length > 0) {
-                            let ult = historial[historial.length - 1];
-                            estadoTexto = ult.estado;
-                            if (ult.fecha) {
-                                let partes = ult.fecha.split(' ');
-                                detalleHora = '<br><small style="font-size:0.68rem;color:var(--gris)">' + (partes[1] || '') + '</small>';
-                            }
-                        }
-                    } catch(err) {}
-                }
-
-                let tipoBadge = getBadgeTipo(item.tipo);
-                
-                html += '<tr>';
-                html += '<td class="fw-bold text-info">' + item.id + '</td>';
-                html += '<td>' + item.poliza + '</td>';
-                html += '<td>' + tipoBadge + '</td>';
-                html += '<td>' + badgeEstado(estadoTexto) + detalleHora + '</td>';
-                html += '<td><span style="font-size:0.85rem">' + item.asesor + '</span></td>';
-                
-                html += '<td class="text-center">';
-                html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirReasignacion(\'' + item.id + '\', \'' + (item.asesor || '').replace(/'/g, "\\'") + '\', \'' + (item.tipo || 'digital') + '\')" title="Reasignar a otro analista">';
-                html += '<i class="bi bi-person-lines-fill"></i> Reasignar';
-                html += '</button> ';
-                html += '<button class="btn btn-sm btn-outline-danger" onclick="confirmarDesasignar(\'' + item.id + '\')" title="Quitar del analista y devolver a la cola">';
-                html += '<i class="bi bi-x-circle"></i> Desasignar';
-                html += '</button>';
-                html += '</td>';
-                
-                html += '</tr>';
-            }
-        }
-        $('#cuerpoMonitoreo').html(html);
-        $('#tablaMonitoreo').DataTable({
-            language: { 
-                url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json',
-                lengthMenu: "Mostrar _MENU_ registros"
-            },
-            pageLength: 10,
-            lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "Todos"]],
-            order: [[0, 'desc']],
-            responsive: true,
-            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
-        });
+        _renderMonitoreo(res.listaGestion);
         _loaderSetPaso(3);
         setTimeout(ocultarLoader, 350);
     }).withFailureHandler(function(e) {
         ocultarSyncOverlay();
-        _loaderError('No se pudieron cargar los datos del panel: ' + (e && e.message ? e.message : 'revisa tu conexión.'));
+        _loaderError('No se pudieron cargar los datos del panel. ' + mensajeErrorAmigable(e));
         setTimeout(ocultarLoader, 2200);
     }).obtenerDatosDashboard();
 }
@@ -3059,7 +3170,7 @@ function buscarSolicitudAdmin() {
             contenedor.innerHTML = renderResultadoBusqueda(res);
         })
         .withFailureHandler(function(err) {
-            contenedor.innerHTML = '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;font-size:0.85rem;color:#b91c1c;font-weight:700;"><i class="bi bi-exclamation-triangle me-2"></i>Error: ' + err.message + '</div>';
+            contenedor.innerHTML = '<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;font-size:0.85rem;color:#b91c1c;font-weight:700;"><i class="bi bi-exclamation-triangle me-2"></i>' + mensajeErrorAmigable(err) + '</div>';
         })
         .admin_buscarSolicitud(idSolicitud);
 }
@@ -3420,44 +3531,48 @@ function renderDesgloseBar(containerId, data) {
     el.innerHTML = html || '<span style="font-size:0.68rem;color:var(--text-muted);font-weight:600;">Sin registros</span>';
 }
 
-function renderUsuarios(usuarios) {
-    if ($.fn.DataTable.isDataTable('#tablaCRUD')) {
-        $('#tablaCRUD').DataTable().destroy();
-    }
-    window._listaUsuariosReasignar = usuarios;
-    let html = '';
-    for (let i = 0; i < usuarios.length; i++) {
-        let u = usuarios[i];
-        let ultimoEstado = 'INACTIVO';
-        try {
-            if (u.estado && u.estado.toString().indexOf('[') === 0) {
-                let h = JSON.parse(u.estado);
-                ultimoEstado = h[h.length - 1].estado;
-            } else {
-                ultimoEstado = u.estado || 'INACTIVO';
-            }
-        } catch(e) {
-            ultimoEstado = u.estado || 'INACTIVO';
+function _ultimoEstadoDe(u) {
+    try {
+        if (u.estado && u.estado.toString().indexOf('[') === 0) {
+            var h = JSON.parse(u.estado);
+            return h[h.length - 1].estado;
         }
-        let horaDesde = u.desde || '---';
-        let rol = u.rol || 'ASESOR';
-        let cap = u.capacidad || 0;
-        let correoEsc = u.correo.replace(/'/g, "\\'");
-        let espEsc    = u.especialidad.replace(/'/g, "\\'");
-        let estEsc    = ultimoEstado.replace(/'/g, "\\'");
-        let rolEsc    = rol.replace(/'/g, "\\'");
-        html += '<tr>';
-        html += '<td class="fw-bold">' + u.nombreComercial + '</td>';
-        html += '<td><span class="badge-pill badge-cap">' + (u.cargaActual || 0) + ' / ' + cap + '</span></td>';
-        html += '<td>' + badgeEspecialidad(u.especialidad) + '</td>';
-        html += '<td>' + badgeEstado(ultimoEstado) + '</td>';
-        html += '<td><span class="badge-hora"><i class="bi bi-hourglass-split"></i> ' + horaDesde + '</span></td>';
-        html += '<td>' + badgeRol(rol) + '</td>';
-        html += '<td><a class="btn-action" onclick="abrirEditar(\'' + correoEsc + '\',\'' + espEsc + '\',\'' + estEsc + '\',\'' + rolEsc + '\',' + cap + ')" title="Editar"><i class="bi bi-pencil-square"></i></a></td>';
-        html += '</tr>';
+    } catch(e) {}
+    return u.estado || 'INACTIVO';
+}
+
+// Antes destruía y reconstruía toda la tabla en cada carga. Ahora solo
+// actualiza filas si la tabla ya existe (sin parpadeo).
+function renderUsuarios(usuarios) {
+    window._listaUsuariosReasignar = usuarios;
+
+    if ($.fn.DataTable.isDataTable('#tablaCRUD')) {
+        var dt = $('#tablaCRUD').DataTable();
+        dt.clear();
+        dt.rows.add(usuarios);
+        dt.draw(false);
+        return;
     }
-    $('#cuerpoUsuarios').html(html);
+
     $('#tablaCRUD').DataTable({
+        data: usuarios,
+        columns: [
+            { data: 'nombreComercial', className: 'fw-bold' },
+            { data: null, render: function(d, t, u) { return '<span class="badge-pill badge-cap">' + (u.cargaActual || 0) + ' / ' + (u.capacidad || 0) + '</span>'; } },
+            { data: null, render: function(d, t, u) { return badgeEspecialidad(u.especialidad); } },
+            { data: null, render: function(d, t, u) { return badgeEstado(_ultimoEstadoDe(u)); } },
+            { data: null, render: function(d, t, u) { return '<span class="badge-hora"><i class="bi bi-hourglass-split"></i> ' + (u.desde || '---') + '</span>'; } },
+            { data: null, render: function(d, t, u) { return badgeRol(u.rol || 'ASESOR'); } },
+            { data: null, orderable: false, render: function(d, t, u) {
+                var correoEsc = u.correo.replace(/'/g, "\\'");
+                var espEsc = u.especialidad.replace(/'/g, "\\'");
+                var estEsc = _ultimoEstadoDe(u).replace(/'/g, "\\'");
+                var rolEsc = (u.rol || 'ASESOR').replace(/'/g, "\\'");
+                var cap = u.capacidad || 0;
+                return '<a class="btn-action" onclick="abrirFichaAnalista(\'' + correoEsc + '\')" title="Ver ficha completa (equipo, turno, cupos, ausencias)"><i class="bi bi-person-lines-fill"></i></a> '
+                    + '<a class="btn-action" onclick="abrirEditar(\'' + correoEsc + '\',\'' + espEsc + '\',\'' + estEsc + '\',\'' + rolEsc + '\',' + cap + ')" title="Editar"><i class="bi bi-pencil-square"></i></a>';
+            }}
+        ],
         language: {
             url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json',
             lengthMenu: "Mostrar _MENU_ registros"
@@ -3558,7 +3673,7 @@ function confirmarDesasignar(idSolicitud) {
                 Swal.fire('Error', (res && res.message) || 'No se pudo desasignar.', 'error');
             }
         }).withFailureHandler(function(e) {
-            Swal.fire('Error', e.message, 'error');
+            Swal.fire('Error', mensajeErrorAmigable(e), 'error');
         }).desasignarSolicitud(idSolicitud);
     });
 }
@@ -3611,7 +3726,7 @@ function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
                     }
                 })
                 .withFailureHandler(function(err) {
-                    Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#BD0F14' });
+                    Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(err), confirmButtonColor: '#BD0F14' });
                 })
                 .admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo);
         });
@@ -3627,7 +3742,7 @@ function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
                 mostrarModal(lista);
             })
             .withFailureHandler(function(err) {
-                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar analistas: ' + err.message });
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar analistas. ' + mensajeErrorAmigable(err) });
             })
             .admin_obtenerUsuariosGestion();
     }
@@ -3635,13 +3750,13 @@ function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
 
 function ejecutarPanicGlobal() {
     Swal.fire({
-        title: '—EST—S SEGURO?',
-        text: "Pondr—s a TODOS los analistas en INACTIVO inmediatamente. Esto detendr— la asignaci—n autom—tica de casos.",
+        title: '¿ESTÁS SEGURO?',
+        text: "Pondrás a TODOS los analistas en INACTIVO inmediatamente. Esto detendrá la asignación automática de casos.",
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#e11d48', 
+        confirmButtonColor: '#BD0F14',
         cancelButtonColor: '#706F6F',
-        confirmButtonText: 'S—, PAUSAR TODO',
+        confirmButtonText: 'Sí, PAUSAR TODO',
         cancelButtonText: 'Cancelar'
     }).then(function(result) {
         if (result.isConfirmed) {
@@ -3666,9 +3781,9 @@ function ejecutarPanicGlobal() {
                     }
                 })
                 .withFailureHandler(function(err) {
-                    Swal.fire('Error Cr—tico', err.message, 'error');
+                    Swal.fire('Error Crítico', mensajeErrorAmigable(err), 'error');
                 })
-                .admin_desactivarTodosAsesores(); 
+                .admin_desactivarTodosAsesores();
         }
     });
 }
@@ -3689,6 +3804,52 @@ function cambiarTabNovedades(tab, e) {
     if (tab === 'historial') cargarHistorialAusencias();
 }
 
+// Antes destruía y reconstruía toda la tabla en cada "Consultar". Ahora solo
+// actualiza filas si la tabla ya existe (sin parpadeo).
+function _renderNovedadesTabla(registros) {
+    if ($.fn.DataTable.isDataTable('#tablaNovedades')) {
+        var dt = $('#tablaNovedades').DataTable();
+        dt.clear();
+        dt.rows.add(registros);
+        dt.draw(false);
+        return;
+    }
+
+    $('#tablaNovedades').DataTable({
+        data: registros,
+        columns: [
+            { data: null, render: function(d, t, r) { return '<span class="fw-bold">' + r.nombre + '</span><div class="small text-muted">' + r.correo + '</div>'; } },
+            { data: null, render: function(d, t, r) { return badgeEspecialidad(r.especialidad); } },
+            { data: null, render: function(d, t, r) { return r.turno ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:0.72rem;padding:3px 8px;">' + r.turno + '</span>' : '<span class="text-muted small">—</span>'; } },
+            { data: null, render: function(d, t, r) { return badgeEstado(r.estadoActual); } },
+            { data: null, render: function(d, t, r) {
+                var tiempoFmt = r.tiempoEnEstadoActual > 0 ? formatMinToHM(r.tiempoEnEstadoActual) : '—';
+                return '<span class="fw-bold" style="color:#253150;">' + tiempoFmt + '</span>';
+            }},
+            { data: null, render: function(d, t, r) { return r.primerResultado || '<span class="text-muted">—</span>'; } },
+            { data: null, render: function(d, t, r) { return r.ultimoResultado || '<span class="text-muted">—</span>'; } },
+            { data: null, render: function(d, t, r) {
+                var estadosKeys = Object.keys(r.estados || {});
+                if (estadosKeys.length === 0) return '<span class="text-muted small">Sin actividad</span>';
+                estadosKeys.sort(function(a, b) { return r.estados[b] - r.estados[a]; });
+                var desglose = '';
+                estadosKeys.forEach(function(est) {
+                    var min = r.estados[est];
+                    var esProductivo = (est === 'ACTIVO');
+                    desglose += '<span class="badge me-1 mb-1" style="font-size:0.65rem;padding:3px 7px;background:' + (esProductivo ? '#dcfce7' : '#fef2f2') + ';color:' + (esProductivo ? '#15803d' : '#991b1b') + ';border:1px solid ' + (esProductivo ? '#bbf7d0' : '#fecaca') + ';">' + est + ': ' + formatMinToHM(min) + '</span>';
+                });
+                return desglose;
+            }, className: 'novedades-desglose-col' }
+        ],
+        language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
+        order: [[3, 'asc'], [0, 'asc']],
+        responsive: true,
+        dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
+    });
+}
+
 function cargarNovedades() {
     var desdeInput = document.getElementById('fechaNovedadesDesde');
     var hastaInput = document.getElementById('fechaNovedadesHasta');
@@ -3699,9 +3860,6 @@ function cargarNovedades() {
         hastaInput.value = hoyStr;
     }
     if (!hastaInput.value) hastaInput.value = desdeInput.value;
-
-    if ($.fn.DataTable.isDataTable('#tablaNovedades')) { $('#tablaNovedades').DataTable().destroy(); }
-    $('#cuerpoNovedades').html('<tr><td colspan="8" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>');
 
     var desde = desdeInput.value;
     var hasta = hastaInput.value;
@@ -3728,6 +3886,7 @@ function cargarNovedades() {
             _turnosDisponibles = Object.keys(turnosSet);
         }
 
+        var registros = [];
         for (var i = 0; i < datos.length; i++) {
             var d = datos[i];
             if (filtroEsp && d.especialidad !== filtroEsp) continue;
@@ -3738,50 +3897,15 @@ function cargarNovedades() {
             else if (estadoUp === 'INACTIVO' || estadoUp === '' || Object.keys(d.estados).length === 0) totalSinConexion++;
             else totalEnNovedad++;
 
-            var tiempoEstadoFmt = d.tiempoEnEstadoActual > 0 ? formatMinToHM(d.tiempoEnEstadoActual) : '—';
-
-            var desglose = '';
-            var estadosKeys = Object.keys(d.estados);
-            if (estadosKeys.length > 0) {
-                estadosKeys.sort(function(a, b) { return d.estados[b] - d.estados[a]; });
-                for (var s = 0; s < estadosKeys.length; s++) {
-                    var est = estadosKeys[s];
-                    var min = d.estados[est];
-                    var esProductivo = (est === 'ACTIVO');
-                    desglose += '<span class="badge me-1 mb-1" style="font-size:0.65rem;padding:3px 7px;background:' + (esProductivo ? '#dcfce7' : '#fef2f2') + ';color:' + (esProductivo ? '#15803d' : '#991b1b') + ';border:1px solid ' + (esProductivo ? '#bbf7d0' : '#fecaca') + ';">';
-                    desglose += est + ': ' + formatMinToHM(min) + '</span>';
-                }
-            } else {
-                desglose = '<span class="text-muted small">Sin actividad</span>';
-            }
-
-            html += '<tr>';
-            html += '<td><span class="fw-bold">' + d.nombre + '</span><div class="small text-muted">' + d.correo + '</div></td>';
-            html += '<td>' + badgeEspecialidad(d.especialidad) + '</td>';
-            html += '<td>' + (d.turno ? '<span class="badge" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;font-size:0.72rem;padding:3px 8px;">' + d.turno + '</span>' : '<span class="text-muted small">—</span>') + '</td>';
-            html += '<td data-search="' + (d.estadoActual || 'INACTIVO') + '">' + badgeEstado(d.estadoActual) + '</td>';
-            html += '<td><span class="fw-bold" style="color:#253150;">' + tiempoEstadoFmt + '</span></td>';
-            html += '<td>' + (d.primerResultado || '<span class="text-muted">—</span>') + '</td>';
-            html += '<td>' + (d.ultimoResultado || '<span class="text-muted">—</span>') + '</td>';
-            html += '<td style="max-width:380px;">' + desglose + '</td>';
-            html += '</tr>';
+            registros.push(d);
         }
-        if (!html) html = '<tr><td colspan="8" class="text-center text-muted py-4">Sin datos para este periodo</td></tr>';
 
         document.getElementById('nov_activos').textContent = totalActivos;
         document.getElementById('nov_en_novedad').textContent = totalEnNovedad;
         document.getElementById('nov_sin_conexion').textContent = totalSinConexion;
         document.getElementById('nov_total_analistas').textContent = totalActivos + totalEnNovedad + totalSinConexion;
 
-        $('#cuerpoNovedades').html(html);
-        $('#tablaNovedades').DataTable({
-            language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Todos"]],
-            order: [[3, 'asc'], [0, 'asc']],
-            responsive: true,
-            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
-        });
+        _renderNovedadesTabla(registros);
 
         // Permisos aprobados en el rango
         var htmlPI = '';
@@ -3806,7 +3930,7 @@ function cargarNovedades() {
         }
 
     }).withFailureHandler(function(err) {
-        $('#cuerpoNovedades').html('<tr><td colspan="8" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>');
+        $('#cuerpoNovedades').html('<tr><td colspan="8" class="text-center text-danger py-4">' + mensajeErrorAmigable(err) + '</td></tr>');
     }).admin_obtenerNovedades(desde, hasta);
 }
 
@@ -3832,50 +3956,60 @@ function filtrarSolicitudes(filtro) {
     cargarSolicitudesPermisos(filtro);
 }
 
-function cargarSolicitudesPermisos(filtro) {
-    if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) { $('#tablaSolicitudesPermisos').DataTable().destroy(); }
-    $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>');
+// Antes destruía y reconstruía toda la tabla en cada consulta. Ahora solo
+// actualiza filas si la tabla ya existe (sin parpadeo).
+function _renderSolicitudesPermisosTabla(registros, filtro) {
+    if (registros.length === 0) {
+        if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) { $('#tablaSolicitudesPermisos').DataTable().destroy(); }
+        $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8">' + estadoVacioAdmin('bi-inbox', 'No hay solicitudes' + (filtro === 'PENDIENTE' ? ' pendientes' : '') + '.') + '</td></tr>');
+        return;
+    }
 
+    if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) {
+        var dt = $('#tablaSolicitudesPermisos').DataTable();
+        dt.clear();
+        dt.rows.add(registros);
+        dt.draw(false);
+        return;
+    }
+
+    $('#tablaSolicitudesPermisos').DataTable({
+        data: registros,
+        columns: [
+            { data: null, render: function(d, t, r) { return '<span class="fw-bold">' + escHtmlAdmin(r.nombre) + '</span> <span id="badge-frec-' + escHtmlAdmin(r.id) + '"></span><div class="small text-muted">' + escHtmlAdmin(r.correo) + '</div>'; } },
+            { data: null, render: function(d, t, r) { return '<span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:4px 10px;border-radius:8px;font-size:0.75rem;">' + escHtmlAdmin(r.tipo) + '</span>'; } },
+            { data: 'fechaInicio', className: 'fw-bold' },
+            { data: 'fechaFin', className: 'fw-bold' },
+            { data: null, render: function(d, t, r) { return r.observacionAnalista ? escHtmlAdmin(r.observacionAnalista) : '—'; }, className: 'small text-muted' },
+            { data: null, render: function(d, t, r) { return r.fechaSolicitud ? r.fechaSolicitud.split(' ')[0] : '—'; }, className: 'small text-muted' },
+            { data: null, render: function(d, t, r) {
+                var estadoBadge = '';
+                if (r.estado === 'PENDIENTE') estadoBadge = '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:4px 10px;border-radius:8px;">Pendiente</span>';
+                else if (r.estado === 'APROBADO') estadoBadge = '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:4px 10px;border-radius:8px;">Aprobado</span>';
+                else estadoBadge = '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:4px 10px;border-radius:8px;">Rechazado</span>';
+                return estadoBadge + (r.observacionAdmin ? '<div class="small text-muted mt-1">' + escHtmlAdmin(r.observacionAdmin) + '</div>' : '');
+            }},
+            { data: null, orderable: false, render: function(d, t, r) {
+                if (r.estado === 'PENDIENTE') {
+                    return '<div class="d-flex gap-1">'
+                        + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'APROBADO\')" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:3px 10px;"><i class="bi bi-check-lg me-1"></i>Aprobar</button>'
+                        + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'RECHAZADO\')" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 10px;"><i class="bi bi-x-lg me-1"></i>Rechazar</button>'
+                        + '</div>';
+                }
+                return '<span class="small text-muted">' + (r.correoAdmin ? escHtmlAdmin(r.correoAdmin.split('@')[0]) : '—') + '<br>' + (r.fechaRevision ? r.fechaRevision.split(' ')[0] : '') + '</span>';
+            }}
+        ],
+        language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
+        pageLength: 20,
+        order: [[5, 'desc']],
+        dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
+    });
+}
+
+function cargarSolicitudesPermisos(filtro) {
     google.script.run.withSuccessHandler(function(res) {
         var registros = res.registros || [];
-        var html = '';
-        registros.forEach(function(r) {
-            var estadoBadge = '';
-            if (r.estado === 'PENDIENTE') estadoBadge = '<span class="badge" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:4px 10px;border-radius:8px;">Pendiente</span>';
-            else if (r.estado === 'APROBADO') estadoBadge = '<span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;padding:4px 10px;border-radius:8px;">Aprobado</span>';
-            else estadoBadge = '<span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;padding:4px 10px;border-radius:8px;">Rechazado</span>';
-
-            var acciones = '';
-            if (r.estado === 'PENDIENTE') {
-                acciones = '<div class="d-flex gap-1">'
-                    + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'APROBADO\')" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;border-radius:8px;padding:3px 10px;"><i class="bi bi-check-lg me-1"></i>Aprobar</button>'
-                    + '<button class="btn btn-sm fw-bold" onclick="resolverPermiso(\'' + r.id + '\',\'RECHAZADO\')" style="background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:8px;padding:3px 10px;"><i class="bi bi-x-lg me-1"></i>Rechazar</button>'
-                    + '</div>';
-            } else {
-                acciones = '<span class="small text-muted">' + (r.correoAdmin ? escHtmlAdmin(r.correoAdmin.split('@')[0]) : '—') + '<br>' + (r.fechaRevision ? r.fechaRevision.split(' ')[0] : '') + '</span>';
-            }
-
-            html += '<tr>'
-                + '<td><span class="fw-bold">' + escHtmlAdmin(r.nombre) + '</span> <span id="badge-frec-' + escHtmlAdmin(r.id) + '"></span><div class="small text-muted">' + escHtmlAdmin(r.correo) + '</div></td>'
-                + '<td><span class="badge" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:4px 10px;border-radius:8px;font-size:0.75rem;">' + escHtmlAdmin(r.tipo) + '</span></td>'
-                + '<td class="fw-bold">' + r.fechaInicio + '</td>'
-                + '<td class="fw-bold">' + r.fechaFin + '</td>'
-                + '<td class="small text-muted">' + (r.observacionAnalista ? escHtmlAdmin(r.observacionAnalista) : '—') + '</td>'
-                + '<td class="small text-muted">' + (r.fechaSolicitud ? r.fechaSolicitud.split(' ')[0] : '—') + '</td>'
-                + '<td>' + estadoBadge + (r.observacionAdmin ? '<div class="small text-muted mt-1">' + escHtmlAdmin(r.observacionAdmin) + '</div>' : '') + '</td>'
-                + '<td>' + acciones + '</td>'
-                + '</tr>';
-        });
-        if (!html) html = '<tr><td colspan="8">' + estadoVacioAdmin('bi-inbox', 'No hay solicitudes' + (filtro === 'PENDIENTE' ? ' pendientes' : '') + '.') + '</td></tr>';
-        if ($.fn.DataTable.isDataTable('#tablaSolicitudesPermisos')) { $('#tablaSolicitudesPermisos').DataTable().destroy(); }
-        $('#cuerpoSolicitudesPermisos').html(html);
-        $('#tablaSolicitudesPermisos').DataTable({
-            language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
-            pageLength: 20,
-            order: [[5, 'desc']],
-            columns: [{}, {}, {}, {}, {}, {}, {}, { orderable: false }],
-            dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
-        });
+        _renderSolicitudesPermisosTabla(registros, filtro);
 
         // Badge de contexto (no bloquea el render de la tabla si falla o tarda)
         var correosUnicos = [];
@@ -3895,7 +4029,7 @@ function cargarSolicitudesPermisos(filtro) {
             }).admin_obtenerConteoPermisosRecientes(correosUnicos);
         }
     }).withFailureHandler(function(err) {
-        $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>');
+        $('#cuerpoSolicitudesPermisos').html('<tr><td colspan="8" class="text-center text-danger py-4">' + mensajeErrorAmigable(err) + '</td></tr>');
     }).admin_obtenerPermisosPendientes(filtro);
 }
 
@@ -3923,7 +4057,7 @@ function resolverPermiso(id, decision) {
                 actualizarBadgePermisos();
             })
             .withFailureHandler(function(err) {
-                Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+                Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(err) });
             })
             .admin_resolverPermiso(id, decision, obs);
     });
@@ -3961,7 +4095,7 @@ function guardarUmbralFrecuente() {
             if (res.success) cargarHistorialAusencias();
         })
         .withFailureHandler(function(err) {
-            Swal.fire({ icon: 'error', title: 'Error', text: err.message });
+            Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(err) });
         })
         .admin_setUmbralFrecuente(valor);
 }
@@ -3972,16 +4106,13 @@ function cargarHistorialAusencias() {
     if (!desdeInput.value) desdeInput.value = _fechaStrMenosDias(30);
     if (!hastaInput.value) hastaInput.value = _fechaStrMenosDias(0);
 
-    if ($.fn.DataTable.isDataTable('#tablaHistorialAusencias')) { $('#tablaHistorialAusencias').DataTable().destroy(); }
-    document.getElementById('cuerpoHistorialAusencias').innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="bi bi-arrow-repeat spin"></i> Cargando...</td></tr>';
-
     cargarUmbralFrecuente();
 
     google.script.run.withSuccessHandler(function(res) {
         _pintarKpisHistorial(res.kpis || {});
         _pintarTablaHistorial(res.porAnalista || []);
     }).withFailureHandler(function(err) {
-        document.getElementById('cuerpoHistorialAusencias').innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">Error: ' + err.message + '</td></tr>';
+        document.getElementById('cuerpoHistorialAusencias').innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' + mensajeErrorAmigable(err) + '</td></tr>';
     }).admin_obtenerHistorialAusencias(desdeInput.value, hastaInput.value);
 }
 
@@ -4012,31 +4143,44 @@ function _pintarKpisHistorial(kpis) {
     cont.innerHTML = html;
 }
 
+// Antes destruía y reconstruía toda la tabla en cada consulta. Ahora solo
+// actualiza filas si la tabla ya existe (sin parpadeo).
 function _pintarTablaHistorial(porAnalista) {
-    var html = '';
-    porAnalista.forEach(function(p) {
-        var badgeFrecuente = p.esFrecuente
-            ? '<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:4px 10px;border-radius:8px;"><i class="bi bi-flag-fill me-1"></i>Frecuente</span>'
-            : '<span class="text-muted small">—</span>';
-        html += '<tr style="cursor:pointer;" onclick="abrirFichaAnalista(\'' + escHtmlAdmin(p.correo) + '\')">'
-            + '<td class="fw-bold">' + escHtmlAdmin(p.nombre) + '</td>'
-            + '<td>' + p.aprobados + '</td>'
-            + '<td>' + p.pendientes + '</td>'
-            + '<td>' + p.rechazados + '</td>'
-            + '<td>' + p.diasTotales + '</td>'
-            + '<td>' + (p.tipoMasFrecuente ? escHtmlAdmin(p.tipoMasFrecuente) : '—') + '</td>'
-            + '<td>' + badgeFrecuente + '</td>'
-            + '</tr>';
-    });
-    if (!html) html = '<tr><td colspan="7">' + estadoVacioAdmin('bi-inbox', 'No hay solicitudes de permisos en este rango.') + '</td></tr>';
+    if (porAnalista.length === 0) {
+        if ($.fn.DataTable.isDataTable('#tablaHistorialAusencias')) { $('#tablaHistorialAusencias').DataTable().destroy(); }
+        document.getElementById('cuerpoHistorialAusencias').innerHTML = '<tr><td colspan="7">' + estadoVacioAdmin('bi-inbox', 'No hay solicitudes de permisos en este rango.') + '</td></tr>';
+        return;
+    }
 
-    if ($.fn.DataTable.isDataTable('#tablaHistorialAusencias')) { $('#tablaHistorialAusencias').DataTable().destroy(); }
-    document.getElementById('cuerpoHistorialAusencias').innerHTML = html;
+    if ($.fn.DataTable.isDataTable('#tablaHistorialAusencias')) {
+        var dt = $('#tablaHistorialAusencias').DataTable();
+        dt.clear();
+        dt.rows.add(porAnalista);
+        dt.draw(false);
+        return;
+    }
+
     $('#tablaHistorialAusencias').DataTable({
+        data: porAnalista,
+        columns: [
+            { data: null, render: function(d, t, p) { return escHtmlAdmin(p.nombre); }, className: 'fw-bold' },
+            { data: 'aprobados' },
+            { data: 'pendientes' },
+            { data: 'rechazados' },
+            { data: 'diasTotales' },
+            { data: null, render: function(d, t, p) { return p.tipoMasFrecuente ? escHtmlAdmin(p.tipoMasFrecuente) : '—'; } },
+            { data: null, render: function(d, t, p) {
+                return p.esFrecuente
+                    ? '<span class="badge" style="background:#fee2e2;color:#991b1b;border:1px solid #fecaca;padding:4px 10px;border-radius:8px;"><i class="bi bi-flag-fill me-1"></i>Frecuente</span>'
+                    : '<span class="text-muted small">—</span>';
+            }}
+        ],
+        createdRow: function(row, p) {
+            $(row).css('cursor', 'pointer').on('click', function() { abrirFichaAnalista(p.correo); });
+        },
         language: { url: '//cdn.datatables.net/plug-ins/1.13.5/i18n/es-ES.json', lengthMenu: "Mostrar _MENU_ registros" },
         pageLength: 20,
         order: [[1, 'desc']],
-        columns: [{}, {}, {}, {}, {}, {}, {}],
         dom: '<"d-flex flex-wrap justify-content-between align-items-center mb-3"lf>rt<"d-flex flex-wrap justify-content-between align-items-center mt-3"ip>'
     });
 }
@@ -4051,7 +4195,7 @@ function abrirFichaAnalista(correo) {
     google.script.run.withSuccessHandler(function(ficha) {
         _renderFichaAnalistaModal(ficha);
     }).withFailureHandler(function(err) {
-        Swal.fire('Error', err.message, 'error');
+        Swal.fire('Error', mensajeErrorAmigable(err), 'error');
     }).admin_obtenerFichaAusenciasAnalista(correo);
 }
 
@@ -4062,6 +4206,27 @@ function _renderFichaAnalistaModal(ficha) {
         + '<div><div style="font-size:0.95rem;font-weight:800;">' + escHtmlAdmin(ficha.nombre || ficha.correo) + '</div>'
         + '<div style="font-size:0.75rem;opacity:0.8;">' + escHtmlAdmin(ficha.correo) + '</div></div></div>';
 
+    // Perfil unificado: equipo, turno, estado, rol, cupos — todo lo que antes
+    // había que buscar por separado en Usuarios / Equipos / Turnos / Cupos.
+    if (ficha.perfil) {
+        var p = ficha.perfil;
+        var estadoColor = p.estado === 'ACTIVO' ? '#15803d' : (p.estado === 'DISPONIBLE' ? '#1d4ed8' : '#706F6F');
+        var estadoBg = p.estado === 'ACTIVO' ? 'rgba(34,197,94,0.12)' : (p.estado === 'DISPONIBLE' ? 'rgba(29,78,216,0.1)' : 'rgba(112,111,111,0.1)');
+        var cuposTexto = (ficha.cupos && ficha.cupos.personalizado)
+            ? 'Personalizados (' + Object.keys(ficha.cupos.cupos || {}).length + ' tipos)'
+            : 'Usa los globales de su equipo';
+
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">'
+            + '<span class="badge" style="background:' + estadoBg + ';color:' + estadoColor + ';padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-activity me-1"></i>' + escHtmlAdmin(p.estado || '—') + '</span>'
+            + '<span class="badge" style="background:#eef1f7;color:#253150;padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-diagram-3 me-1"></i>' + escHtmlAdmin(ficha.equipo ? ficha.equipo.nombre : (p.especialidad || 'Sin equipo')) + '</span>'
+            + '<span class="badge" style="background:#eef1f7;color:#253150;padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-calendar2-week me-1"></i>' + escHtmlAdmin(ficha.turno ? ficha.turno.nombre : 'Sin turno asignado') + '</span>'
+            + '<span class="badge" style="background:#f1f5f9;color:#475569;padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-person-badge me-1"></i>' + escHtmlAdmin(p.rol || 'ASESOR') + '</span>'
+            + '<span class="badge" style="background:#f1f5f9;color:#475569;padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-speedometer2 me-1"></i>Capacidad: ' + p.capacidad + '</span>'
+            + '<span class="badge" style="background:#f1f5f9;color:#475569;padding:7px 12px;font-size:0.75rem;border-radius:10px;"><i class="bi bi-sliders me-1"></i>Cupos: ' + cuposTexto + '</span>'
+            + '</div>';
+    }
+
+    html += '<div style="font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:#94a3b8;margin-bottom:8px;">Ausencias y Permisos</div>';
     html += '<div style="display:flex;gap:10px;margin-bottom:20px;">'
         + '<div style="flex:1;padding:12px 8px;border-radius:14px;text-align:center;background:rgba(34,197,94,0.1);color:#15803d;border:2px solid rgba(34,197,94,0.25);">'
         + '<div style="font-size:1.4rem;font-weight:800;">' + r.aprobados + '</div><div style="font-size:0.65rem;font-weight:700;">APROBADOS</div></div>'
@@ -4099,8 +4264,9 @@ function _renderFichaAnalistaModal(ficha) {
     html += '</tbody></table></div></div>';
 
     Swal.fire({
+        title: 'Ficha del Analista',
         html: html,
-        width: 680,
+        width: 720,
         showCloseButton: true,
         showConfirmButton: true,
         confirmButtonText: 'Cerrar',
@@ -4138,33 +4304,56 @@ function cambiarModoCupos(modo) {
 var _cuposEquiposActivos = [];
 var _tiposCupos = [];
 
+// Antes esto encadenaba 3 llamadas al servidor una detrás de otra (tipos →
+// equipos → cuotas), cuando ninguna depende del resultado de la otra — cada
+// una ya calcula lo que necesita por su cuenta. El tiempo total era la suma
+// de las 3 llamadas; ahora corren en paralelo y el tiempo total es el de la
+// más lenta de las 3.
 function cargarCuposGenerales() {
     var grid = document.getElementById('cupos-equipos-grid');
     grid.innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>';
 
-    google.script.run.withSuccessHandler(function(tipos) {
-        _tiposCupos = tipos || [];
-        google.script.run.withSuccessHandler(function(equipos) {
-            _cuposEquiposActivos = equipos || [];
-            if (_cuposEquiposActivos.length === 0) {
-                grid.innerHTML = '<div class="col-12">' + estadoVacioAdmin('bi-diagram-3', 'No hay equipos configurados.') + '</div>';
-                return;
+    var _tipos = null, _equipos = null, _cuotas = null;
+    var _pendientes = 3;
+
+    function _intentarRenderizar() {
+        _pendientes--;
+        if (_pendientes > 0) return;
+
+        _tiposCupos = _tipos || [];
+        _cuposEquiposActivos = _equipos || [];
+        if (_cuposEquiposActivos.length === 0) {
+            grid.innerHTML = '<div class="col-12">' + estadoVacioAdmin('bi-diagram-3', 'No hay equipos configurados.') + '</div>';
+            return;
+        }
+        renderCuposCards(_equipos);
+        var res = _cuotas || {};
+        for (var e = 0; e < _cuposEquiposActivos.length; e++) {
+            var eqId = _cuposEquiposActivos[e].id.toLowerCase();
+            var totalEl = document.getElementById('cupo_' + eqId + '_total');
+            if (totalEl && res[eqId]) totalEl.value = res[eqId].total || 0;
+            for (var t = 0; t < _tiposCupos.length; t++) {
+                var el = document.getElementById('cupo_' + eqId + '_' + _tiposCupos[t].id);
+                if (el && res[eqId]) el.value = res[eqId][_tiposCupos[t].id] || 0;
             }
-            renderCuposCards(equipos);
-            google.script.run.withSuccessHandler(function(res) {
-                for (var e = 0; e < _cuposEquiposActivos.length; e++) {
-                    var eqId = _cuposEquiposActivos[e].id.toLowerCase();
-                    var totalEl = document.getElementById('cupo_' + eqId + '_total');
-                    if (totalEl && res[eqId]) totalEl.value = res[eqId].total || 0;
-                    for (var t = 0; t < _tiposCupos.length; t++) {
-                        var el = document.getElementById('cupo_' + eqId + '_' + _tiposCupos[t].id);
-                        if (el && res[eqId]) el.value = res[eqId][_tiposCupos[t].id] || 0;
-                    }
-                    validarSubcupos(eqId);
-                }
-            }).admin_getCuotasGlobales();
-        }).admin_getEquipos();
-    }).admin_getTiposSolicitud();
+            validarSubcupos(eqId);
+        }
+    }
+
+    google.script.run
+        .withSuccessHandler(function(tipos) { _tipos = tipos; _intentarRenderizar(); })
+        .withFailureHandler(function() { _intentarRenderizar(); })
+        .admin_getTiposSolicitud();
+
+    google.script.run
+        .withSuccessHandler(function(equipos) { _equipos = equipos; _intentarRenderizar(); })
+        .withFailureHandler(function() { _intentarRenderizar(); })
+        .admin_getEquipos();
+
+    google.script.run
+        .withSuccessHandler(function(cuotas) { _cuotas = cuotas; _intentarRenderizar(); })
+        .withFailureHandler(function() { _intentarRenderizar(); })
+        .admin_getCuotasGlobales();
 }
 
 function renderCuposCards(equipos) {
@@ -4259,7 +4448,7 @@ function guardarCuposEquipo(eqId) {
         }
     }).withFailureHandler(function(err) {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-save me-1"></i>Guardar'; }
-        Swal.fire('Error', err.message, 'error');
+        Swal.fire('Error', mensajeErrorAmigable(err), 'error');
     }).admin_setCuotasGlobales(cupos);
 }
 
@@ -4298,7 +4487,7 @@ function guardarCuposGenerales() {
             }
             Swal.fire({ icon: 'success', title: 'Cupos Actualizados', text: res.message, confirmButtonColor: '#253150' });
         } else Swal.fire('Error', res.message, 'error');
-    }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); }).admin_setCuotasGlobales(cupos);
+    }).withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); }).admin_setCuotasGlobales(cupos);
 }
 
 // --- Individual ---
@@ -4421,7 +4610,7 @@ function cargarTablaCuposPersonalizados() {
         });
         tbody.innerHTML = html;
     }).withFailureHandler(function(err) {
-        tbody.innerHTML = '<tr><td colspan="' + totalCols + '" class="text-center text-danger py-3">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + totalCols + '" class="text-center text-danger py-3">' + mensajeErrorAmigable(err) + '</td></tr>';
     }).admin_getAnalistasConCuposPersonalizados();
 }
 
@@ -4497,7 +4686,7 @@ function guardarCuposIndividual() {
             Swal.fire({ icon: 'success', title: 'Guardado', text: res.message, confirmButtonColor: '#253150', timer: 2000, timerProgressBar: true });
             cargarTablaCuposPersonalizados();
         } else Swal.fire('Error', res.message, 'error');
-    }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); }).admin_setCuposIndividual(_analistaSeleccionado, cupos);
+    }).withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); }).admin_setCuposIndividual(_analistaSeleccionado, cupos);
 }
 
 function resetearCuposIndividual() {
@@ -4738,7 +4927,7 @@ function cargarTablaHorasExtra() {
         '<td><button class="btn btn-sm btn-outline-danger" onclick="eliminarHoraExtra(' + e.fila + ')"><i class="bi bi-trash"></i></button></td>';
       tbody.appendChild(tr);
     });
-  }).withFailureHandler(function(err) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + err.message + '</td></tr>'; })
+  }).withFailureHandler(function(err) { tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + mensajeErrorAmigable(err) + '</td></tr>'; })
   .admin_getHorasExtra(email, anio, mes);
 }
 
@@ -4764,7 +4953,7 @@ function guardarHoraExtra() {
     bootstrap.Modal.getInstance(document.getElementById('modalHoraExtra')).hide();
     Swal.fire({icon: 'success', title: 'Guardado', text: 'Hora extra registrada.', timer: 2000, showConfirmButton: false});
     cargarTablaHorasExtra();
-  }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+  }).withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
   .admin_guardarHorasExtra(extra);
 }
 
@@ -4772,7 +4961,7 @@ function eliminarHoraExtra(fila) {
   Swal.fire({title: '¿Eliminar hora extra?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: 'Eliminar'}).then(function(r) {
     if (!r.isConfirmed) return;
     google.script.run.withSuccessHandler(function() { cargarTablaHorasExtra(); Swal.fire({icon:'success', title:'Eliminada', timer:1500, showConfirmButton:false}); })
-    .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+    .withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
     .admin_eliminarHorasExtra(fila);
   });
 }
@@ -4782,6 +4971,8 @@ function eliminarHoraExtra(fila) {
 // ============================================================
 var _festivosCargados = false;
 function cargarFestivos() {
+  var anioInput = document.getElementById('anioImportarFestivosCO');
+  if (anioInput && !anioInput.value) anioInput.value = new Date().getFullYear();
   var tbody = document.getElementById('festivos-tbody');
   tbody.innerHTML = '<tr><td colspan="3" class="text-center"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</td></tr>';
   google.script.run.withSuccessHandler(function(res) {
@@ -4794,8 +4985,27 @@ function cargarFestivos() {
         '<td><button class="btn btn-sm btn-outline-danger" onclick="eliminarFestivo(' + f.fila + ')"><i class="bi bi-trash"></i></button></td>';
       tbody.appendChild(tr);
     });
-  }).withFailureHandler(function(err) { tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">' + err.message + '</td></tr>'; })
+  }).withFailureHandler(function(err) { tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">' + mensajeErrorAmigable(err) + '</td></tr>'; })
   .admin_getFestivos();
+}
+
+function importarFestivosColombia() {
+  var anioInput = document.getElementById('anioImportarFestivosCO');
+  var anio = parseInt(anioInput.value, 10) || new Date().getFullYear();
+  Swal.fire({
+    title: 'Importar festivos de Colombia ' + anio,
+    text: 'Se traerán los festivos oficiales desde el calendario público de Google y se agregarán los que no existan aún.',
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Importar'
+  }).then(function(r) {
+    if (!r.isConfirmed) return;
+    Swal.fire({title: 'Importando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); }});
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res.success) { Swal.fire('Error', res.message, 'error'); return; }
+      Swal.fire({icon: 'success', title: 'Listo', text: res.message, timer: 2500, showConfirmButton: false});
+      cargarFestivos();
+    }).withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
+    .admin_importarFestivosColombia(anio);
+  });
 }
 
 function agregarFestivo() {
@@ -4808,7 +5018,7 @@ function agregarFestivo() {
     document.getElementById('nuevoFestivoDesc').value = '';
     Swal.fire({icon: 'success', title: 'Agregado', text: res.message, timer: 2000, showConfirmButton: false});
     cargarFestivos();
-  }).withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+  }).withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
   .admin_agregarFestivo(fecha, desc);
 }
 
@@ -4816,7 +5026,7 @@ function eliminarFestivo(fila) {
   Swal.fire({title: '¿Eliminar festivo?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc3545', confirmButtonText: 'Eliminar'}).then(function(r) {
     if (!r.isConfirmed) return;
     google.script.run.withSuccessHandler(function() { cargarFestivos(); Swal.fire({icon:'success', title:'Eliminado', timer:1500, showConfirmButton:false}); })
-    .withFailureHandler(function(err) { Swal.fire('Error', err.message, 'error'); })
+    .withFailureHandler(function(err) { Swal.fire('Error', mensajeErrorAmigable(err), 'error'); })
     .admin_eliminarFestivo(fila);
   });
 }
@@ -4986,7 +5196,7 @@ function cargarKanbanEquipos() {
     actualizarBarraSeleccion();
     kanbanLimpiarBusqueda();
     google.script.run.withSuccessHandler(renderKanbanBoard).withFailureHandler(function(e) {
-        document.getElementById('kanban-board').innerHTML = '<div class="text-center text-danger py-4 w-100">Error: ' + e.message + '</div>';
+        document.getElementById('kanban-board').innerHTML = '<div class="text-center text-danger py-4 w-100">' + mensajeErrorAmigable(e) + '</div>';
     }).admin_getEquiposMiembros();
 }
 
@@ -5064,7 +5274,9 @@ function renderKanbanColumna(id, nombre, icono, color, miembros) {
                 h += '<span style="color:var(--border);">|</span>';
                 h += '<span>' + tiempoTxt + '</span>';
             }
-            h += '</div></div></div>';
+            h += '</div></div>';
+            h += '<button type="button" class="kc-ficha-btn" title="Ver ficha completa" onclick="event.stopPropagation(); abrirFichaAnalista(\'' + correoEsc + '\')"><i class="bi bi-person-lines-fill"></i></button>';
+            h += '</div>';
         });
     }
     h += '</div>';
@@ -5157,7 +5369,7 @@ function ejecutarMoverKanban() {
                 }
             }).withFailureHandler(function(e) {
                 Swal.close();
-                Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+                Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
             }).admin_moverAnalistasEquipo(correos, destino);
         }
     });
@@ -5312,7 +5524,7 @@ function kanbanDrop(e, equipoDestinoId) {
                 }
             }).withFailureHandler(function(e) {
                 Swal.close();
-                Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+                Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
             }).admin_moverAnalistasEquipo(correos, equipoDestinoId);
         }
     });
@@ -5321,7 +5533,7 @@ function kanbanDrop(e, equipoDestinoId) {
 function cargarEquipos() {
     document.getElementById('equipos-grid').innerHTML = '<div class="text-center text-muted py-5"><i class="bi bi-arrow-clockwise spin"></i> Cargando equipos...</div>';
     google.script.run.withSuccessHandler(renderEquiposCards).withFailureHandler(function(e) {
-        document.getElementById('equipos-grid').innerHTML = '<div class="text-center text-danger py-4">Error: ' + e.message + '</div>';
+        document.getElementById('equipos-grid').innerHTML = '<div class="text-center text-danger py-4">' + mensajeErrorAmigable(e) + '</div>';
     }).admin_getEquipos();
 }
 
@@ -5462,7 +5674,7 @@ function onEquipoGuardado(r) {
 }
 
 function onEquipoError(e) {
-    Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+    Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
 }
 
 function eliminarEquipo(equipoId) {
@@ -5477,7 +5689,7 @@ function eliminarEquipo(equipoId) {
                 Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
                 cargarEquipos();
             }).withFailureHandler(function(e) {
-                Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+                Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
             }).admin_eliminarEquipo(equipoId);
         }
     });
@@ -5567,7 +5779,7 @@ function guardarTipoSolicitud() {
         Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
         cargarTiposSolicitud();
     }).withFailureHandler(function(e) {
-        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+        Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
     }).admin_guardarTipoSolicitud(datos);
 }
 
@@ -5580,7 +5792,7 @@ function eliminarTipoSolicitud(id) {
             google.script.run.withSuccessHandler(function(res) {
                 Swal.fire({ icon: 'success', title: res.message, timer: 1500, showConfirmButton: false });
                 cargarTiposSolicitud();
-            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: e.message }); }).admin_eliminarTipoSolicitud(id);
+            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: mensajeErrorAmigable(e) }); }).admin_eliminarTipoSolicitud(id);
         }
     });
 }
@@ -5654,7 +5866,7 @@ function guardarMotivo() {
         Swal.fire({ icon: 'success', title: r.message, timer: 1500, showConfirmButton: false });
         if (tipo === 'aplazamiento') cargarMotivosAplazamiento(); else cargarMotivosNegacion();
     }).withFailureHandler(function(e) {
-        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+        Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(e) });
     })[fnName](datos);
 }
 
@@ -5668,7 +5880,7 @@ function eliminarMotivo(tipo, id) {
             google.script.run.withSuccessHandler(function(res) {
                 Swal.fire({ icon: 'success', title: res.message, timer: 1500, showConfirmButton: false });
                 if (tipo === 'aplazamiento') cargarMotivosAplazamiento(); else cargarMotivosNegacion();
-            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: e.message }); })[fnName](id);
+            }).withFailureHandler(function(e) { Swal.fire({ icon: 'error', text: mensajeErrorAmigable(e) }); })[fnName](id);
         }
     });
 }
@@ -5728,7 +5940,7 @@ function actualizarCategoriaScore(fila) {
         Swal.fire({ icon: 'success', title: r.message, timer: 1200, showConfirmButton: false });
         cargarScoreResumen();
     }).withFailureHandler(function(e) {
-        Swal.fire({ icon: 'error', text: e.message });
+        Swal.fire({ icon: 'error', text: mensajeErrorAmigable(e) });
     }).admin_actualizarCategoriaPoliza(fila, nuevaCat);
 }
 </script>

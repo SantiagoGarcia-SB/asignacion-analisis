@@ -178,6 +178,33 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
 // RECOLECCIÓN DE PENDIENTES
 // ============================================================
 
+// Parsea un canon que puede venir como número plano (54000000) o con formato
+// colombiano (miles con punto, decimales con coma: "8.500.000,00" o "8.500").
+// Un replace ingenuo de la coma por punto no basta: deja los puntos de miles
+// intactos y parseFloat corta en el segundo punto ("8.500.000" -> 8.5).
+function _parseCanonColombiano(valor) {
+  var s = String(valor || '').trim().replace(/[^0-9.,-]/g, '');
+  if (!s) return 0;
+  if (s.indexOf(',') !== -1) {
+    // Coma presente: es el separador decimal, los puntos son de miles.
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    var puntos = (s.match(/\./g) || []).length;
+    if (puntos > 1) {
+      // Más de un punto sin coma: todos son separadores de miles.
+      s = s.replace(/\./g, '');
+    } else if (puntos === 1) {
+      var partes = s.split('.');
+      if (partes[1] && partes[1].length === 3) {
+        // Un solo punto con 3 dígitos detrás ("8.500") es separador de miles
+        // en formato colombiano, no decimal.
+        s = partes.join('');
+      }
+    }
+  }
+  return parseFloat(s) || 0;
+}
+
 function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, canonDesde, canonHasta, canonTipos) {
   var pendientes = [];
   for (var i = 1; i < dataSolicitudes.length; i++) {
@@ -203,7 +230,7 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
     else if (esInduccion) tipo = 'induccion';
 
     if (canonTipos && canonTipos.indexOf(tipo) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
-      var canonValor = parseFloat(String(row[9]).replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+      var canonValor = _parseCanonColombiano(row[9]);
       if (canonDesde > 0 && canonValor < canonDesde) continue;
       if (canonHasta > 0 && canonValor > canonHasta) continue;
     }
@@ -318,6 +345,110 @@ function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
   propsRef.setProperty('PUNTERO_ROTACION', punteroRotacion.toString());
 
   return leadSeleccionado;
+}
+
+// ============================================================
+// ORDENAMIENTO Y SELECCIÓN (lógica pura — sin sheets ni PropertiesService reales)
+// ============================================================
+
+// Ordena `pendientes` según las 4 reglas del motor (reasignadas primero → menor
+// ratio de cupo usado por tipo → prioridad configurada/global → externo primero
+// → FIFO/LIFO) y selecciona hasta `cupoDisponible` candidatos, aplicando VIP/score
+// vía el callback `aplicarVipYScoreFn` cuando corresponde. Es una función pura de
+// decisión: `propsLocal` solo se lee para 2 flags de configuración (GLOBAL_PRIORIDAD,
+// ORDEN_DESAPLAZAMIENTO), y el callback de VIP recibe su propia referencia a
+// PropertiesService por fuera — así se puede reutilizar con datos y "props" 100%
+// sintéticos en una simulación (ver test_X1_SimulacionDiaProduccion en Tests.js)
+// sin tocar ninguna hoja real ni PropertiesService real.
+function _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn) {
+  var ordenPrioridad;
+  if (equipo.ordenPrioridad && equipo.ordenPrioridad.length > 0) {
+    ordenPrioridad = equipo.ordenPrioridad;
+  } else if (equipo.id === 'REESTUDIOS') {
+    ordenPrioridad = ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'];
+  } else {
+    var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
+    if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
+    if (prioridadGlobal === 'NUEVAS_PRIMERO') prioridadGlobal = 'DIGITAL_PRIMERO';
+    ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
+  }
+
+  var _tiposSeen = {};
+  var _tiposConPendientes = [];
+  pendientes.forEach(function(p) {
+    if (!p.reasignada && !_tiposSeen[p.tipo]) {
+      _tiposSeen[p.tipo] = true;
+      _tiposConPendientes.push(p.tipo);
+    }
+  });
+
+  _tiposConPendientes.sort(function(a, b) {
+    var ratioA = cuotas[a] > 0 ? conteoHoyTotal[a] / cuotas[a] : 1;
+    var ratioB = cuotas[b] > 0 ? conteoHoyTotal[b] / cuotas[b] : 1;
+    if (ratioA !== ratioB) return ratioA - ratioB;
+    var posA = ordenPrioridad.indexOf(a) !== -1 ? ordenPrioridad.indexOf(a) : 99;
+    var posB = ordenPrioridad.indexOf(b) !== -1 ? ordenPrioridad.indexOf(b) : 99;
+    return posA - posB;
+  });
+
+  var _rankPorTipo = {};
+  for (var r = 0; r < _tiposConPendientes.length; r++) {
+    _rankPorTipo[_tiposConPendientes[r]] = r;
+  }
+
+  pendientes.forEach(function(p) {
+    if (p.reasignada) p.tipoPrioridad = -1;
+    else {
+      p.tipoPrioridad = _rankPorTipo[p.tipo] !== undefined ? _rankPorTipo[p.tipo] : 99;
+    }
+  });
+
+  // Desaplazamiento/biometría: el admin decide si se llama primero al más reciente
+  // (RECIENTE_PRIMERO, valor histórico por defecto) o al más antiguo (ANTIGUO_PRIMERO),
+  // siempre según fechaResultado (ver _recolectarPendientesPrincipal).
+  var ordenDesaplazamientoReciente = (propsLocal.getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
+
+  pendientes.sort(function(a, b) {
+    if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
+    if (a.tipo !== 'desaplazamiento' && b.tipo !== 'desaplazamiento') {
+      if (a.esExterno && !b.esExterno) return -1;
+      if (!a.esExterno && b.esExterno) return 1;
+    }
+    if (a.tipo === 'desaplazamiento') return ordenDesaplazamientoReciente ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
+    return a.fechaOrd - b.fechaOrd;
+  });
+
+  var pool = pendientes.slice();
+  var conteoLocal = {};
+  for (var kk in conteoHoyTotal) conteoLocal[kk] = conteoHoyTotal[kk];
+  var seleccionados = [];
+
+  while (seleccionados.length < cupoDisponible && pool.length > 0) {
+    var prioridadActual = pool[0].tipoPrioridad;
+    var candidatos = pool.filter(function(p) { return p.tipoPrioridad === prioridadActual; });
+
+    var leadSeleccionado;
+    if (aplicarVipYScoreFn) {
+      leadSeleccionado = aplicarVipYScoreFn(candidatos);
+    } else {
+      leadSeleccionado = candidatos[0];
+    }
+    if (!leadSeleccionado) break;
+
+    seleccionados.push(leadSeleccionado);
+    pool = pool.filter(function(p) { return p !== leadSeleccionado; });
+
+    var tipoSel = leadSeleccionado.tipo;
+    if (!leadSeleccionado.reasignada) {
+      conteoLocal[tipoSel] = (conteoLocal[tipoSel] || 0) + 1;
+      if (cuotas[tipoSel] > 0 && conteoLocal[tipoSel] >= cuotas[tipoSel]) {
+        // Cupo de este tipo se agotó dentro del mismo lote: descartar el resto (salvo reasignadas)
+        pool = pool.filter(function(p) { return p.tipo !== tipoSel || p.reasignada; });
+      }
+    }
+  }
+
+  return { seleccionados: seleccionados, tiposConPendientes: _tiposConPendientes };
 }
 
 // ============================================================
@@ -472,99 +603,16 @@ function RequestLeadUnificado(equipoIdOverride) {
       return { success: false, message: "No hay casos en bandeja para tus subcategorías disponibles." };
     }
 
-    // === ORDENAR ===
-    var ordenPrioridad;
-    if (equipo.ordenPrioridad && equipo.ordenPrioridad.length > 0) {
-      ordenPrioridad = equipo.ordenPrioridad;
-    } else if (equipoId === 'REESTUDIOS') {
-      ordenPrioridad = ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'];
-    } else {
-      var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
-      if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
-      if (prioridadGlobal === 'NUEVAS_PRIMERO') prioridadGlobal = 'DIGITAL_PRIMERO';
-      ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
-    }
-
-    var _tiposSeen = {};
-    var _tiposConPendientes = [];
-    pendientes.forEach(function(p) {
-      if (!p.reasignada && !_tiposSeen[p.tipo]) {
-        _tiposSeen[p.tipo] = true;
-        _tiposConPendientes.push(p.tipo);
-      }
-    });
-
-    _tiposConPendientes.sort(function(a, b) {
-      var ratioA = cuotas[a] > 0 ? conteoHoyTotal[a] / cuotas[a] : 1;
-      var ratioB = cuotas[b] > 0 ? conteoHoyTotal[b] / cuotas[b] : 1;
-      if (ratioA !== ratioB) return ratioA - ratioB;
-      var posA = ordenPrioridad.indexOf(a) !== -1 ? ordenPrioridad.indexOf(a) : 99;
-      var posB = ordenPrioridad.indexOf(b) !== -1 ? ordenPrioridad.indexOf(b) : 99;
-      return posA - posB;
-    });
-
-    var _rankPorTipo = {};
-    for (var r = 0; r < _tiposConPendientes.length; r++) {
-      _rankPorTipo[_tiposConPendientes[r]] = r;
-    }
-
-    pendientes.forEach(function(p) {
-      if (p.reasignada) p.tipoPrioridad = -1;
-      else {
-        p.tipoPrioridad = _rankPorTipo[p.tipo] !== undefined ? _rankPorTipo[p.tipo] : 99;
-      }
-    });
-
-    // Desaplazamiento/biometría: el admin decide si se llama primero al más reciente
-    // (RECIENTE_PRIMERO, valor histórico por defecto) o al más antiguo (ANTIGUO_PRIMERO),
-    // siempre según fechaResultado (ver _recolectarPendientesPrincipal).
-    var ordenDesaplazamientoReciente = (propsLocal.getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
-
-    pendientes.sort(function(a, b) {
-      if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
-      if (a.tipo !== 'desaplazamiento' && b.tipo !== 'desaplazamiento') {
-        if (a.esExterno && !b.esExterno) return -1;
-        if (!a.esExterno && b.esExterno) return 1;
-      }
-      if (a.tipo === 'desaplazamiento') return ordenDesaplazamientoReciente ? (b.fechaOrd - a.fechaOrd) : (a.fechaOrd - b.fechaOrd);
-      return a.fechaOrd - b.fechaOrd;
-    });
-
-    // === SELECCIONAR CANDIDATOS (respeta maxAsignarPorLlamada) ===
+    // === ORDENAR Y SELECCIONAR (lógica pura, ver _ordenarYSeleccionarCandidatos) ===
     var fechaHora = new Date();
     var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
     var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
-
-    var pool = pendientes.slice();
-    var conteoLocal = {};
-    for (var kk in conteoHoyTotal) conteoLocal[kk] = conteoHoyTotal[kk];
-    var seleccionados = [];
     var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
+    var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
 
-    while (seleccionados.length < cupoDisponible && pool.length > 0) {
-      var prioridadActual = pool[0].tipoPrioridad;
-      var candidatos = pool.filter(function(p) { return p.tipoPrioridad === prioridadActual; });
-
-      var leadSeleccionado;
-      if (scoreSheet) {
-        leadSeleccionado = _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal);
-      } else {
-        leadSeleccionado = candidatos[0];
-      }
-      if (!leadSeleccionado) break;
-
-      seleccionados.push(leadSeleccionado);
-      pool = pool.filter(function(p) { return p !== leadSeleccionado; });
-
-      var tipoSel = leadSeleccionado.tipo;
-      if (!leadSeleccionado.reasignada) {
-        conteoLocal[tipoSel] = (conteoLocal[tipoSel] || 0) + 1;
-        if (cuotas[tipoSel] > 0 && conteoLocal[tipoSel] >= cuotas[tipoSel]) {
-          // Cupo de este tipo se agotó dentro del mismo lote: descartar el resto (salvo reasignadas)
-          pool = pool.filter(function(p) { return p.tipo !== tipoSel || p.reasignada; });
-        }
-      }
-    }
+    var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);
+    var seleccionados = resultadoSeleccion.seleccionados;
+    var _tiposConPendientes = resultadoSeleccion.tiposConPendientes;
 
     if (seleccionados.length === 0) {
       return { success: false, message: "Error interno: no se pudo seleccionar un caso." };

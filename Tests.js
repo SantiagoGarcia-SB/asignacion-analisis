@@ -791,6 +791,23 @@ function test_V3_ContadorCupoHoy() {
   _assert('Limpieza dejó el contador en 0', 0, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital);
 }
 
+function test_V3b_DecrementarContadorCupo() {
+  _seccion('V3b. _decrementarContadorCupo (reversa el cupo fantasma al desasignar/reasignar)');
+  _incrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _incrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _assert('Sube a 2 antes de decrementar', 2, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital);
+  _decrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _assert('Baja de a 1 por llamada', 1, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital);
+  _decrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _decrementarContadorCupo(_TEST_EMAIL_CONTADORES, 'digital');
+  _assert('Nunca baja de 0', 0, _obtenerConteoHoyAnalista(_TEST_EMAIL_CONTADORES).digital);
+
+  // Limpieza.
+  var estado2 = _leerContadoresCupoHoy();
+  delete estado2.datos[_TEST_EMAIL_CONTADORES + '|digital'];
+  _guardarContadoresCupoHoy(estado2);
+}
+
 function test_V4_CargaPendiente() {
   _seccion('V4. Carga pendiente (email de prueba aislado)');
   _assert('Arranca en 0', 0, _obtenerCargaPendienteAnalista(_TEST_EMAIL_CONTADORES));
@@ -841,6 +858,292 @@ function test_V5_RegistrarAsignacionYCierre() {
 }
 
 // ============================================================
+// BLOQUE W: PARSEO DE CANON CON FORMATO COLOMBIANO
+// ============================================================
+
+function test_W1_ParseCanonColombiano() {
+  _seccion('W1. _parseCanonColombiano — miles con punto, decimales con coma');
+  _assert('Número plano', 8500000, _parseCanonColombiano('8500000'));
+  _assert('Miles con punto + decimales con coma', 8500000, _parseCanonColombiano('8.500.000,00'));
+  _assert('Miles con punto, sin decimales', 8500000, _parseCanonColombiano('8.500.000'));
+  _assert('Un solo punto de miles (3 dígitos)', 8500, _parseCanonColombiano('8.500'));
+  _assert('Decimal real con punto (ya numérico)', 8500000.5, _parseCanonColombiano('8500000.5'));
+  _assert('Vacío da 0', 0, _parseCanonColombiano(''));
+  _assert('Null da 0', 0, _parseCanonColombiano(null));
+  _assert('Coma sin puntos de miles', 8.5, _parseCanonColombiano('8,5'));
+
+  // Caso real que motivó el fix: antes este valor se leía como 8.5 en vez de
+  // 8'500.000, clasificando erróneamente un caso de Cánones Altos como Digital.
+  _assert('Caso real que rompía el filtro de canon (regresión)', true, _parseCanonColombiano('8.500.000,00') >= 8000000);
+}
+
+// ============================================================
+// BLOQUE X: SIMULACIÓN DE UN DÍA DE PRODUCCIÓN (30 analistas, ~1100 casos)
+// ============================================================
+// Genera una cola de casos y una plantilla de analistas 100% sintéticos en
+// memoria — nunca se escribe una sola fila en ningún sheet, ni se toca
+// PropertiesService real — y los hace pasar por la MISMA lógica de recolección
+// y selección que usa el motor real en producción (_recolectarPendientesPrincipal,
+// _recolectarPendientesReestudios, _ordenarYSeleccionarCandidatos). Modela el
+// pool compartido tal como es en la realidad: todos los equipos leen la misma
+// hoja "solicitud" y la misma hoja "ORIGEN" de reestudios, filtradas cada una
+// por los cupos/canon propios de cada equipo — no son colas separadas por equipo.
+//
+// Lo único que lee de verdad (solo lectura, nunca escribe) es la configuración
+// real de Equipos/cupos y la dotación real de analistas activos en Usuarios,
+// para que la capacidad simulada refleje la configuración real del negocio.
+//
+// No modela: cierre de casos durante el día (solo asignación), ni el desempate
+// VIP/score dentro de un mismo nivel de prioridad (eso ya lo cubre test_F1_RotacionVIP
+// por separado) — es intencional, para mantener la simulación enfocada en verificar
+// reparto de cupos, orden de prioridad y filtro de canon a escala real.
+
+function _fakePropsSimulacion(seedOverrides) {
+  var real = PropertiesService.getScriptProperties();
+  var store = {
+    GLOBAL_PRIORIDAD: real.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO',
+    ORDEN_DESAPLAZAMIENTO: real.getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO'
+  };
+  if (seedOverrides) Object.keys(seedOverrides).forEach(function(k) { store[k] = seedOverrides[k]; });
+  return {
+    getProperty: function(k) { return store.hasOwnProperty(k) ? store[k] : null; },
+    setProperty: function(k, v) { store[k] = v; }
+  };
+}
+
+function _formatearCanonColombianoTest(n) {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function _construirFilaPrincipalSintetica(opts) {
+  var row = new Array(59).fill('');
+  row[1] = opts.poliza;
+  row[9] = opts.canon !== undefined ? opts.canon : 0;
+  row[16] = opts.estado;
+  row[17] = opts.fechaRadicacion;
+  row[18] = opts.fechaResultado || opts.fechaRadicacion;
+  row[20] = opts.clase || '';
+  row[27] = '';
+  row[36] = opts.canal || '';
+  row[58] = opts.reasignada ? 'REASIGNADA' : '';
+  return row;
+}
+
+function _construirFilaReestudioSintetica(opts) {
+  var row = new Array(11).fill('');
+  row[0] = opts.fecha;
+  row[1] = opts.poliza;
+  row[3] = opts.origen;
+  row[4] = opts.tipoP;
+  row[6] = '';
+  row[10] = '';
+  return row;
+}
+
+function _barajarSimulacion(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+  }
+  return a;
+}
+
+function test_X1_SimulacionDiaProduccion() {
+  _seccion('X1. Simulación de un día de producción — 30 analistas, ~1100 casos/día (100% en memoria)');
+  var t0 = Date.now();
+
+  var TOTAL_ANALISTAS_SIMULADOS = 30;
+  var META_NEGOCIO = 1100;
+  var OVERSUPPLY = 1.25; // genera algo más que la capacidad teórica para que el límite real sea el cupo, no la cola
+  var TIPOS = ['digital', 'desaplazamiento', 'induccion', 'reestudio', 'nuevaUar', 'deudorUar', 'biometriaFallida'];
+
+  // --- Dotación y cupos REALES (solo lectura — no se escribe nada) ---
+  var equipos = _getEquipos().filter(function(e) { return e.activo; });
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var dataUsuarios = ss.getSheetByName('Usuarios').getDataRange().getValues();
+  var activosPorEquipo = {};
+  equipos.forEach(function(e) { activosPorEquipo[e.id] = 0; });
+  for (var iu = 1; iu < dataUsuarios.length; iu++) {
+    if (String(dataUsuarios[iu][5]).toUpperCase().trim() !== 'ACTIVO') continue;
+    var eqReal = resolverEquipoDesdeEspecialidad(String(dataUsuarios[iu][4]).toUpperCase().trim());
+    if (eqReal && activosPorEquipo.hasOwnProperty(eqReal.id)) activosPorEquipo[eqReal.id]++;
+  }
+  var totalActivosReal = Object.keys(activosPorEquipo).reduce(function(s, k) { return s + activosPorEquipo[k]; }, 0);
+
+  var analistasPorEquipo = {};
+  equipos.forEach(function(e) {
+    var proporcion = totalActivosReal > 0 ? (activosPorEquipo[e.id] / totalActivosReal) : (1 / equipos.length);
+    analistasPorEquipo[e.id] = Math.max(1, Math.round(proporcion * TOTAL_ANALISTAS_SIMULADOS));
+  });
+
+  var cuposPorEquipo = {};
+  equipos.forEach(function(e) { cuposPorEquipo[e.id] = obtenerCuposEfectivos('zzz_simulacion_no_existe@no-existe.invalido', e.id); });
+
+  var capacidadPorTipo = {};
+  TIPOS.forEach(function(t) {
+    capacidadPorTipo[t] = equipos.reduce(function(s, e) { return s + (cuposPorEquipo[e.id][t] || 0) * analistasPorEquipo[e.id]; }, 0);
+  });
+
+  // "digital" se reparte entre DIGITAL (canon bajo) y CANONES_ALTOS (canon alto),
+  // proporcional a la capacidad real de cada uno.
+  var eqDigital = equipos.find(function(e) { return e.id === 'DIGITAL'; });
+  var eqCanonAlto = equipos.find(function(e) { return e.id === 'CANONES_ALTOS'; });
+  var capDigitalBajo = eqDigital ? (cuposPorEquipo.DIGITAL.digital || 0) * (analistasPorEquipo.DIGITAL || 0) : 0;
+  var capDigitalAlto = eqCanonAlto ? (cuposPorEquipo.CANONES_ALTOS.digital || 0) * (analistasPorEquipo.CANONES_ALTOS || 0) : 0;
+  var totalDigital = capDigitalBajo + capDigitalAlto || 1;
+  var fraccionBajo = capDigitalBajo / totalDigital;
+  var umbralCanon = (eqCanonAlto && eqCanonAlto.canonDesde > 0) ? eqCanonAlto.canonDesde : 8000000;
+
+  // --- Generar UNA sola cola compartida "solicitud" (principal) ---
+  var principales = [];
+  var polizaSeq = 1;
+  var metaDigital = Math.round(capacidadPorTipo.digital * OVERSUPPLY);
+  for (var i = 0; i < metaDigital; i++) {
+    var esBajo = (i / metaDigital) < fraccionBajo;
+    var canon = esBajo ? (umbralCanon * 0.15 + Math.random() * umbralCanon * 0.8) : (umbralCanon + Math.random() * umbralCanon * 1.2);
+    var canonValor = (i % 9 === 0) ? _formatearCanonColombianoTest(canon) : Math.round(canon);
+    principales.push(_construirFilaPrincipalSintetica({
+      poliza: 'SIMPOL' + (polizaSeq++), canon: canonValor, estado: 'EN_ESTUDIO',
+      fechaRadicacion: new Date(Date.now() - i * 60000), fechaResultado: new Date(Date.now() - i * 30000),
+      clase: '', canal: (i % 7 === 0) ? 'PAGINA_WEB' : '', reasignada: (i % 29 === 0)
+    }));
+  }
+  var metaDesaplazamiento = Math.round(capacidadPorTipo.desaplazamiento * OVERSUPPLY);
+  for (var j = 0; j < metaDesaplazamiento; j++) {
+    principales.push(_construirFilaPrincipalSintetica({
+      poliza: 'SIMPOL' + (polizaSeq++), canon: 0, estado: 'APROBADO_PENDIENTE_BIOMETRIA',
+      fechaRadicacion: new Date(Date.now() - j * 60000), fechaResultado: new Date(Date.now() - j * 45000),
+      clase: '', canal: '', reasignada: (j % 29 === 0)
+    }));
+  }
+  var metaInduccion = Math.round(capacidadPorTipo.induccion * OVERSUPPLY);
+  for (var k = 0; k < metaInduccion; k++) {
+    principales.push(_construirFilaPrincipalSintetica({
+      poliza: 'SIMPOL' + (polizaSeq++), canon: 0, estado: 'EN_ESTUDIO',
+      fechaRadicacion: new Date(Date.now() - k * 60000), fechaResultado: new Date(Date.now() - k * 30000),
+      clase: 'INDUCCION', canal: '', reasignada: false
+    }));
+  }
+
+  // --- Generar UNA sola cola compartida "ORIGEN" (reestudios/UAR/biometría fallida) ---
+  var reestudios = [];
+  var tiposReest = [
+    { tipo: 'reestudio', tipoP: 'REESTUDIO', origen: 'OTRO' },
+    { tipo: 'nuevaUar', tipoP: 'NUEVA', origen: 'CORREO' },
+    { tipo: 'deudorUar', tipoP: 'ADICIONAL', origen: 'CORREO' },
+    { tipo: 'biometriaFallida', tipoP: 'BIOMETRIA FALLIDA', origen: 'OTRO' }
+  ];
+  tiposReest.forEach(function(info) {
+    var meta = Math.round(capacidadPorTipo[info.tipo] * OVERSUPPLY);
+    for (var n = 0; n < meta; n++) {
+      reestudios.push(_construirFilaReestudioSintetica({
+        fecha: new Date(Date.now() - n * 60000), poliza: 'SIMPOL' + (polizaSeq++), origen: info.origen, tipoP: info.tipoP
+      }));
+    }
+  });
+
+  var poolPrincipal = [[]].concat(principales);
+  var poolReestudios = [[]].concat(reestudios);
+  var totalCasosGenerados = principales.length + reestudios.length;
+
+  // --- Turnos de 30 analistas sintéticos, repartidos por equipo según dotación real ---
+  var ordenAnalistas = [];
+  equipos.forEach(function(e) {
+    for (var a = 0; a < analistasPorEquipo[e.id]; a++) {
+      ordenAnalistas.push({ email: 'zzz_sim_' + e.id + '_' + a + '@no-existe.invalido', equipoId: e.id });
+    }
+  });
+  ordenAnalistas = _barajarSimulacion(ordenAnalistas);
+
+  var conteoPorAnalista = {};
+  ordenAnalistas.forEach(function(a) { conteoPorAnalista[a.email] = {}; TIPOS.forEach(function(t) { conteoPorAnalista[a.email][t] = 0; }); });
+
+  var propsSimPorEquipo = {};
+  equipos.forEach(function(e) { propsSimPorEquipo[e.id] = _fakePropsSimulacion(); });
+
+  var totalAsignados = 0;
+  var turno = 0;
+  var vueltas = 0;
+  var vueltasSinProgreso = 0;
+  var limiteSinProgreso = ordenAnalistas.length * 3;
+  var vueltasMaxAbsoluto = 50000; // tope de seguridad duro, no debería alcanzarse nunca
+
+  while (vueltasSinProgreso < limiteSinProgreso && vueltas < vueltasMaxAbsoluto) {
+    var analista = ordenAnalistas[turno % ordenAnalistas.length];
+    turno++; vueltas++;
+    var eqId = analista.equipoId;
+    var equipo = equipos.find(function(e) { return e.id === eqId; });
+    var cuotas = cuposPorEquipo[eqId];
+    var conteoHoyAnalista = conteoPorAnalista[analista.email];
+
+    var pendientes = [];
+    if (poolPrincipal.length > 1) pendientes = pendientes.concat(_recolectarPendientesPrincipal(poolPrincipal, cuotas, conteoHoyAnalista, equipo.canonDesde || 0, equipo.canonHasta || 0, equipo.canonTipos || []));
+    if (poolReestudios.length > 1) pendientes = pendientes.concat(_recolectarPendientesReestudios(poolReestudios, cuotas, conteoHoyAnalista));
+
+    if (pendientes.length === 0) { vueltasSinProgreso++; continue; }
+
+    var resultado = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyAnalista, equipo, propsSimPorEquipo[eqId], 1, null);
+    if (resultado.seleccionados.length === 0) { vueltasSinProgreso++; continue; }
+
+    var lead = resultado.seleccionados[0];
+    if (lead.base === 'PRINCIPAL') {
+      poolPrincipal = [poolPrincipal[0]].concat(poolPrincipal.slice(1).filter(function(r) { return r !== lead.rowData; }));
+    } else {
+      poolReestudios = [poolReestudios[0]].concat(poolReestudios.slice(1).filter(function(r) { return r !== lead.rowData; }));
+    }
+    if (!lead.reasignada) conteoHoyAnalista[lead.tipo] = (conteoHoyAnalista[lead.tipo] || 0) + 1;
+    totalAsignados++;
+    vueltasSinProgreso = 0;
+  }
+  var ms = Date.now() - t0;
+
+  // --- Validaciones ---
+  var excesosCupo = 0;
+  var detalleExcesos = [];
+  ordenAnalistas.forEach(function(a) {
+    var cuotas = cuposPorEquipo[a.equipoId];
+    var c = conteoPorAnalista[a.email];
+    TIPOS.forEach(function(t) {
+      if (cuotas[t] > 0 && c[t] > cuotas[t]) { excesosCupo++; detalleExcesos.push(a.email + '|' + t + '=' + c[t] + '>' + cuotas[t]); }
+    });
+  });
+
+  var resumenPorEquipo = {};
+  equipos.forEach(function(e) {
+    resumenPorEquipo[e.id] = { asignados: 0, capacidadTeorica: TIPOS.reduce(function(s, t) { return s + (cuposPorEquipo[e.id][t] || 0) * analistasPorEquipo[e.id]; }, 0) };
+  });
+  ordenAnalistas.forEach(function(a) {
+    var c = conteoPorAnalista[a.email];
+    var s = 0;
+    TIPOS.forEach(function(t) { s += c[t]; });
+    resumenPorEquipo[a.equipoId].asignados += s;
+  });
+
+  var capacidadTotalSistema = Object.keys(resumenPorEquipo).reduce(function(s, k) { return s + resumenPorEquipo[k].capacidadTeorica; }, 0);
+  var todosLlenaronSuCapacidad = Object.keys(resumenPorEquipo).every(function(k) {
+    var r = resumenPorEquipo[k];
+    return r.capacidadTeorica === 0 || r.asignados >= r.capacidadTeorica;
+  });
+
+  Logger.log('Dotación real usada como base: ' + JSON.stringify(activosPorEquipo) + ' (total activos: ' + totalActivosReal + ')');
+  Logger.log('Analistas simulados por equipo (' + TOTAL_ANALISTAS_SIMULADOS + ' en total): ' + JSON.stringify(analistasPorEquipo));
+  Logger.log('Casos generados: ' + totalCasosGenerados + ' | Casos asignados: ' + totalAsignados + ' | Vueltas de turno: ' + vueltas + ' | Tiempo: ' + ms + 'ms');
+  Logger.log('Capacidad teórica del sistema con los cupos configurados HOY: ' + capacidadTotalSistema + ' casos/día, con ' + TOTAL_ANALISTAS_SIMULADOS + ' analistas.');
+  Logger.log('Meta de negocio declarada: ~' + META_NEGOCIO + ' casos/día. Diferencia: ' + (capacidadTotalSistema - META_NEGOCIO) + '.');
+  Logger.log('Por equipo (asignados / capacidad teórica): ' + JSON.stringify(resumenPorEquipo));
+
+  _assert('No se excede ningún cupo diario de ningún analista simulado', 0, excesosCupo);
+  _assert('Cada equipo con capacidad configurada llega a su capacidad teórica (usa todos sus cupos)', true, todosLlenaronSuCapacidad);
+  _assert('La simulación converge sola, sin necesitar el tope de seguridad', true, vueltas < vueltasMaxAbsoluto);
+  _assert('Se completó en tiempo razonable (menos de 30 segundos)', true, ms < 30000);
+
+  if (capacidadTotalSistema < META_NEGOCIO) {
+    Logger.log('⚠️ ATENCIÓN: con los cupos y la dotación configurados hoy, el sistema soporta ' + capacidadTotalSistema + ' casos/día, por debajo de la meta de ' + META_NEGOCIO + '. Esto no es un fallo del código — es una señal de negocio: revisar cupos o dotación por equipo.');
+  }
+}
+
+// ============================================================
 // RUNNER
 // ============================================================
 
@@ -874,7 +1177,9 @@ function EJECUTAR_TODAS_LAS_PRUEBAS() {
   test_S1_CanonConDigital();
   test_T1_FuncionesExisten(); test_T2_LockServiceEnFunciones();
   test_U1_RegistrarHistoricoCuposDinamico(); test_U2_SetCuposIndividualDinamico();
-  test_V1_DerivarTipoReestudio(); test_V2_FechaEsHoyYMD(); test_V3_ContadorCupoHoy(); test_V4_CargaPendiente(); test_V5_RegistrarAsignacionYCierre();
+  test_V1_DerivarTipoReestudio(); test_V2_FechaEsHoyYMD(); test_V3_ContadorCupoHoy(); test_V3b_DecrementarContadorCupo(); test_V4_CargaPendiente(); test_V5_RegistrarAsignacionYCierre();
+  test_W1_ParseCanonColombiano();
+  test_X1_SimulacionDiaProduccion();
 
   Logger.log('\n╔══════════════════════════════════════════╗');
   Logger.log('║   ✅ PASS: ' + _totalPass);

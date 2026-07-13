@@ -156,8 +156,10 @@ function obtenerDatosDashboard() {
     Logger.log("Aviso: No se pudo leer hoja activa de reestudios: " + e.message);
   }
 
-  // ── En Gestión desde Historico_Gestiones (digitales, biometría, inducciones) ──
-  // Condición: col Z (idx 25) = analista asignado NO vacío, col AA (idx 26) = fecha fin vacía
+  // ── En Gestión + Gestionadas Hoy, en una sola lectura de Historico_Gestiones principal ──
+  // Antes esto eran 2 lecturas completas de la misma hoja (una para cada aggregate);
+  // ahora se calculan los dos en la misma pasada por los datos.
+  // Col Z (idx 25) = analista asignado, col AA (idx 26) = fecha fin gestión.
   try {
     const hojaHistEnG = ss.getSheetByName("Historico_Gestiones");
     if (hojaHistEnG && hojaHistEnG.getLastRow() > 1) {
@@ -168,31 +170,40 @@ function obtenerDatosDashboard() {
         if (solicitudId === "") continue;
         const asignadoH = String(dataEG[i][25] || "").trim();
         const fechaFinH = String(dataEG[i][26] || "").trim();
-        if (asignadoH === "" || fechaFinH !== "") continue;
         const estadoH = String(dataEG[i][16] || "").toUpperCase();
         const polizaH = String(dataEG[i][1] || "");
         const asesorH = String(dataEG[i][27] || dataEG[i][25] || "N/A");
         const tipoGuardado = String(dataEG[i][60] || "").trim();
-        const tipoVisual = (tipoGuardado && res.desglose.enGestion[tipoGuardado] !== undefined)
-          ? tipoGuardado
-          : (_clasificarPorReglas({ estadoGeneral: String(dataEG[i][16] || ""), clase: String(dataEG[i][20] || "") }, tiposActivos) || 'digital');
-        if (res.desglose.enGestion[tipoVisual] !== undefined) res.desglose.enGestion[tipoVisual]++;
-        res.listaGestion.push({
-          id: solicitudId,
-          poliza: polizaH,
-          estado: estadoH || "EN GESTIÓN",
-          correo: asignadoH,
-          asesor: asesorH,
-          tipo: tipoVisual
-        });
+
+        if (asignadoH !== "" && fechaFinH === "") {
+          const tipoVisual = (tipoGuardado && res.desglose.enGestion[tipoGuardado] !== undefined)
+            ? tipoGuardado
+            : (_clasificarPorReglas({ estadoGeneral: String(dataEG[i][16] || ""), clase: String(dataEG[i][20] || "") }, tiposActivos) || 'digital');
+          if (res.desglose.enGestion[tipoVisual] !== undefined) res.desglose.enGestion[tipoVisual]++;
+          res.listaGestion.push({
+            id: solicitudId,
+            poliza: polizaH,
+            estado: estadoH || "EN GESTIÓN",
+            correo: asignadoH,
+            asesor: asesorH,
+            tipo: tipoVisual
+          });
+        } else if (fechaFinH !== "" && fechaFinH.includes(hoyStr)) {
+          const tipoVisual = (tipoGuardado && res.desglose.gestionadasHoy[tipoGuardado] !== undefined)
+            ? tipoGuardado
+            : (_clasificarPorReglas({ estadoGeneral: String(dataEG[i][16] || ""), clase: String(dataEG[i][20] || "") }, tiposActivos) || 'digital');
+          res.gestionadasHoyEquipo++;
+          if (res.desglose.gestionadasHoy[tipoVisual] !== undefined) res.desglose.gestionadasHoy[tipoVisual]++;
+          res.listaGestionadasHoy.push({ id: solicitudId, poliza: polizaH, estado: estadoH, asesor: asesorH, tipo: tipoVisual });
+        }
       }
     }
   } catch (e) {
-    Logger.log("Aviso: Error leyendo Historico_Gestiones enGestion principal: " + e.message);
+    Logger.log("Aviso: Error leyendo Historico_Gestiones principal: " + e.message);
   }
 
-  // ── En Gestión desde Historico_Gestiones de reestudios/UAR ──
-  // Condición: col G (idx 6) = analista NO vacío, col J (idx 9) = fechaFin vacía
+  // ── En Gestión + Gestionadas Hoy, en una sola lectura de Historico_Gestiones de reestudios/UAR ──
+  // Col G (idx 6) = analista, col J (idx 9) = fechaFin.
   try {
     const ssReestEG = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaHistReestEG = ssReestEG.getSheetByName("Historico_Gestiones");
@@ -204,87 +215,39 @@ function obtenerDatosDashboard() {
         if (solicitud === "") continue;
         const analistaEmail = String(dataREG[i][6] || "").trim();
         const fechaFin = String(dataREG[i][9] || "").trim();
-        if (analistaEmail === "" || fechaFin !== "") continue;
         const origen = String(dataREG[i][3] || "").trim();
         const tipoProceso = String(dataREG[i][4] || "");
         const nombreAnalista = String(dataREG[i][7] || "N/A");
         const tipoGuardadoR = String(dataREG[i][18] || "").trim();
-        const tipoDesglose = (tipoGuardadoR && res.desglose.enGestion[tipoGuardadoR] !== undefined)
-          ? tipoGuardadoR
-          : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataREG[i][5] || "").trim() }, tiposActivos) || 'reestudio');
-        res.reestudios.pendientes++;
-        if (res.desglose.enGestion[tipoDesglose] !== undefined) res.desglose.enGestion[tipoDesglose]++;
-        if (res.reestudios.listaPendientes.length < 50) {
-          res.reestudios.listaPendientes.push({ id: solicitud, origen: origen, tipo: tipoProceso, asesor: nombreAnalista });
+
+        if (analistaEmail !== "" && fechaFin === "") {
+          const tipoDesglose = (tipoGuardadoR && res.desglose.enGestion[tipoGuardadoR] !== undefined)
+            ? tipoGuardadoR
+            : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataREG[i][5] || "").trim() }, tiposActivos) || 'reestudio');
+          res.reestudios.pendientes++;
+          if (res.desglose.enGestion[tipoDesglose] !== undefined) res.desglose.enGestion[tipoDesglose]++;
+          if (res.reestudios.listaPendientes.length < 50) {
+            res.reestudios.listaPendientes.push({ id: solicitud, origen: origen, tipo: tipoProceso, asesor: nombreAnalista });
+          }
+          res.listaGestion.push({
+            id: solicitud,
+            poliza: origen,
+            estado: "EN GESTIÓN",
+            correo: analistaEmail,
+            asesor: nombreAnalista,
+            tipo: tipoDesglose
+          });
+        } else if (fechaFin !== "" && fechaFin.includes(hoyStr)) {
+          const tipoDesglose = (tipoGuardadoR && res.desglose.gestionadasHoy[tipoGuardadoR] !== undefined)
+            ? tipoGuardadoR
+            : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataREG[i][5] || "").trim() }, tiposActivos) || 'reestudio');
+          const estadoGestion = String(dataREG[i][10] || "").trim();
+          res.reestudios.gestionadasHoy++;
+          res.gestionadasHoyEquipo++;
+          if (res.desglose.gestionadasHoy[tipoDesglose] !== undefined) res.desglose.gestionadasHoy[tipoDesglose]++;
+          res.reestudios.listaGestionadasHoy.push({ id: solicitud, origen: origen, estado: estadoGestion, asesor: nombreAnalista });
+          res.listaGestionadasHoy.push({ id: solicitud, poliza: origen, estado: estadoGestion, asesor: nombreAnalista, tipo: tipoDesglose });
         }
-        res.listaGestion.push({
-          id: solicitud,
-          poliza: origen,
-          estado: "EN GESTIÓN",
-          correo: analistaEmail,
-          asesor: nombreAnalista,
-          tipo: tipoDesglose
-        });
-      }
-    }
-  } catch (e) {
-    Logger.log("Aviso: Error leyendo Historico_Gestiones enGestion reestudios: " + e.message);
-  }
-
-  // ── Gestionadas Hoy — desde Historico_Gestiones (digitales, biometría, inducciones) ──
-  // Columna AA (idx 26) = fecha fin gestión
-  try {
-    const hojaHistDig = ss.getSheetByName("Historico_Gestiones");
-    if (hojaHistDig && hojaHistDig.getLastRow() > 1) {
-      const colsNeeded = Math.max(61, hojaHistDig.getLastColumn());
-      const dataHist = hojaHistDig.getRange(2, 1, hojaHistDig.getLastRow() - 1, colsNeeded).getDisplayValues();
-      for (let i = 0; i < dataHist.length; i++) {
-        const fechaFinH = String(dataHist[i][26] || "").trim(); // col AA
-        if (fechaFinH === "" || !fechaFinH.includes(hoyStr)) continue;
-        const solicitudId = String(dataHist[i][0] || "").trim();
-        if (solicitudId === "") continue;
-        const estadoH = String(dataHist[i][16] || "").toUpperCase();
-        const asesorH = String(dataHist[i][27] || dataHist[i][25] || "N/A");
-        const polizaH = String(dataHist[i][1] || "");
-        const tipoGuardado = String(dataHist[i][60] || "").trim();
-        const tipoVisual = (tipoGuardado && res.desglose.gestionadasHoy[tipoGuardado] !== undefined)
-          ? tipoGuardado
-          : (_clasificarPorReglas({ estadoGeneral: String(dataHist[i][16] || ""), clase: String(dataHist[i][20] || "") }, tiposActivos) || 'digital');
-        res.gestionadasHoyEquipo++;
-        if (res.desglose.gestionadasHoy[tipoVisual] !== undefined) res.desglose.gestionadasHoy[tipoVisual]++;
-        res.listaGestionadasHoy.push({ id: solicitudId, poliza: polizaH, estado: estadoH, asesor: asesorH, tipo: tipoVisual });
-      }
-    }
-  } catch (e) {
-    Logger.log("Aviso: Error leyendo Historico_Gestiones principal: " + e.message);
-  }
-
-  // ── Gestionadas Hoy — desde Historico_Gestiones de reestudios/UAR ──
-  // Columna J (idx 9) = fechaFinGestion
-  try {
-    const ssReest2 = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-    const hojaHistReest = ssReest2.getSheetByName("Historico_Gestiones");
-    if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
-      const colsHistR = Math.max(19, hojaHistReest.getLastColumn());
-      const dataHistR = hojaHistReest.getRange(2, 1, hojaHistReest.getLastRow() - 1, colsHistR).getDisplayValues();
-      for (let i = 0; i < dataHistR.length; i++) {
-        const fechaFinR = String(dataHistR[i][9] || "").trim(); // col J
-        if (fechaFinR === "" || !fechaFinR.includes(hoyStr)) continue;
-        const solicitud = String(dataHistR[i][1] || "").trim();
-        if (solicitud === "") continue;
-        const origen = String(dataHistR[i][3] || "").trim();
-        const tipoProceso = String(dataHistR[i][4] || "");
-        const nombreAnalista = String(dataHistR[i][7] || "N/A");
-        const estadoGestion = String(dataHistR[i][10] || "").trim();
-        const tipoGuardadoR = String(dataHistR[i][18] || "").trim();
-        const tipoDesglose = (tipoGuardadoR && res.desglose.gestionadasHoy[tipoGuardadoR] !== undefined)
-          ? tipoGuardadoR
-          : (_clasificarPorReglas({ origen: origen, tipoProceso: tipoProceso, claseDeSolicitud: String(dataHistR[i][5] || "").trim() }, tiposActivos) || 'reestudio');
-        res.reestudios.gestionadasHoy++;
-        res.gestionadasHoyEquipo++;
-        if (res.desglose.gestionadasHoy[tipoDesglose] !== undefined) res.desglose.gestionadasHoy[tipoDesglose]++;
-        res.reestudios.listaGestionadasHoy.push({ id: solicitud, origen: origen, estado: estadoGestion, asesor: nombreAnalista });
-        res.listaGestionadasHoy.push({ id: solicitud, poliza: origen, estado: estadoGestion, asesor: nombreAnalista, tipo: tipoDesglose });
       }
     }
   } catch (e) {
@@ -487,8 +450,26 @@ function admin_crearUsuario(datos) {
  * seguro correrla en cualquier momento, incluso con analistas trabajando.
  */
 function admin_recalcularContadores() {
-  verificarPermisoAdmin();
+  try {
+    verificarPermisoAdmin();
+    return _recalcularContadoresInterno();
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
 
+/**
+ * Recalcula desde cero _PROP_CARGA_PENDIENTE y _PROP_CONTADORES_CUPO leyendo el
+ * estado real de Historico_Gestiones (principal + reestudios). Es la red de
+ * seguridad para cuando los contadores incrementales se desincronizan — el caso
+ * más común es un admin borrando filas directamente del sheet (novedades), lo
+ * cual es una acción válida y esperada pero que ningún código de ajuste de
+ * contadores puede interceptar. No valida permisos: eso lo hace el caller
+ * interactivo (admin_recalcularContadores); el trigger de tiempo llama esta
+ * función directamente.
+ * @private
+ */
+function _recalcularContadoresInterno() {
   var cargaPendiente = {};
   var cupoHoy = {};
   var hoy = _hoyYMD();
@@ -550,6 +531,23 @@ function admin_recalcularContadores() {
   };
 }
 
+// Trigger de tiempo — configurar en el editor de Apps Script (ícono de reloj >
+// Agregar trigger): función trigger_recalcularContadores, origen "Basado en
+// tiempo", tipo "Temporizador diario", franja horaria de madrugada (p.ej. 2am-3am,
+// cuando no hay analistas trabajando). Es la red de seguridad automática para que
+// los contadores incrementales (carga pendiente y cupo diario) no se queden
+// desincronizados indefinidamente si algo los desajusta — sin esto, la única
+// forma de corregirlos era que un admin ejecutara admin_recalcularContadores()
+// manualmente desde el panel.
+function trigger_recalcularContadores() {
+  try {
+    var resultado = _recalcularContadoresInterno();
+    Logger.log("✅ trigger_recalcularContadores: " + resultado.message + " (analistas con carga pendiente: " + resultado.analistasConCargaPendiente + ", entradas cupo hoy: " + resultado.entradasCupoHoy + ")");
+  } catch (e) {
+    Logger.log("❌ trigger_recalcularContadores falló: " + e.message);
+  }
+}
+
 /**
  * Remueve la asignación de una solicitud para que vuelva a estar disponible en cola.
  */
@@ -564,10 +562,11 @@ function desasignarSolicitud(idSolicitud){
       const idBuscado = String(idSolicitud).trim();
 
       // 1. Buscar en hoja solicitud (casos legados sin migrar)
-      const data = sheet.getRange("A:A").getValues();
-      for(let i = 1; i < data.length; i++){
-        if(String(data[i][0]).trim() === idBuscado){
-          const fila = i + 1;
+      const lastRowSol = sheet.getLastRow();
+      if (lastRowSol > 1) {
+        const matchSol = sheet.getRange(2, 1, lastRowSol - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext();
+        if (matchSol) {
+          const fila = matchSol.getRow();
           sheet.getRange(fila, 27).clearContent();
           sheet.getRange(fila, 28).clearContent();
           sheet.getRange(fila, 31).clearContent();
@@ -582,41 +581,39 @@ function desasignarSolicitud(idSolicitud){
       if (hojaHist && hojaHist.getLastRow() > 1) {
         const lastRowH = hojaHist.getLastRow();
         const numCols = Math.max(61, hojaHist.getLastColumn());
-        const dataH = hojaHist.getRange(2, 1, lastRowH - 1, numCols).getValues();
-        for (let i = 0; i < dataH.length; i++) {
-          const idMatch = String(dataH[i][0]).trim() === idBuscado;
-          const fechaFin = String(dataH[i][26]).trim();
-          if (idMatch && fechaFin === '') {
-            const filaH = i + 2;
-            const filaCompleta = hojaHist.getRange(filaH, 1, 1, numCols).getValues()[0];
+        const matchesH = hojaHist.getRange(2, 1, lastRowH - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findAll();
+        for (let i = 0; i < matchesH.length; i++) {
+          const filaH = matchesH[i].getRow();
+          const filaCompleta = hojaHist.getRange(filaH, 1, 1, numCols).getValues()[0];
+          const fechaFin = String(filaCompleta[26]).trim();
+          if (fechaFin !== '') continue;
 
-            var filaSol = new Array(59).fill('');
-            for (var c = 0; c < 22; c++) filaSol[c] = filaCompleta[c];
-            filaSol[23] = filaCompleta[22]; filaSol[24] = filaCompleta[23];
-            filaSol[35] = filaCompleta[31]; filaSol[36] = filaCompleta[32];
-            for (var ci = 0; ci < 21; ci++) filaSol[37 + ci] = filaCompleta[39 + ci] || '';
-            filaSol[26] = ''; filaSol[27] = ''; filaSol[28] = ''; filaSol[30] = '';
-            filaSol[58] = 'REASIGNADA';
+          var filaSol = new Array(59).fill('');
+          for (var c = 0; c < 22; c++) filaSol[c] = filaCompleta[c];
+          filaSol[23] = filaCompleta[22]; filaSol[24] = filaCompleta[23];
+          filaSol[35] = filaCompleta[31]; filaSol[36] = filaCompleta[32];
+          for (var ci = 0; ci < 21; ci++) filaSol[37 + ci] = filaCompleta[39 + ci] || '';
+          filaSol[26] = ''; filaSol[27] = ''; filaSol[28] = ''; filaSol[30] = '';
+          filaSol[58] = 'REASIGNADA';
 
-            sheet.appendRow(filaSol);
-            sheet.getRange(sheet.getLastRow(), 1, 1, filaSol.length).setNumberFormat("@");
-            hojaHist.deleteRow(filaH);
+          sheet.appendRow(filaSol);
+          sheet.getRange(sheet.getLastRow(), 1, 1, filaSol.length).setNumberFormat("@");
+          hojaHist.deleteRow(filaH);
 
-            var emailAnaOriginal = String(filaCompleta[25] || '').toLowerCase().trim();
-            if (emailAnaOriginal) {
-              _ajustarCargaPendiente(emailAnaOriginal, -1);
-              // Si el caso se había asignado hoy, también libera el cupo diario que
-              // ya se le había descontado al momento de asignarlo — de lo contrario
-              // le queda contando contra su cupo un caso que nunca gestionó.
-              if (_fechaEsHoyYMD(filaCompleta[24])) {
-                var tipoOriginal = String(filaCompleta[60] || '').trim() || 'digital';
-                _decrementarContadorCupo(emailAnaOriginal, tipoOriginal);
-              }
+          var emailAnaOriginal = String(filaCompleta[25] || '').toLowerCase().trim();
+          if (emailAnaOriginal) {
+            _ajustarCargaPendiente(emailAnaOriginal, -1);
+            // Si el caso se había asignado hoy, también libera el cupo diario que
+            // ya se le había descontado al momento de asignarlo — de lo contrario
+            // le queda contando contra su cupo un caso que nunca gestionó.
+            if (_fechaEsHoyYMD(filaCompleta[24])) {
+              var tipoOriginal = String(filaCompleta[60] || '').trim() || 'digital';
+              _decrementarContadorCupo(emailAnaOriginal, tipoOriginal);
             }
-
-            SpreadsheetApp.flush();
-            return { success: true, message: "Solicitud desasignada desde Historico_Gestiones y devuelta a cola." };
           }
+
+          SpreadsheetApp.flush();
+          return { success: true, message: "Solicitud desasignada desde Historico_Gestiones y devuelta a cola." };
         }
       }
 
@@ -636,28 +633,28 @@ function desasignarSolicitudReestudio(idSolicitud) {
     verificarPermisoAdmin();
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
-    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-    const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
-    if (!hoja) { lock.releaseLock(); return { success: false, message: "No se encontró la hoja de reestudios." }; }
+    try {
+      const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
 
-    const lastRow = hoja.getLastRow();
-    if (lastRow < 2) { lock.releaseLock(); return { success: false, message: "No hay datos en la hoja." }; }
+      const lastRow = hoja.getLastRow();
+      if (lastRow < 2) return { success: false, message: "No hay datos en la hoja." };
 
-    const data = hoja.getRange(2, 2, lastRow - 1, 1).getValues();
-
-    for (let i = 0; i < data.length; i++) {
-      if (String(data[i][0]).trim() === String(idSolicitud).trim()) {
-        const fila = i + 2;
+      const idBuscado = String(idSolicitud).trim();
+      const match = hoja.getRange(2, 2, lastRow - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext();
+      if (match) {
+        const fila = match.getRow();
         hoja.getRange(fila, 7).clearContent();
         hoja.getRange(fila, 8).clearContent();
         hoja.getRange(fila, 9).clearContent();
         SpreadsheetApp.flush();
-        lock.releaseLock();
         return { success: true, message: "Solicitud de reestudio desasignada correctamente." };
       }
+      return { success: false, message: "Solicitud no encontrada en reestudios." };
+    } finally {
+      lock.releaseLock();
     }
-    lock.releaseLock();
-    return { success: false, message: "Solicitud no encontrada en reestudios." };
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -668,28 +665,35 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
     verificarPermisoAdmin();
     const lock = LockService.getScriptLock();
     lock.waitLock(10000);
+    try {
+      const correoNorm = correoNuevo.toLowerCase().trim();
 
-    const correoNorm = correoNuevo.toLowerCase().trim();
+      // Obtener nombre del analista destino
+      const ssMain = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const hojaUser = ssMain.getSheetByName("Usuarios");
+      const dataUser = hojaUser.getDataRange().getValues();
+      const usuario = dataUser.find(function(f) { return String(f[2]).toLowerCase().trim() === correoNorm; });
+      const nombreNuevo = usuario ? String(usuario[1]).trim() : correoNorm;
+      const ahora = new Date();
+      const adminEmail = Session.getActiveUser().getEmail();
 
-    // Obtener nombre del analista destino
-    const ssMain = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    const hojaUser = ssMain.getSheetByName("Usuarios");
-    const dataUser = hojaUser.getDataRange().getValues();
-    const usuario = dataUser.find(function(f) { return String(f[2]).toLowerCase().trim() === correoNorm; });
-    const nombreNuevo = usuario ? String(usuario[1]).trim() : correoNorm;
-    const ahora = new Date();
-    const adminEmail = Session.getActiveUser().getEmail();
+      if (tipo === 'reestudio') {
+        // Historico_Gestiones de reestudios: G(7)=email, H(8)=nombre, I(9)=fechaAsig, J(10)=fechaFin, S(19)=tipo guardado
+        const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+        const hojaHR = ssReest.getSheetByName("Historico_Gestiones");
+        if (!hojaHR || hojaHR.getLastRow() <= 1) return { success: false, message: "Historico_Gestiones de reestudios no encontrada." };
+        const lastRowHR = hojaHR.getLastRow();
+        const colIdHR = hojaHR.getRange(2, 2, lastRowHR - 1, 1);
+        const matchesHR = colIdHR.createTextFinder(String(idSolicitud).trim()).matchEntireCell(true).findAll();
+        for (let i = 0; i < matchesHR.length; i++) {
+          const fila = matchesHR[i].getRow();
+          const filaVals = hojaHR.getRange(fila, 7, 1, 13).getValues()[0]; // G..S
+          const emailAnteriorR = String(filaVals[0] || '').toLowerCase().trim();
+          const fechaAsigR = filaVals[2];
+          const fechaFinR = String(filaVals[3]).trim();
+          if (fechaFinR !== '') continue;
+          const tipoGuardadoR = String(filaVals[12] || '').trim() || 'reestudio';
 
-    if (tipo === 'reestudio') {
-      // Historico_Gestiones de reestudios: G(7)=email, H(8)=nombre, I(9)=fechaAsig
-      const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-      const hojaHR = ssReest.getSheetByName("Historico_Gestiones");
-      if (!hojaHR || hojaHR.getLastRow() <= 1) { lock.releaseLock(); return { success: false, message: "Historico_Gestiones de reestudios no encontrada." }; }
-      const dataR = hojaHR.getRange(2, 2, hojaHR.getLastRow() - 1, 9).getValues();
-      for (let i = 0; i < dataR.length; i++) {
-        if (String(dataR[i][0]).trim() === String(idSolicitud).trim() && String(dataR[i][8]).trim() === '') {
-          const fila = i + 2;
-          const emailAnteriorR = String(dataR[i][5] || '').toLowerCase().trim();
           hojaHR.getRange(fila, 7).setValue(correoNorm);
           hojaHR.getRange(fila, 8).setValue(nombreNuevo);
           hojaHR.getRange(fila, 9).setValue(ahora);
@@ -698,24 +702,36 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
           if (emailAnteriorR && emailAnteriorR !== correoNorm) {
             _ajustarCargaPendiente(emailAnteriorR, -1);
             _ajustarCargaPendiente(correoNorm, 1);
+            // Si el caso se asignó hoy, el cupo diario ya se le había descontado
+            // al analista original — se lo devolvemos y se lo cargamos al nuevo,
+            // igual que en desasignarSolicitud.
+            if (_fechaEsHoyYMD(fechaAsigR)) {
+              _decrementarContadorCupo(emailAnteriorR, tipoGuardadoR);
+              _incrementarContadorCupo(correoNorm, tipoGuardadoR);
+            }
           }
           SpreadsheetApp.flush();
-          lock.releaseLock();
           return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };
         }
-      }
-      lock.releaseLock();
-      return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico reestudios." };
+        return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico reestudios." };
 
-    } else {
-      // Historico_Gestiones principal: Z(26)=email, AE(31)=nombre, Y(25)=fechaAsig, AA(27)=fechaFin
-      const hojaHP = ssMain.getSheetByName("Historico_Gestiones");
-      if (!hojaHP || hojaHP.getLastRow() <= 1) { lock.releaseLock(); return { success: false, message: "Historico_Gestiones no encontrada." }; }
-      const dataP = hojaHP.getRange(2, 1, hojaHP.getLastRow() - 1, 27).getValues();
-      for (let i = 0; i < dataP.length; i++) {
-        if (String(dataP[i][0]).trim() === String(idSolicitud).trim() && String(dataP[i][26]).trim() === '') {
-          const fila = i + 2;
-          const emailAnteriorP = String(dataP[i][25] || '').toLowerCase().trim();
+      } else {
+        // Historico_Gestiones principal: Y(25)=fechaAsig, Z(26)=email, AA(27)=fechaFin, col 61=tipo guardado
+        const hojaHP = ssMain.getSheetByName("Historico_Gestiones");
+        if (!hojaHP || hojaHP.getLastRow() <= 1) return { success: false, message: "Historico_Gestiones no encontrada." };
+        const lastRowHP = hojaHP.getLastRow();
+        const colIdHP = hojaHP.getRange(2, 1, lastRowHP - 1, 1);
+        const matchesHP = colIdHP.createTextFinder(String(idSolicitud).trim()).matchEntireCell(true).findAll();
+        const colsHP = Math.max(61, hojaHP.getLastColumn());
+        for (let i = 0; i < matchesHP.length; i++) {
+          const fila = matchesHP[i].getRow();
+          const filaVals = hojaHP.getRange(fila, 1, 1, colsHP).getValues()[0];
+          const fechaAsigP = filaVals[24];
+          const emailAnteriorP = String(filaVals[25] || '').toLowerCase().trim();
+          const fechaFinP = String(filaVals[26]).trim();
+          if (fechaFinP !== '') continue;
+          const tipoGuardadoP = String(filaVals[60] || '').trim() || 'digital';
+
           hojaHP.getRange(fila, 25).setValue(ahora);
           hojaHP.getRange(fila, 25).setNumberFormat("dd/MM/yyyy HH:mm:ss");
           hojaHP.getRange(fila, 26).setValue(correoNorm);
@@ -724,14 +740,18 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
           if (emailAnteriorP && emailAnteriorP !== correoNorm) {
             _ajustarCargaPendiente(emailAnteriorP, -1);
             _ajustarCargaPendiente(correoNorm, 1);
+            if (_fechaEsHoyYMD(fechaAsigP)) {
+              _decrementarContadorCupo(emailAnteriorP, tipoGuardadoP);
+              _incrementarContadorCupo(correoNorm, tipoGuardadoP);
+            }
           }
           SpreadsheetApp.flush();
-          lock.releaseLock();
           return { success: true, message: "Solicitud " + idSolicitud + " reasignada a " + nombreNuevo + "." };
         }
+        return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico principal." };
       }
+    } finally {
       lock.releaseLock();
-      return { success: false, message: "Solicitud " + idSolicitud + " no encontrada en Historico principal." };
     }
   } catch (e) {
     return { success: false, message: e.message };
@@ -742,6 +762,7 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
  * Busca una solicitud por ID en las bases de datos para auditar en modal.
  */
 function admin_buscarSolicitud(idSolicitud) {
+  try {
   verificarPermisoAdmin();
   idSolicitud = String(idSolicitud || "").trim();
   if (!idSolicitud) return { success: false, message: "Ingresa un número de solicitud." };
@@ -838,6 +859,10 @@ function admin_buscarSolicitud(idSolicitud) {
     Logger.log("Error buscando en reestudios: " + e.message);
   }
   return { success: false, message: "Solicitud '" + idSolicitud + "' no encontrada." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_getPrioridadGlobal() {
@@ -846,9 +871,14 @@ function admin_getPrioridadGlobal() {
 }
 
 function admin_setPrioridadGlobal(nuevaPrioridad) {
+  try {
   verificarPermisoAdmin();
   PropertiesService.getScriptProperties().setProperty('GLOBAL_PRIORIDAD', nuevaPrioridad);
   return { success: true, message: "Prioridad actualizada a: " + nuevaPrioridad };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // Orden de asignación para desaplazamiento/biometría: qué caso se llama primero
@@ -861,12 +891,17 @@ function admin_getOrdenDesaplazamiento() {
 }
 
 function admin_setOrdenDesaplazamiento(nuevoOrden) {
+  try {
   verificarPermisoAdmin();
   if (nuevoOrden !== 'RECIENTE_PRIMERO' && nuevoOrden !== 'ANTIGUO_PRIMERO') {
     return { success: false, message: "Valor de orden inválido." };
   }
   PropertiesService.getScriptProperties().setProperty('ORDEN_DESAPLAZAMIENTO', nuevoOrden);
   return { success: true, message: "Orden de desaplazamiento actualizado a: " + nuevoOrden };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function _getTiposParaCupos() {
@@ -882,12 +917,12 @@ function _propKeyCupo(equipoId, tipoId) {
 
 function admin_getCuotasGlobales() {
   verificarPermisoAdmin();
-  var props = PropertiesService.getScriptProperties();
+  var todas = PropertiesService.getScriptProperties().getProperties();
   var tipos = _getTiposParaCupos();
 
   function getVal(key, def) {
-    var v = props.getProperty(key);
-    if (v === null || v === '') return def;
+    var v = todas[key];
+    if (v === undefined || v === null || v === '') return def;
     var p = parseInt(v, 10);
     return isNaN(p) ? def : p;
   }
@@ -914,11 +949,13 @@ function admin_getCuotasGlobales() {
 }
 
 function admin_setCuotasGlobales(cupos) {
+  try {
   verificarPermisoAdmin();
   var props = PropertiesService.getScriptProperties();
   var tipos = _getTiposParaCupos();
   var equipoKeys = Object.keys(cupos);
 
+  var aGuardar = {};
   for (var e = 0; e < equipoKeys.length; e++) {
     var equipo = equipoKeys[e];
     var data = cupos[equipo];
@@ -930,12 +967,13 @@ function admin_setCuotasGlobales(cupos) {
     if (suma > (parseInt(data.total) || 0)) {
       return { success: false, message: "La suma de subcategorias excede el total en equipo: " + equipo + " (" + suma + " > " + data.total + ")" };
     }
-    props.setProperty('CUPOS_' + equipo.toUpperCase() + '_TOTAL', String(parseInt(data.total) || 0));
+    aGuardar['CUPOS_' + equipo.toUpperCase() + '_TOTAL'] = String(parseInt(data.total) || 0);
     for (var t2 = 0; t2 < tipos.length; t2++) {
       var key = _propKeyCupo(equipo, tipos[t2].id);
-      props.setProperty(key, String(parseInt(data[tipos[t2].id]) || 0));
+      aGuardar[key] = String(parseInt(data[tipos[t2].id]) || 0);
     }
   }
+  props.setProperties(aGuardar);
 
   var adminEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
   var ahora = new Date();
@@ -944,6 +982,10 @@ function admin_setCuotasGlobales(cupos) {
   }
 
   return { success: true, message: "Cupos actualizados correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 /**
@@ -1035,6 +1077,7 @@ function admin_getCuposIndividual(correoAnalista) {
  * Si cupos es null o vacío, elimina los cupos personalizados (vuelve a globales).
  */
 function admin_setCuposIndividual(correoAnalista, cupos) {
+  try {
   verificarPermisoAdmin();
   correoAnalista = String(correoAnalista).toLowerCase().trim();
   if (!correoAnalista) return { success: false, message: "Correo de analista requerido." };
@@ -1080,6 +1123,10 @@ function admin_setCuposIndividual(correoAnalista, cupos) {
     }
   }
   return { success: false, message: "Analista no encontrado." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 /**
@@ -1849,13 +1896,38 @@ function admin_obtenerHistorialAusencias(fechaDesde, fechaHasta) {
 
 // Historial completo (todas las filas, todos los estados) de un analista, para la
 // "ficha de ausencias" del panel admin.
+// Ficha unificada del analista: perfil, equipo, turno, cupos y ausencias en un
+// solo lugar, en vez de tener que visitar Usuarios + Equipos + Turnos + Cupos
+// por separado para ver todo sobre una misma persona.
 function admin_obtenerFichaAusenciasAnalista(correo) {
   verificarPermisoAdmin();
   correo = String(correo || '').trim().toLowerCase();
-  var out = { correo: correo, nombre: '', registros: [], resumen: { aprobados: 0, pendientes: 0, rechazados: 0, diasTotales: 0 } };
+  var out = {
+    correo: correo, nombre: '', registros: [],
+    resumen: { aprobados: 0, pendientes: 0, rechazados: 0, diasTotales: 0 },
+    perfil: null, equipo: null, turno: null, cupos: null
+  };
+  if (!correo) return out;
+
+  out.perfil = _obtenerPerfilBasicoAnalista_(correo);
+  if (out.perfil) {
+    out.nombre = out.perfil.nombre;
+    try {
+      var equipoResuelto = resolverEquipoDesdeEspecialidad(out.perfil.especialidad);
+      if (equipoResuelto) out.equipo = { id: equipoResuelto.id, nombre: equipoResuelto.nombre };
+    } catch (eEq) { /* especialidad sin equipo resuelto todavía */ }
+
+    if (out.perfil.cuposRaw) {
+      try { out.cupos = { personalizado: true, cupos: JSON.parse(out.perfil.cuposRaw) }; }
+      catch (eCup) { out.cupos = { personalizado: false, cupos: null }; }
+    } else {
+      out.cupos = { personalizado: false, cupos: null };
+    }
+  }
+  out.turno = _obtenerTurnoActualAnalista_(correo);
 
   var hoja = _getHojaPermisos_();
-  if (!correo || hoja.getLastRow() <= 1) return out;
+  if (hoja.getLastRow() <= 1) return out;
 
   var data = hoja.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
@@ -1865,7 +1937,7 @@ function admin_obtenerFichaAusenciasAnalista(correo) {
     var dias = _diasEntreFechasPI_(fi, ff);
     var estado = String(data[i][8] || 'PENDIENTE').toUpperCase().trim();
 
-    out.nombre = String(data[i][3]).trim();
+    if (!out.nombre) out.nombre = String(data[i][3]).trim();
     out.registros.push({
       id: String(data[i][0]).trim(),
       fechaSolicitud: _fmtFechaPI_(data[i][1]),
@@ -1882,6 +1954,59 @@ function admin_obtenerFichaAusenciasAnalista(correo) {
   }
   out.registros.sort(function(a, b) { return b.fechaSolicitud.localeCompare(a.fechaSolicitud); });
   return out;
+}
+
+// Lee UNA vez la fila de Usuarios de este correo (vía TextFinder, no escaneo
+// completo) y devuelve los campos base que necesita la ficha unificada.
+function _obtenerPerfilBasicoAnalista_(correo) {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Usuarios");
+  if (!hoja || hoja.getLastRow() <= 1) return null;
+  var colCorreo = hoja.getRange(2, 3, hoja.getLastRow() - 1, 1);
+  var match = colCorreo.createTextFinder(correo).matchEntireCell(true).matchCase(false).findNext();
+  if (!match) return null;
+  var fila = hoja.getRange(match.getRow(), 1, 1, 25).getValues()[0];
+  return {
+    nombre: String(fila[1] || '').trim(),
+    especialidad: String(fila[4] || '').trim(),
+    estado: String(fila[5] || '').trim().toUpperCase(),
+    capacidad: Number(fila[6]) || 0,
+    rol: String(fila[23] || 'ASESOR').trim().toUpperCase(),
+    cuposRaw: String(fila[24] || '').trim()
+  };
+}
+
+// Ubica el turno vigente hoy para este analista (Analistas_Turnos + Turnos).
+function _obtenerTurnoActualAnalista_(correo) {
+  try {
+    var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaAT = ss.getSheetByName('Analistas_Turnos');
+    if (!hojaAT || hojaAT.getLastRow() <= 1) return null;
+    var colEmailAT = hojaAT.getRange(2, 1, hojaAT.getLastRow() - 1, 1);
+    var matches = colEmailAT.createTextFinder(correo).matchEntireCell(true).matchCase(false).findAll();
+    if (matches.length === 0) return null;
+
+    var ahora = new Date();
+    var idTurnoVigente = null;
+    matches.forEach(function(m) {
+      var fila = hojaAT.getRange(m.getRow(), 1, 1, 4).getValues()[0];
+      var idT = String(fila[1] || '').trim();
+      var desde = fila[2] instanceof Date ? fila[2] : null;
+      var hasta = fila[3] instanceof Date ? fila[3] : null;
+      if (idT && desde && ahora >= desde && (!hasta || ahora <= hasta)) idTurnoVigente = idT;
+    });
+    if (!idTurnoVigente) return null;
+
+    var hojaTurnos = ss.getSheetByName('Turnos');
+    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { id: idTurnoVigente, nombre: idTurnoVigente };
+    var colIdTurno = hojaTurnos.getRange(2, 1, hojaTurnos.getLastRow() - 1, 1);
+    var matchTurno = colIdTurno.createTextFinder(idTurnoVigente).matchEntireCell(true).findNext();
+    if (!matchTurno) return { id: idTurnoVigente, nombre: idTurnoVigente };
+    var nombreTurno = String(hojaTurnos.getRange(matchTurno.getRow(), 2).getValue() || idTurnoVigente).trim();
+    return { id: idTurnoVigente, nombre: nombreTurno };
+  } catch (e) {
+    return null;
+  }
 }
 
 // Conteo liviano de permisos APROBADOS con inicio en los últimos 30 días, para el
@@ -2019,6 +2144,7 @@ function admin_getEquipos() {
 }
 
 function admin_crearEquipo(datos) {
+  try {
   verificarPermisoAdmin();
   var id = String(datos.id || '').trim().toUpperCase();
   if (!id) throw new Error("El ID del equipo es obligatorio.");
@@ -2051,9 +2177,14 @@ function admin_crearEquipo(datos) {
   _invalidarCacheEquipos();
 
   return { success: true, message: "Equipo '" + datos.nombre + "' creado correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_actualizarEquipo(equipoId, datos) {
+  try {
   verificarPermisoAdmin();
   var hoja = _getHojaEquipos();
   var lastRow = hoja.getLastRow();
@@ -2089,9 +2220,14 @@ function admin_actualizarEquipo(equipoId, datos) {
   _invalidarCacheEquipos();
 
   return { success: true, message: "Equipo '" + datos.nombre + "' actualizado correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_eliminarEquipo(equipoId) {
+  try {
   verificarPermisoAdmin();
 
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -2121,6 +2257,10 @@ function admin_eliminarEquipo(equipoId) {
     }
   }
   throw new Error("Equipo no encontrado: " + equipoId);
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // ============================================================
@@ -2269,6 +2409,7 @@ function admin_getEquiposMiembros() {
 }
 
 function admin_moverAnalistasEquipo(correos, nuevoEquipoId) {
+  try {
   verificarPermisoAdmin();
   if (!correos || correos.length === 0) return { success: false, message: "No se seleccionaron analistas." };
 
@@ -2298,6 +2439,10 @@ function admin_moverAnalistasEquipo(correos, nuevoEquipoId) {
   SpreadsheetApp.flush();
   var destNombre = equipoDestino ? equipoDestino.nombre : 'Sin equipo';
   return { success: true, message: movidos + " analista(s) movido(s) a " + destNombre + "." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // ============================================================
@@ -2395,6 +2540,7 @@ function admin_getTiposSolicitud() {
 }
 
 function admin_guardarTipoSolicitud(datos) {
+  try {
   verificarPermisoAdmin();
   var id = String(datos.id || '').trim().toLowerCase();
   if (!id) throw new Error("El ID del tipo es obligatorio.");
@@ -2429,9 +2575,14 @@ function admin_guardarTipoSolicitud(datos) {
   }
   SpreadsheetApp.flush();
   return { success: true, message: "Tipo '" + datos.label + "' guardado correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_eliminarTipoSolicitud(id) {
+  try {
   verificarPermisoAdmin();
   var hoja = _getHojaTiposSolicitud();
   var lastRow = hoja.getLastRow();
@@ -2446,6 +2597,10 @@ function admin_eliminarTipoSolicitud(id) {
     }
   }
   throw new Error("Tipo no encontrado: " + id);
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // ============================================================
@@ -2537,6 +2692,7 @@ function admin_getMotivosNegacion() {
 }
 
 function admin_guardarMotivo(tipo, datos) {
+  try {
   verificarPermisoAdmin();
   if (!datos.motivo || !String(datos.motivo).trim()) throw new Error("El texto del motivo es obligatorio.");
 
@@ -2570,6 +2726,10 @@ function admin_guardarMotivo(tipo, datos) {
   }
   SpreadsheetApp.flush();
   return { success: true, message: "Motivo guardado correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_guardarMotivoAplazamiento(datos) {
@@ -2581,6 +2741,7 @@ function admin_guardarMotivoNegacion(datos) {
 }
 
 function admin_eliminarMotivo(tipo, id) {
+  try {
   verificarPermisoAdmin();
   var hoja = _getHojaMotivos(tipo);
   var lastRow = hoja.getLastRow();
@@ -2595,6 +2756,10 @@ function admin_eliminarMotivo(tipo, id) {
     }
   }
   throw new Error("Motivo no encontrado.");
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_eliminarMotivoAplazamiento(id) {
@@ -2668,6 +2833,7 @@ function admin_buscarPolizaScore(polizaBuscada) {
 }
 
 function admin_actualizarCategoriaPoliza(fila, nuevaCategoria) {
+  try {
   verificarPermisoAdmin();
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hoja = ss.getSheetByName("score");
@@ -2676,6 +2842,10 @@ function admin_actualizarCategoriaPoliza(fila, nuevaCategoria) {
   hoja.getRange(fila, 2).setValue(String(nuevaCategoria).trim());
   SpreadsheetApp.flush();
   return { success: true, message: "Categoría actualizada correctamente." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // ============================================================
@@ -2708,6 +2878,7 @@ function admin_getFestivos() {
 }
 
 function admin_agregarFestivo(fecha, descripcion) {
+  try {
   verificarPermisoAdmin();
   if (!fecha) return { success: false, message: 'Fecha requerida.' };
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -2721,9 +2892,14 @@ function admin_agregarFestivo(fecha, descripcion) {
   hoja.getRange(hoja.getLastRow(), 1).setNumberFormat('yyyy-MM-dd');
   SpreadsheetApp.flush();
   return { success: true, message: 'Festivo agregado: ' + fecha };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 function admin_eliminarFestivo(fila) {
+  try {
   verificarPermisoAdmin();
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hoja = ss.getSheetByName('Festivos');
@@ -2732,6 +2908,100 @@ function admin_eliminarFestivo(fila) {
   hoja.deleteRow(fila);
   SpreadsheetApp.flush();
   return { success: true, message: 'Festivo eliminado.' };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// Calendario público de festivos de Colombia que mantiene Google.
+var CALENDARIO_FESTIVOS_CO = 'es.co#holiday@group.v.calendar.google.com';
+
+function admin_importarFestivosColombia(anio) {
+  verificarPermisoAdmin();
+  return _importarFestivosColombiaInterno(anio);
+}
+
+// Ejecutado por el trigger anual (trigger_importarFestivosColombiaAnual) y por
+// admin_importarFestivosColombia. No valida permisos: eso lo hace el caller interactivo.
+function _importarFestivosColombiaInterno(anio) {
+  try {
+  anio = parseInt(anio, 10);
+  if (!anio || anio < 2000 || anio > 2100) return { success: false, message: 'Año inválido.' };
+
+  var quienEjecuta = '(desconocido)';
+  try { quienEjecuta = Session.getEffectiveUser().getEmail() || '(vacío)'; } catch (e2) { quienEjecuta = '(sin acceso a Session: ' + e2.message + ')'; }
+
+  var calendario;
+  try {
+    calendario = CalendarApp.getCalendarById(CALENDARIO_FESTIVOS_CO);
+  } catch (e) {
+    return { success: false, message: 'No se pudo acceder al calendario de festivos de Colombia (ejecutando como ' + quienEjecuta + '): ' + e.message };
+  }
+  if (!calendario) return { success: false, message: 'Calendario de festivos de Colombia no disponible.' };
+
+  var desde = new Date(anio, 0, 1);
+  var hasta = new Date(anio, 11, 31, 23, 59, 59);
+  var eventos = calendario.getEvents(desde, hasta);
+  if (!eventos.length) return { success: false, message: 'No se encontraron festivos para ' + anio + '.' };
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName('Festivos');
+  if (!hoja) hoja = ss.insertSheet('Festivos');
+
+  var existentes = {};
+  var lastRow = hoja.getLastRow();
+  if (lastRow >= 1) {
+    var data = hoja.getRange(1, 1, lastRow, 1).getValues();
+    data.forEach(function(row) {
+      var v = row[0];
+      if (v instanceof Date && !isNaN(v.getTime())) {
+        existentes[Utilities.formatDate(v, TIMEZONE, 'yyyy-MM-dd')] = true;
+      } else if (v) {
+        existentes[String(v).trim()] = true;
+      }
+    });
+  }
+
+  var filasNuevas = [];
+  eventos.forEach(function(ev) {
+    var fechaStr = Utilities.formatDate(ev.getStartTime(), TIMEZONE, 'yyyy-MM-dd');
+    if (existentes[fechaStr]) return;
+    existentes[fechaStr] = true;
+    filasNuevas.push([new Date(fechaStr + 'T12:00:00'), ev.getTitle() || '']);
+  });
+
+  if (!filasNuevas.length) {
+    return { success: true, message: 'Los festivos de ' + anio + ' ya estaban registrados.', agregados: 0 };
+  }
+
+  var startRow = hoja.getLastRow() + 1;
+  hoja.getRange(startRow, 1, filasNuevas.length, 2).setValues(filasNuevas);
+  hoja.getRange(startRow, 1, filasNuevas.length, 1).setNumberFormat('yyyy-MM-dd');
+  SpreadsheetApp.flush();
+
+  return { success: true, message: filasNuevas.length + ' festivo(s) importado(s) para ' + anio + '.', agregados: filasNuevas.length };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// Trigger de tiempo — configurar en el editor de Apps Script (ícono de reloj > Agregar
+// trigger): función trigger_importarFestivosColombiaAnual, origen "Basado en tiempo",
+// tipo "Temporizador mensual", día 1. Apps Script no ofrece triggers anuales nativos,
+// así que este dispara cada mes pero solo actúa en diciembre (importa el año siguiente
+// con margen antes de que empiece).
+function trigger_importarFestivosColombiaAnual() {
+  var hoy = new Date();
+  if (hoy.getMonth() !== 11) return; // getMonth() es 0-indexado: 11 = diciembre
+  var anioSiguiente = hoy.getFullYear() + 1;
+  try {
+    var res = _importarFestivosColombiaInterno(anioSiguiente);
+    Logger.log('trigger_importarFestivosColombiaAnual: ' + JSON.stringify(res));
+  } catch (e) {
+    Logger.log('trigger_importarFestivosColombiaAnual ERROR: ' + e.message);
+  }
 }
 
 function admin_verificarDesaplazamientos() {

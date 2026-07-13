@@ -69,27 +69,6 @@
 @keyframes uxPulse { 0%,100% { opacity:1;transform:scale(1); } 50% { opacity:0.6;transform:scale(0.92); } }
 @keyframes uxBarSlide { 0% { transform:translateX(-100%); } 100% { transform:translateX(400%); } }
 
-/* 3. Skeleton loaders for table */
-.skeleton-row {
-    animation: skeletonPulse 1.5s ease-in-out infinite;
-}
-.skeleton-cell {
-    height: 14px;
-    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
-    background-size: 200% 100%;
-    animation: skeletonShimmer 1.5s ease-in-out infinite;
-    border-radius: 6px;
-    width: 80%;
-}
-@keyframes skeletonShimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-@keyframes skeletonPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-}
-
 /* 4. Empty state */
 .empty-state {
     text-align: center;
@@ -743,23 +722,6 @@ const UX = (function() {
             </div>`;
     }
 
-    // -- Skeleton loader for table --
-    function getSkeletonHTML(cols, rows) {
-        cols = cols || 4;
-        rows = rows || 5;
-        let html = '<tbody>';
-        for (let i = 0; i < rows; i++) {
-            html += '<tr class="skeleton-row">';
-            for (let j = 0; j < cols; j++) {
-                const w = 50 + Math.random() * 40;
-                html += `<td><div class="skeleton-cell" style="width:${w}%"></div></td>`;
-            }
-            html += '</tr>';
-        }
-        html += '</tbody>';
-        return html;
-    }
-
     // -- Show activity modal (data from both Historico_Gestiones sheets) --
     function showActivityModal() {
         Swal.fire({
@@ -1006,6 +968,38 @@ const UX = (function() {
         });
     }
 
+    // -- Mensajes de error amigables --
+    // Traduce excepciones técnicas crudas (las que llegan a withFailureHandler cuando
+    // algo falla de forma inesperada, no las respuestas curadas {success:false,message})
+    // a lenguaje cercano para analistas no técnicos. El detalle técnico original queda
+    // en la consola del navegador para poder reportarlo si hace falta.
+    function mensajeErrorAmigable(err) {
+        var raw = (err && (err.message || String(err))) || '';
+        try { console.error('Error técnico:', raw); } catch (e) {}
+        var m = raw.toLowerCase();
+
+        if (m.indexOf('is not a function') !== -1 || m.indexOf('script function not found') !== -1) {
+            return 'Hubo un problema interno al procesar tu solicitud. Si sigue pasando, avísale al equipo técnico.';
+        }
+        if (m.indexOf('timeout') !== -1 || m.indexOf('timed out') !== -1 || m.indexOf('exceeded maximum execution') !== -1) {
+            return 'La operación tardó demasiado y no se completó. Intenta de nuevo en unos segundos.';
+        }
+        if (m.indexOf('lock') !== -1 || m.indexOf('ocupado') !== -1) {
+            return 'El sistema está ocupado procesando otra solicitud. Intenta de nuevo en unos segundos.';
+        }
+        if (m.indexOf('permission') !== -1 || m.indexOf('permiso') !== -1 || m.indexOf('autoriza') !== -1) {
+            return 'No tienes permiso para realizar esta acción.';
+        }
+        if (m.indexOf('network') !== -1 || m.indexOf('failed to fetch') !== -1 || m.indexOf('conexión') !== -1 || m.indexOf('conexion') !== -1) {
+            return 'Hubo un problema de conexión. Revisa tu internet e intenta de nuevo.';
+        }
+        if (m.indexOf('cannot read propert') !== -1 || m.indexOf('undefined') !== -1 || m.indexOf('null') !== -1) {
+            return 'Ocurrió un problema inesperado al cargar los datos. Intenta de nuevo en unos segundos.';
+        }
+        if (!raw) return 'Ocurrió un problema inesperado. Intenta de nuevo en unos segundos.';
+        return 'Ocurrió un problema inesperado. Intenta de nuevo; si sigue pasando, avísale al equipo técnico.';
+    }
+
     // Public API
     return {
         init: init,
@@ -1015,14 +1009,14 @@ const UX = (function() {
         showModalOverlay: showModalOverlay,
         animateNumber: animateNumber,
         getEmptyStateHTML: getEmptyStateHTML,
-        getSkeletonHTML: getSkeletonHTML,
         logActivity: logActivity,
         showActivityModal: showActivityModal,
         showPendingModal: showPendingModal,
         updateSyncTime: updateSyncTime,
         alert: alert,
         alertLoading: alertLoading,
-        alertToast: alertToast
+        alertToast: alertToast,
+        mensajeError: mensajeErrorAmigable
     };
 })();
 

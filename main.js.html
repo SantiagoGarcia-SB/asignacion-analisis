@@ -285,11 +285,27 @@ function _miniLoader(on) {
   else btn.classList.remove('btn-refresh-spinning');
 }
 
+// Cachea getEmailUsuario() para que el saludo del loader (main.js.html) y el nombre
+// de la navbar (VistaUnificada.html) compartan una sola llamada al servidor en vez
+// de dispararla cada uno por su cuenta en cada carga de página.
+var _emailUsuarioCache = null;
+var _emailUsuarioCallbacks = [];
+function _obtenerEmailUsuario(callback) {
+  if (_emailUsuarioCache !== null) { callback(_emailUsuarioCache); return; }
+  _emailUsuarioCallbacks.push(callback);
+  if (_emailUsuarioCallbacks.length > 1) return;
+  google.script.run.withSuccessHandler(function(email) {
+    _emailUsuarioCache = email || '';
+    _emailUsuarioCallbacks.forEach(function(cb) { cb(_emailUsuarioCache); });
+    _emailUsuarioCallbacks = [];
+  }).getEmailUsuario();
+}
+
 $(document).ready(function () {
   _loaderSetPaso(1);
 
   // Mostrar saludo en el loader
-  google.script.run.withSuccessHandler(function(email) {
+  _obtenerEmailUsuario(function(email) {
     if (email) {
       var prefijo = email.split('@')[0];
       var nombre = prefijo.split('.').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
@@ -298,7 +314,7 @@ $(document).ready(function () {
       var el = document.getElementById('loader-nombre-usuario');
       if (el) { el.textContent = saludo + ', ' + nombre; el.style.opacity = '1'; }
     }
-  }).getEmailUsuario();
+  });
 
   sincronizarEstadoInicial(true);
   verificarYAplicarPermisoVigente();
@@ -530,7 +546,7 @@ function sincronizarEstadoInicial(debeCargarTabla = false) {
       }
     })
     .withFailureHandler(function(e) {
-      _loaderError('No se pudo validar tu sesión: ' + (e && e.message ? e.message : 'intenta recargar la página.'));
+      _loaderError('No se pudo validar tu sesión. ' + (typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Intenta recargar la página.'));
     })
     .obtenerMiEstadoActual();
 }
@@ -709,7 +725,7 @@ function cargarDatos() {
         return;
       }
       if (!cargaInicialHecha) {
-        _loaderError('No se pudieron cargar los datos: ' + (e && e.message ? e.message : 'revisa tu conexión.'));
+        _loaderError('No se pudieron cargar los datos. ' + (typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Revisa tu conexión.'));
         setTimeout(_loaderOcultar, 2200);
       } else if (loader) {
         loader.classList.add('loader-hidden'); setTimeout(() => loader.style.display = 'none', 800);
@@ -1230,8 +1246,8 @@ function manejarGuardarCambios() {
     .withFailureHandler(e => {
       if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
       Swal.fire({
-        title: 'Error Crítico', 
-        text: 'Fallo de conexión: ' + e.message, 
+        title: 'Error Crítico',
+        text: typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Fallo de conexión. Intenta de nuevo en unos segundos.',
         icon: 'error',
         confirmButtonColor: '#BD0F14'
       });
@@ -1425,7 +1441,7 @@ function enviarSolicitudPermiso() {
         .withFailureHandler(function(err) {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-send-fill me-2"></i>Enviar Solicitud';
-            Swal.fire({ icon: 'error', title: 'Error', text: err.message, confirmButtonColor: '#3b82f6' });
+            Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(err) : err.message, confirmButtonColor: '#3b82f6' });
         })
         .solicitarPermiso(_tipoPermisoSeleccionado, fechaInicioFinal, fechaFinFinal, obs);
 }
@@ -2030,7 +2046,7 @@ function manejarGuardarDigital() {
       .withFailureHandler(function(e) {
         window._modoRegestion = null;
         if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); }
-        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+        Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message });
       })
       .regestionarCasoPendiente(rgData);
     return;
@@ -2059,7 +2075,7 @@ function manejarGuardarDigital() {
 
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } onGuardarExitoUnificado(r, 'modalDigital', solId); })
-    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
     .guardarCambiosInternos(datos);
 }
 
@@ -2095,7 +2111,7 @@ function manejarGuardarBiometria() {
 
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } onGuardarExitoUnificado(r, 'modalBiometria', solId); })
-    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
     .guardarGestionBiometria(solId, datosForm);
 }
 
@@ -2139,7 +2155,7 @@ function manejarGuardarReestudio() {
       .withFailureHandler(function(e) {
         window._modoRegestion = null;
         if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); }
-        Swal.fire({ icon: 'error', title: 'Error', text: e.message });
+        Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message });
       })
       .regestionarCasoPendiente(rgData);
     return;
@@ -2160,7 +2176,7 @@ function manejarGuardarReestudio() {
 
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
-    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } Swal.fire({ icon: 'error', title: 'Error', text: e.message }); })
+    .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
     .guardarGestionReestudio(datos);
 }
 
