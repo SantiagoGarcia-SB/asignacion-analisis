@@ -84,14 +84,20 @@ function obtenerDatosDashboard() {
   
   const hojaUser = ss.getSheetByName("Usuarios");
   const dataUser = hojaUser.getDataRange().getValues();
+  res.listaActivos = [];
   for (let j = 1; j < dataUser.length; j++) {
     const estadoUser = String(dataUser[j][5] || "").toUpperCase().trim();
     if (estadoUser === "ACTIVO" || estadoUser === "DISPONIBLE") {
       res.activos++;
+      res.listaActivos.push({
+        nombre: String(dataUser[j][1] || "Sin nombre").trim(),
+        especialidad: String(dataUser[j][4] || "").trim()
+      });
     } else {
       res.inactivos++;
     }
   }
+  res.listaActivos.sort(function(a, b) { return a.nombre.localeCompare(b.nombre); });
   
   // ── Sin Asignar desde hoja activa de solicitudes ──
   for (let i = 1; i < dataSol.length; i++) {
@@ -252,68 +258,6 @@ function obtenerDatosDashboard() {
     }
   } catch (e) {
     Logger.log("Aviso: Error leyendo Historico_Gestiones reestudios: " + e.message);
-  }
-
-  // Clasificación por fase_seguimiento_biometria (col 76) en vez de nuevo_estado_sai
-  // (col 63, que solo se refresca en los cortes 8am/12pm): la fase es la columna que
-  // de verdad rastrea en qué paso del ciclo WA→escalada→archivado está cada caso.
-  // "En espera" = solo las 3 fases activas (nunca contactado / WA enviado / escalada);
-  // las fases terminales (resuelta, resuelta en cola, asignada, archivada) quedan fuera
-  // del total y de la lista — igual que "Sin Asignar"/"En Gestión" solo cuentan lo vivo
-  // ahora mismo, no todo el histórico de pendiente_biometria (que nunca borra filas).
-  try {
-    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
-    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-    if (hojaBio && hojaBio.getLastRow() > 1) {
-      var nFilasBio = hojaBio.getLastRow() - 1;
-      var dataBio = hojaBio.getRange(2, 1, nFilasBio, 76).getDisplayValues();
-      // Columna de fecha aparte, con getValues() (no getDisplayValues()): si Sheets
-      // interpretó el string "yyyy-MM-dd HH:mm:ss" como fecha real, getDisplayValues()
-      // la muestra en el formato de la celda (puede no ser ISO) y romper la comparación
-      // por prefijo. _parseFechaGAS() maneja tanto Date como string de forma robusta.
-      var fechasFaseBio = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, nFilasBio, 1).getValues();
-      var hoy = new Date();
-      var LABEL_FASE_ACTIVA = { "": "Esperando contacto", "WA_ENVIADO": "WA enviado", "ESCALADA": "En cola de llamada" };
-
-      var esperandoContacto = 0, waEnviado = 0, enColaLlamada = 0, archivadasBio = 0, resueltasHoy = 0;
-      var listaBio = [];
-
-      for (var b = 0; b < dataBio.length; b++) {
-        var fase = String(dataBio[b][75]).trim().toUpperCase();
-
-        if (fase === "" || fase === "WA_ENVIADO" || fase === "ESCALADA") {
-          listaBio.push({
-            id: String(dataBio[b][0]).trim(),
-            poliza: String(dataBio[b][1]).trim(),
-            telefono: String(dataBio[b][6]).trim(),
-            estadoSai: LABEL_FASE_ACTIVA[fase],
-            fechaCaptura: String(dataBio[b][59]).trim()
-          });
-        }
-
-        if (fase === "") esperandoContacto++;
-        else if (fase === "WA_ENVIADO") waEnviado++;
-        else if (fase === "ESCALADA") enColaLlamada++;
-        else if (fase === "ARCHIVADA") archivadasBio++;
-        else if (fase === "RESUELTA" || fase === "RESUELTA_EN_COLA") {
-          var fechaFase = _parseFechaGAS(fechasFaseBio[b][0]);
-          if (fechaFase && fechaFase.getFullYear() === hoy.getFullYear() && fechaFase.getMonth() === hoy.getMonth() && fechaFase.getDate() === hoy.getDate()) {
-            resueltasHoy++;
-          }
-        }
-      }
-
-      res.biometriaPendiente = {
-        pendientes: esperandoContacto, waEnviado: waEnviado, enColaLlamada: enColaLlamada,
-        archivadas: archivadasBio, resueltasHoy: resueltasHoy,
-        total: esperandoContacto + waEnviado + enColaLlamada, lista: listaBio
-      };
-    } else {
-      res.biometriaPendiente = { pendientes: 0, waEnviado: 0, enColaLlamada: 0, archivadas: 0, resueltasHoy: 0, total: 0, lista: [] };
-    }
-  } catch (e) {
-    Logger.log("Aviso: Error leyendo pendiente_biometria: " + e.message);
-    res.biometriaPendiente = { pendientes: 0, waEnviado: 0, enColaLlamada: 0, archivadas: 0, resueltasHoy: 0, total: 0, lista: [] };
   }
 
   return res;

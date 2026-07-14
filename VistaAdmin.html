@@ -473,6 +473,20 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
 }
 .toolbar-divider { width:1.5px; align-self:stretch; background:var(--border); margin:0 4px; }
 
+/* Fila 1: título + estado de sync (izquierda) y TODAS las acciones —incluida Pausar,
+   que es una acción de emergencia, no una configuración— a la derecha, separada del
+   resto por su propio divisor para que se note que es distinta.
+   Fila 2 (.dashboard-config-strip): SOLO configuración que casi no cambia (prioridad,
+   orden biometría). display:inline-flex a propósito — la caja debe ajustarse a su
+   contenido, no estirarse al ancho completo, o queda espacio vacío después del botón
+   de ayuda que se ve como una franja a medio llenar. */
+.dashboard-header-row1 { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.dashboard-config-strip {
+    display:inline-flex; align-items:center; flex-wrap:wrap; gap:18px;
+    background:var(--bg-page); border:1px solid var(--border); border-radius:16px;
+    padding:12px 18px; margin-bottom:28px;
+}
+
 /* ================================================================
    MAIN CONTENT
    ================================================================ */
@@ -718,7 +732,7 @@ body { font-family:'Montserrat',sans-serif; background:var(--bg-page); color:var
     color: white;
     border: none;
     padding: 10px 18px;
-    border-radius: 12px;
+    border-radius: 50px;
     font-weight: 700;
     font-size: 0.8rem;
     display: flex;
@@ -974,55 +988,62 @@ html { scroll-behavior: smooth; }
 
 <div class="main-content">
     <div id="seccion-dashboard" class="seccion-admin">
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
-    <h1 class="page-title">Dashboard</h1>
-    <div class="d-flex gap-2 align-items-center" id="dashboardToolbarControles">
-        <div class="toolbar-group">
-            <span class="toolbar-group-label">Prioridad de asignación</span>
-            <div class="segmented-control" id="segmentedPrioridad">
-                <button class="seg-btn active" data-value="DIGITAL_PRIMERO" onclick="seleccionarPrioridad(this)">
-                    <i class="bi bi-laptop"></i> Digital
-                </button>
-                <button class="seg-btn" data-value="DESAPLAZAMIENTO_PRIMERO" onclick="seleccionarPrioridad(this)">
-                    <i class="bi bi-fingerprint"></i> Desaplazamiento
-                </button>
-                <button class="seg-btn" data-value="INDUCCION_PRIMERO" onclick="seleccionarPrioridad(this)">
-                    <i class="bi bi-mortarboard"></i> Inducciones
-                </button>
-            </div>
-        </div>
-        <div class="toolbar-group">
-            <span class="toolbar-group-label">Orden Biometría</span>
-            <div class="segmented-control" id="segmentedOrdenBio" title="Dentro de Desaplazamiento/Biometría, ¿a quién se llama primero según la fecha de resultado de SAI?">
-                <button class="seg-btn active" data-value="RECIENTE_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
-                    <i class="bi bi-sort-numeric-down-alt"></i> Reciente
-                </button>
-                <button class="seg-btn" data-value="ANTIGUO_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
-                    <i class="bi bi-sort-numeric-down"></i> Antiguo
-                </button>
-            </div>
-        </div>
-        <button class="btn-outline-brand" id="btn-ayuda-orden" onclick="mostrarAyudaOrdenAsignacion()" title="¿Qué hacen estos botones?">
-            <i class="bi bi-question-circle"></i>
-        </button>
-        <div class="toolbar-divider"></div>
-        <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()" title="Pausa a TODOS los analistas del sistema">
-            <i class="bi bi-exclamation-octagon-fill"></i> PAUSAR
-        </button>
-        <div class="toolbar-divider"></div>
+<div class="dashboard-header-row1">
+    <div class="d-flex flex-column gap-1">
+        <h1 class="page-title">Dashboard</h1>
+        <span class="sync-info" id="sync-info">
+            <i class="bi bi-clock"></i>
+            <span id="sync-timestamp">Sin sincronizar</span>
+        </span>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
         <button class="btn-outline-brand" onclick="verificarDesaplazamientosManual()">
             <i class="bi bi-clipboard-check"></i> Verificar Bio
         </button>
         <button class="btn-outline-brand" id="btn-refresh" onclick="refrescarDashboardConOverlay()">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
-        <span class="sync-info" id="sync-info">
-            <i class="bi bi-clock"></i>
-            <span id="sync-timestamp">Sin sincronizar</span>
-        </span>
+        <div class="toolbar-divider"></div>
+        <button class="btn-panic-premium" onclick="ejecutarPanicGlobal()" title="Pausa a TODOS los analistas del sistema">
+            <i class="bi bi-exclamation-octagon-fill"></i> Pausar Asignación
+        </button>
     </div>
 </div>
-        <div class="metrics-row metrics-row-5">
+<div class="dashboard-config-strip" id="dashboardToolbarControles">
+    <div class="toolbar-group">
+        <span class="toolbar-group-label">Prioridad de asignación</span>
+        <div class="segmented-control" id="segmentedPrioridad">
+            <button class="seg-btn active" data-value="DIGITAL_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-laptop"></i> Digital
+            </button>
+            <button class="seg-btn" data-value="DESAPLAZAMIENTO_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-fingerprint"></i> Desaplazamiento
+            </button>
+            <button class="seg-btn" data-value="INDUCCION_PRIMERO" onclick="seleccionarPrioridad(this)">
+                <i class="bi bi-mortarboard"></i> Inducciones
+            </button>
+        </div>
+    </div>
+    <div class="toolbar-group">
+        <span class="toolbar-group-label">Orden Biometría</span>
+        <div class="segmented-control" id="segmentedOrdenBio" title="Dentro de Desaplazamiento/Biometría, ¿a quién se llama primero según la fecha de resultado de SAI?">
+            <button class="seg-btn active" data-value="RECIENTE_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                <i class="bi bi-sort-numeric-down-alt"></i> Reciente
+            </button>
+            <button class="seg-btn" data-value="ANTIGUO_PRIMERO" onclick="seleccionarOrdenDesaplazamiento(this)">
+                <i class="bi bi-sort-numeric-down"></i> Antiguo
+            </button>
+        </div>
+    </div>
+    <button class="btn-outline-brand" id="btn-ayuda-orden" onclick="mostrarAyudaOrdenAsignacion()" title="¿Qué hacen estos botones?">
+        <i class="bi bi-question-circle"></i>
+    </button>
+    <div class="toolbar-divider"></div>
+    <button class="btn-outline-brand" onclick="abrirDesarchivarBiometrias()" title="Recuperar biometrías archivadas de vuelta a la cola de llamada. Los conteos y el análisis por período están en Métricas.">
+        <i class="bi bi-arrow-counterclockwise"></i> Desarchivar Biometrías
+    </button>
+</div>
+        <div class="metrics-row">
             <div class="metric-card filled" style="cursor:pointer;" onclick="verDetalleTarjeta('sinAsignar')">
                 <div class="card-top">
                     <span class="metric-label">Sin Asignar (Total)</span>
@@ -1030,17 +1051,6 @@ html { scroll-behavior: smooth; }
                 </div>
                 <div class="metric-value" id="countNube">0</div>
                 <div class="desglose-bar" id="desgloseSinAsignar"></div>
-            </div>
-            <div class="metric-card" style="cursor:pointer;" onclick="verDetalleTarjeta('biometriaPendiente')">
-                <div class="card-top">
-                    <span class="metric-label">Biometría en Espera</span>
-                    <div class="card-arrow"><i class="bi bi-fingerprint"></i></div>
-                </div>
-                <div class="metric-value" id="countBioPendiente">0</div>
-                <div class="metric-trend">
-                    <span class="trend-chip" style="background:rgba(234,179,8,0.1);color:#a16207;"><i class="bi bi-clock-history me-1"></i>En seguimiento</span>
-                    <span id="chipBioProcesadas" style="font-size:0.75rem;color:var(--text-muted);margin-left:4px;"></span>
-                </div>
             </div>
             <div class="metric-card" style="cursor:pointer;" onclick="verDetalleTarjeta('enGestion')">
                 <div class="card-top">
@@ -3181,18 +3191,6 @@ function refrescarDashboard() {
         document.getElementById('countActivos').innerText = res.activos || 0;
         document.getElementById('countInactivos').innerText = res.inactivos || 0;
 
-        if (res.biometriaPendiente) {
-            document.getElementById('countBioPendiente').innerText = res.biometriaPendiente.total || 0;
-            var espContacto = res.biometriaPendiente.pendientes || 0;
-            var wa = res.biometriaPendiente.waEnviado || 0;
-            var cola = res.biometriaPendiente.enColaLlamada || 0;
-            var chipParts = [];
-            if (espContacto > 0) chipParts.push(espContacto + ' esperando contacto');
-            if (wa > 0) chipParts.push(wa + ' con WA');
-            if (cola > 0) chipParts.push(cola + ' en cola');
-            document.getElementById('chipBioProcesadas').innerText = chipParts.length > 0 ? '· ' + chipParts.join(', ') : '';
-        }
-
         if (res.desglose) {
             renderDesgloseBar('desgloseSinAsignar', res.desglose.sinAsignar);
             renderDesgloseBar('desgloseEnGestion', res.desglose.enGestion);
@@ -3369,10 +3367,32 @@ function verDetalleTarjeta(tipo) {
     _detalleModalFiltro = '';
 
     if (tipo === 'asesores') {
+        var listaAct = data.listaActivos || [];
+        var htmlAct = '<div style="text-align:center;padding:16px 20px 4px;">';
+        htmlAct += '<p style="font-size:2.6rem;font-weight:800;color:#253150;margin:0;line-height:1;">' + data.activos + '</p>';
+        htmlAct += '<p style="color:var(--gris);margin:2px 0 16px;">analistas activos ahora</p>';
+        htmlAct += '</div>';
+
+        if (listaAct.length === 0) {
+            htmlAct += '<div style="text-align:center;padding:20px;color:var(--gris-light);"><i class="bi bi-inbox" style="font-size:1.8rem;"></i><p style="font-size:0.85rem;margin-top:6px;">Sin analistas activos ahora.</p></div>';
+        } else {
+            htmlAct += '<div style="max-height:280px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:12px;text-align:left;">';
+            listaAct.forEach(function(a, idx) {
+                htmlAct += '<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;' + (idx > 0 ? 'border-top:1px solid #f1f5f9;' : '') + '">';
+                htmlAct += '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0;"></span>';
+                htmlAct += '<span style="font-size:0.85rem;font-weight:700;color:#253150;flex:1;">' + a.nombre + '</span>';
+                if (a.especialidad) htmlAct += '<span style="font-size:0.68rem;font-weight:700;color:var(--gris);background:#f1f5f9;padding:3px 9px;border-radius:8px;">' + a.especialidad + '</span>';
+                htmlAct += '</div>';
+            });
+            htmlAct += '</div>';
+        }
+
+        htmlAct += '<p style="text-align:center;margin-top:16px;"><button class="btn-primary-brand" onclick="Swal.close();mostrarSeccion(\'usuarios\',null);" style="display:inline-flex;border:none;cursor:pointer;"><i class="bi bi-people-fill me-2"></i>Ver detalle en Usuarios</button></p>';
+
         Swal.fire({
             title: '<i class="bi bi-people me-2"></i>Analistas',
-            html: '<div style="text-align:center;padding:20px;"><p style="font-size:3rem;font-weight:800;color:#253150;margin:0;">' + data.activos + '</p><p style="color:var(--gris);">analistas activos ahora</p><p style="margin-top:16px;"><button class="btn-primary-brand" onclick="Swal.close();mostrarSeccion(\'usuarios\',null);" style="display:inline-flex;border:none;cursor:pointer;"><i class="bi bi-people-fill me-2"></i>Ver detalle en Usuarios</button></p></div>',
-            showConfirmButton: false, showCloseButton: true, width: 420,
+            html: htmlAct,
+            showConfirmButton: false, showCloseButton: true, width: 440,
             customClass: { popup: 'rounded-4' }
         });
         return;
@@ -3388,85 +3408,6 @@ function _renderDetalleModal(tipo, filtroTipo) {
     });
 
     var title = '', icon = '', items = [], color = '#253150', desgloseKey = '', total = 0, col2Label = 'Póliza';
-
-    if (tipo === 'biometriaPendiente') {
-        title = 'Biometría en Espera'; icon = 'bi-fingerprint'; color = '#b45309';
-        var bio = data.biometriaPendiente || {};
-        total = bio.total || 0;
-        items = bio.lista || [];
-
-        var htmlBio = '<div style="display:flex;align-items:center;gap:16px;padding:20px 24px;border-radius:16px;color:white;margin-bottom:20px;background:linear-gradient(135deg,' + color + ',' + _hexToRgba(color, 0.75) + ');">';
-        htmlBio += '<div style="width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="bi ' + icon + '" style="font-size:1.4rem;"></i></div>';
-        htmlBio += '<div><div style="font-size:0.68rem;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:0.5px;">' + title + '</div>';
-        htmlBio += '<div style="font-size:2.4rem;font-weight:800;letter-spacing:-2px;line-height:1;">' + total + '</div></div></div>';
-
-        htmlBio += '<div style="display:flex;gap:10px;margin-bottom:20px;">';
-        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(234,179,8,0.1);color:#a16207;border:2px solid rgba(234,179,8,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-hourglass-split me-1"></i>Esperando contacto</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.pendientes || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#a16207;opacity:0.8;margin-top:4px;">Aún no se le envía WhatsApp</div></div>';
-        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(147,51,234,0.1);color:#7e22ce;border:2px solid rgba(147,51,234,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-whatsapp me-1"></i>WA enviado</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.waEnviado || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#7e22ce;opacity:0.8;margin-top:4px;">Esperando el próximo corte para escalar</div></div>';
-        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(29,78,216,0.1);color:#1d4ed8;border:2px solid rgba(29,78,216,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-arrow-right-circle me-1"></i>En cola de llamada</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.enColaLlamada || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#1d4ed8;opacity:0.8;margin-top:4px;">Ya la puede tomar un analista</div></div>';
-        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(185,28,28,0.08);color:#b91c1c;border:2px solid rgba(185,28,28,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-archive me-1"></i>Archivadas</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.archivadas || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#b91c1c;opacity:0.8;margin-top:4px;">Se venció en cola sin ser llamada</div></div></div>';
-
-        htmlBio += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">';
-        htmlBio += '<span style="font-size:0.75rem;color:var(--gris-light);"><i class="bi bi-check2-circle me-1"></i>' + (bio.resueltasHoy || 0) + ' resuelta(s) hoy por SAI sin necesitar analista</span>';
-        htmlBio += '<button type="button" class="btn btn-sm" style="background:rgba(185,28,28,0.08);color:#b91c1c;border:1px solid rgba(185,28,28,0.3);font-weight:700;font-size:0.78rem;" onclick="abrirDesarchivarBiometrias()"><i class="bi bi-arrow-counterclockwise me-1"></i>Desarchivar casos</button>';
-        htmlBio += '</div>';
-
-        htmlBio += '<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">';
-        htmlBio += '<div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;">';
-        htmlBio += '<span style="font-size:0.78rem;font-weight:700;color:#253150;"><i class="bi bi-list-ul me-1"></i>Detalle de solicitudes</span>';
-        htmlBio += '<span style="font-size:0.7rem;color:var(--gris-light);font-weight:600;margin-left:auto;">' + items.length + ' registros</span></div>';
-
-        if (items.length === 0) {
-            htmlBio += '<div style="text-align:center;padding:40px 20px;"><i class="bi bi-inbox" style="font-size:2.2rem;color:var(--gris-pale);"></i><p style="color:var(--gris-light);margin-top:8px;font-size:0.85rem;">Sin biometrías en espera</p></div>';
-        } else {
-            htmlBio += '<div style="max-height:300px;overflow-y:auto;">';
-            htmlBio += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
-            htmlBio += '<thead><tr style="position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;">';
-            htmlBio += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;">Solicitud</th>';
-            htmlBio += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;">Póliza</th>';
-            htmlBio += '<th style="padding:10px 14px;text-align:right;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;">Estado</th>';
-            htmlBio += '</tr></thead><tbody>';
-            var ESTILO_FASE = {
-                'Esperando contacto': { color: '#a16207', icon: 'bi-hourglass-split' },
-                'WA enviado': { color: '#7e22ce', icon: 'bi-whatsapp' },
-                'En cola de llamada': { color: '#1d4ed8', icon: 'bi-arrow-right-circle' }
-            };
-            items.forEach(function(item) {
-                var estilo = ESTILO_FASE[item.estadoSai] || { color: '#706F6F', icon: 'bi-info-circle' };
-                var estadoLabel = item.estadoSai;
-                var estadoColor = estilo.color;
-                var estadoIcon = estilo.icon;
-                htmlBio += '<tr style="border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">';
-                htmlBio += '<td style="padding:10px 14px;font-weight:700;color:#1e293b;">' + item.id + '</td>';
-                htmlBio += '<td style="padding:10px 14px;color:var(--gris);">' + item.poliza + '</td>';
-                htmlBio += '<td style="padding:10px 14px;text-align:right;"><span style="background:' + _hexToRgba(estadoColor, 0.1) + ';color:' + estadoColor + ';border:1px solid ' + _hexToRgba(estadoColor, 0.3) + ';padding:3px 8px;border-radius:6px;font-size:0.68rem;font-weight:700;"><i class="bi ' + estadoIcon + ' me-1"></i>' + estadoLabel + '</span></td>';
-                htmlBio += '</tr>';
-            });
-            htmlBio += '</tbody></table></div>';
-        }
-        htmlBio += '</div>';
-
-        Swal.fire({
-            html: htmlBio,
-            showConfirmButton: true, confirmButtonText: 'Cerrar', confirmButtonColor: color,
-            width: 680, showCloseButton: true,
-            showClass: { popup: 'animate__animated animate__fadeIn animate__faster' },
-            customClass: { popup: 'rounded-4', htmlContainer: 'px-0' }
-        });
-        return;
-    }
 
     if (tipo === 'sinAsignar') {
         title = 'Sin Asignar'; icon = 'bi-cloud-arrow-down'; color = '#BD0F14';
@@ -3489,15 +3430,20 @@ function _renderDetalleModal(tipo, filtroTipo) {
     var filteredItems = filtroTipo ? items.filter(function(i) { return i.tipo === filtroTipo; }) : items;
     var dg = (data.desglose && data.desglose[desgloseKey]) || {};
 
-    // Header con total
-    var html = '<div style="display:flex;align-items:center;gap:16px;padding:20px 24px;border-radius:16px;color:white;margin-bottom:20px;background:linear-gradient(135deg,' + color + ',' + _hexToRgba(color, 0.75) + ');">';
-    html += '<div style="width:48px;height:48px;border-radius:14px;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="bi ' + icon + '" style="font-size:1.4rem;"></i></div>';
-    html += '<div><div style="font-size:0.68rem;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:0.5px;">' + title + '</div>';
-    html += '<div style="font-size:2.4rem;font-weight:800;letter-spacing:-2px;line-height:1;">' + total + '</div></div></div>';
+    // Header compacto: icono + título a la izquierda, total a la derecha — sin repetir el
+    // número como protagonista, ya se veía igual de grande en la tarjeta que abrió el modal.
+    var html = '<div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:14px;color:white;margin-bottom:18px;background:linear-gradient(135deg,' + color + ',' + _hexToRgba(color, 0.75) + ');">';
+    html += '<div style="width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="bi ' + icon + '" style="font-size:1.1rem;"></i></div>';
+    html += '<div style="flex:1;min-width:0;"><div style="font-size:0.66rem;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:0.5px;">' + title + '</div>';
+    html += '<div style="font-size:0.74rem;opacity:0.8;margin-top:1px;">Desglose por tipo</div></div>';
+    html += '<div style="font-size:1.7rem;font-weight:800;letter-spacing:-1px;line-height:1;flex-shrink:0;">' + total + '</div></div>';
 
-    // Cards por tipo (siempre mostrar todos para dar visibilidad completa)
+    // Cards por tipo (siempre mostrar todos para dar visibilidad completa). Grid con
+    // auto-fill en vez de flex — con un número de tipos que no es múltiplo exacto de
+    // columnas (hoy son 7), flex:1 estiraba la última tarjeta sola a 100% de ancho; el
+    // grid deja esa celda simplemente vacía, sin inflar ninguna tarjeta de más.
     if (tiposInfo.length > 0) {
-        html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px;">';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:20px;">';
         tiposInfo.forEach(function(t) {
             var val = dg[t.key] || 0;
             var bg = _hexToRgba(t.color, 0.1);
@@ -3509,7 +3455,7 @@ function _renderDetalleModal(tipo, filtroTipo) {
                 : isEmpty
                     ? 'background:#f8fafc;color:var(--gris-light);border:2px solid #e2e8f0;opacity:0.7;'
                     : 'background:' + bg + ';color:' + t.color + ';border:2px solid ' + border + ';cursor:pointer;';
-            html += '<div onclick="' + (isEmpty ? '' : "_filtrarDetalle('" + t.tipoItem + "')") + '" style="flex:1;min-width:calc(33.33% - 8px);padding:14px 10px;border-radius:14px;text-align:center;transition:all 0.15s;' + cardStyle + '">';
+            html += '<div onclick="' + (isEmpty ? '' : "_filtrarDetalle('" + t.tipoItem + "')") + '" style="padding:14px 10px;border-radius:14px;text-align:center;transition:all 0.15s;' + cardStyle + '">';
             html += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;' + (isEmpty ? '' : 'opacity:0.85;') + '"><i class="bi ' + t.icon + ' me-1"></i>' + t.label + '</div>';
             html += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + val + '</div>';
             html += '</div>';
@@ -3531,18 +3477,25 @@ function _renderDetalleModal(tipo, filtroTipo) {
     if (filteredItems.length === 0) {
         html += '<div style="text-align:center;padding:40px 20px;"><i class="bi bi-inbox" style="font-size:2.2rem;color:var(--gris-pale);"></i><p style="color:var(--gris-light);margin-top:8px;font-size:0.85rem;">Sin registros en esta categoría</p></div>';
     } else {
+        // Póliza es siempre corta (máx. 6 dígitos); Analista puede traer nombres largos —
+        // la misma columna no debería reservar el mismo ancho para ambos casos.
+        var col1Pct = col2Label === 'Analista' ? 18 : 24;
+        var col2Pct = col2Label === 'Analista' ? 52 : 18;
+        var col3Pct = 100 - col1Pct - col2Pct;
+
         html += '<div style="max-height:300px;overflow-y:auto;">';
-        html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">';
+        html += '<colgroup><col style="width:' + col1Pct + '%;"><col style="width:' + col2Pct + '%;"><col style="width:' + col3Pct + '%;"></colgroup>';
         html += '<thead><tr style="position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;">';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Solicitud</th>';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">' + col2Label + '</th>';
-        html += '<th style="padding:10px 14px;text-align:right;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Tipo</th>';
+        html += '<th style="padding:10px 14px;text-align:center;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Tipo</th>';
         html += '</tr></thead><tbody>';
         filteredItems.forEach(function(item) {
             html += '<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.1s;" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">';
             html += '<td style="padding:10px 14px;font-weight:700;color:#1e293b;">' + item.id + '</td>';
-            html += '<td style="padding:10px 14px;color:var(--gris);">' + item.col2 + (item.extra ? ' <span style="color:#15803d;font-weight:600;font-size:0.72rem;">· ' + item.extra + '</span>' : '') + '</td>';
-            html += '<td style="padding:10px 14px;text-align:right;">' + getBadgeTipo(item.tipo) + '</td>';
+            html += '<td style="padding:10px 14px;color:var(--gris);word-break:break-word;">' + item.col2 + (item.extra ? ' <span style="color:#15803d;font-weight:600;font-size:0.72rem;">· ' + item.extra + '</span>' : '') + '</td>';
+            html += '<td style="padding:10px 14px;text-align:center;">' + getBadgeTipo(item.tipo) + '</td>';
             html += '</tr>';
         });
         html += '</tbody></table></div>';
@@ -3560,7 +3513,7 @@ function _renderDetalleModal(tipo, filtroTipo) {
         width: 680,
         showCloseButton: true,
         showClass: { popup: 'animate__animated animate__fadeIn animate__faster' },
-        customClass: { popup: 'rounded-4', htmlContainer: 'px-0' },
+        customClass: { popup: 'rounded-4' },
         didOpen: function() { _detalleModalFiltro = filtroTipo; }
     });
 }

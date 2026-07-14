@@ -282,6 +282,11 @@ function autoAsignarBiometria() {
     const datosSol = hojaSolicitud.getRange(2, 1, lastRowSol - 1, 38).getValues();
 
     let candidatosElegibles = [];
+    // Misma ventana de liberación que usa RequestLeadUnificado (ver
+    // _calcularLimiteLiberacionDesaplazamiento en este archivo), para que ambas rutas de
+    // asignación (manual y automática) respeten la regla real de operación: un caso "de
+    // esta tarde" no se ofrece hasta la sesión de mañana del siguiente día hábil.
+    const limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
 
     for (let i = 0; i < datosSol.length; i++) {
       const row = datosSol[i];
@@ -297,7 +302,12 @@ function autoAsignarBiometria() {
 
       // fechaResultado (col S / índice 18): misma columna que usa RequestLeadUnificado
       // para ordenar desaplazamiento, así ambas rutas de asignación quedan consistentes.
-      candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: _parseDateUnif(row[18]) });
+      // _parseDateUnif devuelve un NÚMERO (ms desde epoch), no un Date — y 9999999999999
+      // si no pudo parsear fecha; ese caso no se filtra, para no bloquearlo para siempre.
+      const fechaOrdCandidato = _parseDateUnif(row[18]);
+      if (fechaOrdCandidato !== 9999999999999 && fechaOrdCandidato >= limiteLiberacionDesaplazamiento.getTime()) continue;
+
+      candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: fechaOrdCandidato });
       idsEnGestion.add(id);
     }
 
@@ -770,6 +780,134 @@ function _archivarColaBiometriaVencida() {
   }
 }
 
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Simula la
+// Fase 1 de _archivarColaBiometriaVencida() (misma selección de candidatos, mismo umbral)
+// pero sin archivar nada, para poder revisar antes de que corra el trigger real qué se
+// archivaría y por qué. Útil para confirmar que el atrasado de un finde/festivo no se
+// está por archivar antes de tiempo, o para entender por qué un caso puntual sí calificó.
+function diagnosticarArchivadoColaBiometria() {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hoja) { Logger.log("Hoja 'solicitud' no encontrada."); return; }
+
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en 'solicitud'."); return; }
+
+  var ahora = new Date();
+  var vent = _calcularUmbralArchivoColaBiometria(ahora);
+  var mapaEscalada = _mapaFechaEscaladaBiometria();
+
+  Logger.log("=== DIAGNÓSTICO archivado de cola de biometría (" + ahora + ") ===");
+  Logger.log("Corte detectado: " + vent.corteOrigen + " | Umbral: " + vent.umbral);
+
+  var datos = hoja.getRange(2, 1, lastRow - 1, 58).getValues();
+  var seArchivarian = [];
+  var seSalvan = [];
+  var sinFecha = [];
+
+  for (var i = 0; i < datos.length; i++) {
+    var row = datos[i];
+    var estado = String(row[16]).toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+    var asignado = String(row[27]).trim();
+    if (asignado !== "") continue;
+
+    var solicitud = String(row[0]).trim();
+    if (!solicitud) continue;
+
+    var fechaEscalada = mapaEscalada.get(solicitud);
+    var fuente = fechaEscalada ? "ESCALADA (real)" : null;
+    var fecha = fechaEscalada;
+    if (!fecha) { fecha = _parseFechaGAS(row[18]); if (fecha) fuente = "fechaResultado (fallback)"; }
+    if (!fecha) { fecha = _parseFechaGAS(row[17]); if (fecha) fuente = "fechaRadicacion (fallback)"; }
+
+    if (!fecha) {
+      sinFecha.push(solicitud);
+      continue;
+    }
+
+    var horas = Math.round((ahora.getTime() - fecha.getTime()) / (60 * 60 * 1000) * 10) / 10;
+    var linea = solicitud + " | fuente=" + fuente + " | fecha=" + fecha + " | horas_en_cola=" + horas;
+
+    if (fecha.getTime() < vent.umbral.getTime()) {
+      seArchivarian.push(linea);
+    } else {
+      seSalvan.push(linea);
+    }
+  }
+
+  Logger.log("--- SE ARCHIVARÍAN si corriera el trigger ahora (" + seArchivarian.length + ") ---");
+  seArchivarian.forEach(function(l) { Logger.log("🔴 " + l); });
+
+  Logger.log("--- NO se archivan, siguen dentro de su ventana (" + seSalvan.length + ") ---");
+  seSalvan.forEach(function(l) { Logger.log("🟢 " + l); });
+
+  if (sinFecha.length > 0) {
+    Logger.log("--- SIN fecha parseable, no se archivan por falta de dato (" + sinFecha.length + ") ---");
+    Logger.log(sinFecha.join(", "));
+  }
+
+  Logger.log("=== FIN DIAGNÓSTICO ===");
+}
+
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Con los datos
+// reales de "solicitud" en este momento, muestra qué candidatos a desaplazamiento
+// quedarían LIBERADOS (se le pueden ofrecer a un analista ahora, vía RequestLeadUnificado
+// o autoAsignarBiometria) vs. ESPERANDO su ventana (_calcularLimiteLiberacionDesaplazamiento)
+// si se pidiera una asignación en este instante. No asigna ni modifica nada.
+function diagnosticarLiberacionDesaplazamiento() {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hoja) { Logger.log("Hoja 'solicitud' no encontrada."); return; }
+
+  var lastRow = hoja.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en 'solicitud'."); return; }
+
+  var ahora = new Date();
+  var limite = _calcularLimiteLiberacionDesaplazamiento(ahora);
+  var sesion = ahora.getHours() < 12 ? "MAÑANA (antes de 12m)" : "TARDE (desde 12m)";
+
+  Logger.log("=== DIAGNÓSTICO ventana de liberación desaplazamiento (" + ahora + ") ===");
+  Logger.log("Sesión: " + sesion + " | Límite de liberación (fechaResultado <): " + limite);
+
+  var datos = hoja.getRange(2, 1, lastRow - 1, 59).getValues();
+  var liberados = [];
+  var esperando = [];
+
+  for (var i = 0; i < datos.length; i++) {
+    var row = datos[i];
+    var estado = String(row[16]).toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+    var asignado = String(row[27]).trim();
+    if (asignado !== "") continue;
+
+    var solicitud = String(row[0]).trim();
+    if (!solicitud) continue;
+
+    var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
+    // _parseDateUnif devuelve un NÚMERO (ms desde epoch), no un Date — y 9999999999999
+    // si no pudo parsear fecha (fechaResultado vacía).
+    var fechaResultadoMs = _parseDateUnif(row[18]);
+    var sinFechaParseable = fechaResultadoMs === 9999999999999;
+
+    var linea = solicitud + " | fechaResultado=" + (sinFechaParseable ? "(sin fecha)" : new Date(fechaResultadoMs)) + (reasignada ? " | REASIGNADA (bypass)" : "");
+
+    if (reasignada || sinFechaParseable || fechaResultadoMs < limite.getTime()) {
+      liberados.push(linea);
+    } else {
+      esperando.push(linea);
+    }
+  }
+
+  Logger.log("--- LIBERADOS, se pueden ofrecer a un analista ahora (" + liberados.length + ") ---");
+  liberados.forEach(function(l) { Logger.log("🟢 " + l); });
+
+  Logger.log("--- ESPERANDO su ventana, no se ofrecen todavía (" + esperando.length + ") ---");
+  esperando.forEach(function(l) { Logger.log("🟡 " + l); });
+
+  Logger.log("=== FIN DIAGNÓSTICO ===");
+}
+
 // Trigger 8am y 12pm: escala a la cola de asignación (llamada) los pendientes que ya
 // están en fase WA_ENVIADO (segundo contacto) y SAI sigue diciendo pendiente.
 // Si SAI ya no dice pendiente, el caso se marca resuelto y no se llama.
@@ -777,6 +915,11 @@ function _archivarColaBiometriaVencida() {
 // su ventana de ~12h sin ser asignado, y solo entonces escala los nuevos pendientes.
 function cicloBiometriaPendiente() {
   Logger.log("=== INICIO cicloBiometriaPendiente ===");
+  if (_esDiaNoHabilOperacion(new Date())) {
+    Logger.log("⏸️ Día no hábil para operación (domingo o festivo) — se omite limpieza/archivado/escalada. Nadie está llamando hoy, así que archivar por tiempo de espera penalizaría casos sin que operación tuviera oportunidad real de tomarlos.");
+    Logger.log("=== FIN cicloBiometriaPendiente ===");
+    return;
+  }
   limpiarBiometriasResueltas();
   _archivarColaBiometriaVencida();
   _procesarCortePendientes();
@@ -1010,19 +1153,13 @@ function _homologarDatosApi(item) {
   };
 }
 
-// Ley 2300 de 2023: las comunicaciones de cobranza (incluye WhatsApp) solo se pueden
-// enviar lunes a viernes 7:00-19:00 y sábados 8:00-15:00. Domingos y festivos, prohibido.
-// Se valida aquí (y no solo confiando en el horario del trigger en GAS) para que el
-// envío quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
-function _dentroDeVentanaLey2300() {
-  var ahora = new Date();
-  var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
-  var horaStr = Utilities.formatDate(ahora, "GMT-5", "HH:mm");
-  var horaNum = parseInt(horaStr.split(':')[0], 10) + parseInt(horaStr.split(':')[1], 10) / 60;
-
-  // Mediodía fijo para hallar el día de la semana en zona Bogotá sin líos de DST/borde.
+// true si la fecha dada es domingo o festivo (hoja "Festivos"). Extraído de
+// _dentroDeVentanaLey2300() para poder reutilizarlo en guardas que no dependen de la
+// franja horaria de la ley (p.ej. si el ciclo de biometría debe correr hoy o no).
+function _esDiaNoHabilOperacion(fecha) {
+  var fechaStr = Utilities.formatDate(fecha, "GMT-5", "yyyy-MM-dd");
   var dow = new Date(fechaStr + "T12:00:00").getDay(); // 0=domingo … 6=sábado
-  if (dow === 0) return false;
+  if (dow === 0) return true;
 
   try {
     var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -1033,16 +1170,47 @@ function _dentroDeVentanaLey2300() {
         var celda = valores[i][0];
         var fFestivo = celda instanceof Date ? celda : new Date(celda);
         if (!isNaN(fFestivo.getTime()) && Utilities.formatDate(fFestivo, "GMT-5", "yyyy-MM-dd") === fechaStr) {
-          return false;
+          return true;
         }
       }
     }
   } catch (e) {
-    Logger.log("⚠️ No se pudo verificar hoja Festivos para Ley 2300, se asume día hábil: " + e.message);
+    Logger.log("⚠️ No se pudo verificar hoja Festivos, se asume día hábil: " + e.message);
   }
+  return false;
+}
+
+// Ley 2300 de 2023: las comunicaciones de cobranza (incluye WhatsApp) solo se pueden
+// enviar lunes a viernes 7:00-19:00 y sábados 8:00-15:00. Domingos y festivos, prohibido.
+// Se valida aquí (y no solo confiando en el horario del trigger en GAS) para que el
+// envío quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
+function _dentroDeVentanaLey2300() {
+  var ahora = new Date();
+  if (_esDiaNoHabilOperacion(ahora)) return false;
+
+  var horaStr = Utilities.formatDate(ahora, "GMT-5", "HH:mm");
+  var horaNum = parseInt(horaStr.split(':')[0], 10) + parseInt(horaStr.split(':')[1], 10) / 60;
+  var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
+  var dow = new Date(fechaStr + "T12:00:00").getDay();
 
   if (dow === 6) return horaNum >= 8 && horaNum < 15;
   return horaNum >= 7 && horaNum < 19;
+}
+
+// Ventana de liberación para asignar desaplazamiento/biometría, según la regla real de
+// operación: en la sesión de la mañana (antes de las 12m) solo se libera lo de ANTES de
+// hoy — cualquier día anterior, sin importar cuántos, así el atraso de un festivo/fin de
+// semana se resuelve solo, sin que el sistema necesite saber que hubo un festivo de por
+// medio. Desde las 12m se libera además lo de hoy en la mañana (00:00-11:59am). Un caso
+// con fechaResultado de esta tarde nunca se libera hasta la sesión de mañana del
+// siguiente día hábil. Se usa como límite superior (exclusivo) sobre fechaResultado — el
+// límite inferior no importa: entre más viejo, más prioridad ya le da el orden existente
+// (ORDEN_DESAPLAZAMIENTO). Mismo patrón de anclaje a "hoy" que
+// _calcularUmbralArchivoColaBiometria(), pero para el límite opuesto.
+function _calcularLimiteLiberacionDesaplazamiento(ahora) {
+  var hoy00 = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  if (ahora.getHours() < 12) return hoy00;
+  return new Date(hoy00.getTime() + 12 * 60 * 60 * 1000);
 }
 
 // Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
@@ -1250,6 +1418,24 @@ function forzarPrimerContactoBiometriaManual() {
   Logger.log("=== FIN forzarPrimerContactoBiometriaManual ===");
 }
 
+// Tope de candidatos por corrida — con backlogs grandes, consultar a SAI uno por uno (1s
+// de pausa + latencia real) puede tomar más de los 30 min que da Apps Script. Si eso pasa,
+// la corrida se corta a la mitad del loop de consultas — y como antes solo se escribía
+// hasta el final, no quedaba nada guardado, así que el siguiente corte repetía las mismas
+// 1369 consultas desde cero sin avanzar nunca (caso real: corrida de 2026-07-14 11:25am,
+// seguía sin terminar pasados 23 minutos). Los más antiguos (por fecha_actualizacion_fase,
+// o sea los que más tiempo llevan esperando desde que se les mandó el WA) se procesan
+// primero, así el atraso se pone al día en unas pocas corridas en vez de nunca.
+var MAX_CANDIDATOS_POR_CORTE = 500;
+// Respaldo por tiempo además del tope de cantidad: si SAI responde más lento de lo normal
+// un día dado, 500 candidatos podrían tardar más de lo esperado. Al llegar a este límite se
+// deja de CONSULTAR candidatos nuevos (lo ya escrito se queda escrito) — así la corrida
+// siempre cierra con margen antes del límite real de Apps Script.
+var TIEMPO_MAXIMO_CONSULTAS_CORTE_MS = 20 * 60 * 1000;
+// Cada cuántos candidatos procesados se escribe en la hoja, en vez de esperar a que
+// termine todo el lote — así una corrida interrumpida no pierde el trabajo ya hecho.
+var TAMANO_BLOQUE_ESCRITURA_CORTE = 50;
+
 // Escalación: pendientes que ya están en fase WA_ENVIADO (segundo contacto) y siguen
 // pendientes en SAI se escalan a la cola de asignación (llamada).
 function _procesarCortePendientes() {
@@ -1262,7 +1448,7 @@ function _procesarCortePendientes() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, COL_FECHA_ACTUALIZACION_FASE).getValues();
 
   var pendientes = [];
   for (var i = 0; i < datos.length; i++) {
@@ -1270,7 +1456,8 @@ function _procesarCortePendientes() {
     if (fase !== "WA_ENVIADO") continue; // este corte solo escala casos que ya tuvieron su oportunidad por WhatsApp
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
-    pendientes.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
+    var fechaFase = _parseFechaGAS(datos[i][COL_FECHA_ACTUALIZACION_FASE - 1]);
+    pendientes.push({ fila: i + 2, consecutivo: consecutivo, ts: fechaFase ? fechaFase.getTime() : 0 });
   }
 
   if (pendientes.length === 0) {
@@ -1278,63 +1465,82 @@ function _procesarCortePendientes() {
     return;
   }
 
-  Logger.log(pendientes.length + " pendientes a escalar en este corte.");
+  pendientes.sort(function(a, b) { return a.ts - b.ts; }); // más antiguos primero
+  var totalPendientes = pendientes.length;
+  var candidatos = pendientes.slice(0, MAX_CANDIDATOS_POR_CORTE);
+  Logger.log(totalPendientes + " pendientes en total; procesando hasta " + candidatos.length + " en este corte (los más antiguos primero).");
 
-  var resultados = [];
-  for (var p = 0; p < pendientes.length; p++) {
-    var datosApi = _consultarSaiIndividual(pendientes[p].consecutivo);
-    resultados.push({ item: pendientes[p], datosApi: datosApi });
-    Utilities.sleep(1000);
-  }
+  var solicitudesParaAsignar = [];
+  var actualizaciones = []; // { fila, fase, fecha, estadoSai }
 
-  var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para procesar corte de pendientes: " + e.message);
-    return;
-  }
-
-  try {
-    var solicitudesParaAsignar = [];
-    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-
-    for (var r = 0; r < resultados.length; r++) {
-      var item = resultados[r].item;
-      var datosApi = resultados[r].datosApi;
-
-      if (!datosApi) {
-        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
-        continue;
-      }
-
-      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
-      hojaBio.getRange(item.fila, 63).setValue(statusActual); // nuevo_estado_sai
-
-      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
-        hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
-        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-        Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
-        continue;
-      }
-
-      solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
-      hojaBio.getRange(item.fila, 76).setValue("ESCALADA");
-      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-      Logger.log("📞 " + item.consecutivo + " sigue pendiente tras WhatsApp → escalado a asignación (llamada).");
+  function _volcarBloque() {
+    if (actualizaciones.length === 0) return;
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (e) {
+      Logger.log("❌ Lock no disponible para volcar bloque del corte: " + e.message);
+      return;
     }
-
-    SpreadsheetApp.flush();
-    lock.releaseLock();
-
+    try {
+      actualizaciones.forEach(function(u) {
+        hojaBio.getRange(u.fila, 63).setValue(u.estadoSai); // nuevo_estado_sai
+        hojaBio.getRange(u.fila, 76).setValue(u.fase);
+        hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(u.fecha);
+      });
+      SpreadsheetApp.flush();
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+    // procesarYGuardarLote() toma su propio lock — se llama fuera del try/finally de
+    // arriba para no quedar sosteniendo dos locks del mismo script a la vez.
     if (solicitudesParaAsignar.length > 0) {
-      procesarYGuardarLote(solicitudesParaAsignar);
-      Logger.log("✅ " + solicitudesParaAsignar.length + " solicitudes escaladas a la cola de asignación.");
+      procesarYGuardarLote(solicitudesParaAsignar.slice());
+      solicitudesParaAsignar.length = 0;
+    }
+    actualizaciones = [];
+  }
+
+  var inicioMs = Date.now();
+  var escaladas = 0, resueltas = 0, sinRespuesta = 0, dejadosPorTiempo = 0;
+
+  for (var p = 0; p < candidatos.length; p++) {
+    if (Date.now() - inicioMs > TIEMPO_MAXIMO_CONSULTAS_CORTE_MS) {
+      dejadosPorTiempo = candidatos.length - p;
+      Logger.log("⏱️ Tope de tiempo alcanzado, se dejan " + dejadosPorTiempo + " para el próximo corte.");
+      break;
     }
 
-  } catch (e) {
-    Logger.log("❌ Error en _procesarCortePendientes: " + e.message);
-  } finally {
-    if (lock.hasLock()) lock.releaseLock();
+    var item = candidatos[p];
+    var datosApi = _consultarSaiIndividual(item.consecutivo);
+    Utilities.sleep(1000);
+
+    if (!datosApi) {
+      sinRespuesta++;
+      Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
+      continue; // se queda en WA_ENVIADO, se reintenta en un próximo corte
+    }
+
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+
+    if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+      actualizaciones.push({ fila: item.fila, fase: "RESUELTA", fecha: ahora, estadoSai: statusActual });
+      resueltas++;
+    } else {
+      solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
+      actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: statusActual });
+      escaladas++;
+    }
+
+    if (actualizaciones.length >= TAMANO_BLOQUE_ESCRITURA_CORTE) {
+      _volcarBloque();
+    }
   }
+
+  _volcarBloque();
+
+  Logger.log("✅ Corte terminado: " + escaladas + " escaladas, " + resueltas + " resueltas solas, " + sinRespuesta + " sin respuesta SAI"
+    + (dejadosPorTiempo > 0 ? ", " + dejadosPorTiempo + " dejados para el próximo corte por tiempo" : "")
+    + (totalPendientes > candidatos.length ? " (quedan " + (totalPendientes - candidatos.length) + " más allá del tope de " + MAX_CANDIDATOS_POR_CORTE + ")" : "") + ".");
 }
 
 

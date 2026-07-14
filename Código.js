@@ -1018,39 +1018,26 @@ function actualizarSolicitudesNuevasAPI() {
   _sincronizarVentanaSAI(formatDateCustom(fechaInicio), formatDateCustom(hoy), "SYNC-RECIENTE");
 }
 
-// Trigger propio, recomendado cada 1-2 horas. Backfill rotativo hacia atrás en el
-// tiempo: SAI se cuelga si se le pide una ventana de más de ~3-4 días de una vez (ver
-// caso real de la solicitud 12171019, jul-2026: radicada semanas atrás, cambió a
-// CODEUDORES_REQUERIDOS después de que su ventana de "recién radicada" ya había
-// cerrado, y como actualizarSolicitudesNuevasAPI solo mira los últimos 3 días, nunca
-// se detectó — quedó invisible para todo el sistema). En vez de ensanchar esa ventana
-// (rompe la API), esta función revisa el histórico más viejo en tandas del mismo
-// tamaño que SAI sí soporta (DIAS_POR_TANDA_BACKFILL_SAI), avanzando una tanda cada
-// vez que corre hasta VENTANA_MAXIMA_BACKFILL_SAI_DIAS, y luego vuelve a empezar desde
-// el principio — así con el tiempo cubre todo el histórico relevante sin pedirle a SAI
-// más de lo que aguanta en una sola consulta. El puntero de rotación vive en
-// PropertiesService (mismo patrón que PUNTERO_ROTACION para la rotación VIP).
+// SUSPENDIDA (2026-07-14): esta función se creó para resolver un problema real (ver
+// caso 12171019, jul-2026: radicada semanas atrás, cambió a CODEUDORES_REQUERIDOS
+// después de que su ventana de "recién radicada" de 3 días ya había cerrado, y como
+// actualizarSolicitudesNuevasAPI solo mira los últimos 3 días, nunca se detectó — quedó
+// invisible para todo el sistema). Pero comparte las mismas reglas de inclusión que el
+// sync normal de 3 días (misma _sincronizarVentanaSAI) — y como "EN_ESTUDIO" no está
+// excluido, cualquier solicitud vieja (semanas/meses atrás) que sigue en EN_ESTUDIO sin
+// ningún cambio real vuelve a insertarse en "solicitud" como si fuera nueva, generando
+// fricción para los analistas (casos confirmados: 12139082, 12138904, 12139026 — ninguno
+// había cambiado de estado, solo seguían con documentación pendiente desde mayo). Hasta
+// que se diseñe una forma de distinguir "cambio real detectado tarde" de "sigue exactamente
+// igual, solo se está mirando más atrás", se deja suspendida y el sistema vuelve a
+// depender solo de la ventana de 3 días de actualizarSolicitudesNuevasAPI() — con el
+// riesgo conocido de que un cambio de estado más allá de esos 3 días puede volver a
+// quedar invisible (como pasó con la 12171019) hasta que esto se retome.
 const DIAS_POR_TANDA_BACKFILL_SAI = 3;
 const VENTANA_MAXIMA_BACKFILL_SAI_DIAS = 90;
 function sincronizarHistoricoSAI() {
-  const props = PropertiesService.getScriptProperties();
-  const puntero = parseInt(props.getProperty('PUNTERO_BACKFILL_SAI_DIAS'), 10) || DIAS_POR_TANDA_BACKFILL_SAI;
-
-  const hoy = new Date();
-  const fechaFin = new Date(hoy);
-  fechaFin.setDate(hoy.getDate() - puntero);
-  const fechaInicio = new Date(hoy);
-  fechaInicio.setDate(hoy.getDate() - puntero - DIAS_POR_TANDA_BACKFILL_SAI);
-
-  let siguientePuntero = puntero + DIAS_POR_TANDA_BACKFILL_SAI;
-  if (siguientePuntero > VENTANA_MAXIMA_BACKFILL_SAI_DIAS) siguientePuntero = DIAS_POR_TANDA_BACKFILL_SAI;
-  props.setProperty('PUNTERO_BACKFILL_SAI_DIAS', String(siguientePuntero));
-
-  _sincronizarVentanaSAI(
-    formatDateCustom(fechaInicio),
-    formatDateCustom(fechaFin),
-    `BACKFILL-HISTORICO(${puntero}-${puntero + DIAS_POR_TANDA_BACKFILL_SAI}d)`
-  );
+  Logger.log("sincronizarHistoricoSAI SUSPENDIDA (2026-07-14) — reinsertaba solicitudes viejas sin cambios reales (solo EN_ESTUDIO) en la cola, generando fricción. Ver comentario en el código para retomarla.");
+  return;
 }
 
 function eliminarSolicitudesFinalizadas(idsAEliminar) {
