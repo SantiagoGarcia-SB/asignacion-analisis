@@ -340,7 +340,7 @@ Ambas hojas comparten el mismo esquema de columnas (la fila se mueve completa al
 1. **Validación horaria:** Solo se ejecuta entre las 8am y 6pm.
 2. **Consulta a la API SAI:** Se obtienen solicitudes de los últimos 3 días con paginación (200 registros/página).
 3. **Filtrado:** Se excluyen estados `RECHAZADO`, `APROBADO`, `CODEUDORES_REQUERIDOS` y tipos `AD`, `AC`. Solo se guardan solicitudes con `mainResultCode === "2"`.
-4. **Homologación de clase:** Se mapean tipos de la API (`TS` → NUEVA, `RSD`/`RE`/`RC` → REESTUDIO, `IND` → INDUCCION).
+4. **Homologación de clase:** Se mapean tipos de la API (`TS` → NUEVA, `RSD`/`RE`/`RC` → REESTUDIO, `IND` → INDUCCION). El tipo `AV` se excluye desde la ingesta (ver punto 3), no llega a homologarse.
 5. **Deduplicación:** Se comparan contra IDs existentes en la hoja para evitar duplicados.
 6. **Escritura en lote con bloqueo.**
 

@@ -870,7 +870,7 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
   let totalPaginas = 1;
 
   const ESTADOS_EXCLUIR = new Set(["RECHAZADO", "APROBADO","CODEUDORES_REQUERIDOS"]);
-  const TIPOS_EXCLUIR   = new Set(["AC"]);
+  const TIPOS_EXCLUIR   = new Set(["AC", "AV"]);
 
   Logger.log(`[${etiquetaLog}] Rango de consulta: Desde ${sIni} hasta ${sFin}`);
 
@@ -884,6 +884,7 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
     "RSD": "REESTUDIO",
     "RE":  "REESTUDIO",
     "RC":  "REESTUDIO",
+    "AV":  "REESTUDIO",
     "IND": "INDUCCION"
   };
 
@@ -1425,7 +1426,7 @@ function recuperarSolicitudCodeudorManual(consecutivo) {
   }
 
   var mapaTipos = {
-    "TS": "NUEVA", "AD": "ADICIONAL", "RSD": "REESTUDIO", "RE": "REESTUDIO", "RC": "REESTUDIO", "IND": "INDUCCION"
+    "TS": "NUEVA", "AD": "ADICIONAL", "RSD": "REESTUDIO", "RE": "REESTUDIO", "RC": "REESTUDIO", "AV": "REESTUDIO", "IND": "INDUCCION"
   };
   moverAListaEsperaCodeudor([{
     solicitud: id,
