@@ -465,8 +465,13 @@ function admin_recalcularContadores() {
  * más común es un admin borrando filas directamente del sheet (novedades), lo
  * cual es una acción válida y esperada pero que ningún código de ajuste de
  * contadores puede interceptar. No valida permisos: eso lo hace el caller
- * interactivo (admin_recalcularContadores); el trigger de tiempo llama esta
- * función directamente.
+ * interactivo (admin_recalcularContadores).
+ *
+ * ⚠️ NO configurar un trigger de tiempo apuntando directo a esta función — no
+ * tiene el try/catch ni el logging de éxito/error que sí tiene el wrapper. El
+ * trigger de tiempo (ícono del reloj en el editor de Apps Script) debe apuntar
+ * a trigger_recalcularContadores(), más abajo en este archivo, que es quien
+ * llama a esta función internamente.
  * @private
  */
 function _recalcularContadoresInterno() {

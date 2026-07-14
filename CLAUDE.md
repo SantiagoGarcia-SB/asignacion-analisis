@@ -39,7 +39,7 @@ Authentication is implicit (Google Workspace session). Role is resolved from the
 | `MotorAsignacion.js` | **Primary assignment engine** (`RequestLeadUnificado`) — proportional cupo sorting, VIP rotation, canon filtering, external channel priority. Used by all teams. |
 | `MotorTiempos.js` | SLA time calculation engine — per-analyst shift-aware working minutes |
 | `Admin.js` | Admin dashboard, user CRUD, dynamic cupos (global/individual), teams CRUD, shifts, permissions |
-| `Biometria.js` | Downloads pending biometries (SAI codes 500/503), auto-assigns |
+| `Biometria.js` | Follow-up cycle for pending biometries (SAI codes 500/503) and auto-assignment. Since 2026-07-13, the initial capture of new biometría-pendiente cases happens inside `actualizarSolicitudesNuevasAPI()` (`Código.js`), not here — this file's own `_guardarLoteBiometriaPendiente()` just receives and stores what that call finds; this file then handles the WhatsApp/escalation cycle and `autoAsignarBiometria()`. |
 | `Reestudios.js` | Saves re-study outcomes, triggers next assignment |
 | `Tests.js` | Test suite (53 test functions, 174 assertions) — run `EJECUTAR_TODAS_LAS_PRUEBAS` in GAS editor. Includes `test_X1_SimulacionDiaProduccion`, an in-memory simulation of a full production day (30 analysts, real cupo/headcount config, synthetic case data) that stress-tests cupo fairness and canon filtering at realistic volume without touching any real sheet. |
 
@@ -57,21 +57,31 @@ HTML files embed their JavaScript inline. `main.js.html` is included via `<?= Ht
 
 ### Data Sources (Google Sheets)
 
-All IDs are stored in **Script Properties** (not in code). Key properties:
+**Spreadsheet IDs are hardcoded `const`s at the top of their file, not Script Properties** — despite what earlier versions of this doc claimed. A handful of call sites (~10, mostly around `guardarCambiosInternos`/`_recalcularContadoresInterno`) additionally check a same-named Script Property first and fall back to the hardcoded const if it's unset, but the large majority of call sites (67+ for `TARGET_SOLICITUDES_SS_ID` alone) use the bare hardcoded const directly with no property check at all. Practically: **setting the Script Property alone will not migrate the spreadsheet** — most of the codebase would keep pointing at the old hardcoded ID. Treat the constants below as the actual source of truth:
+
+| Constant | File | Purpose |
+|----------|------|---------|
+| `TARGET_SOLICITUDES_SS_ID` | `Código.js` | Main spreadsheet (solicitudes, Usuarios, score, Festivos, Historico_Gestiones) |
+| `WAREHOUSE_ID` | `Código.js` | Policy warehouse — no Script Property override anywhere |
+| `ID_SHEET_GESTION_DIRECTA` | `Código.js` | Holds `pendiente_codeudor` (see `revisarEnEsperaCodeudor`/`sincronizarHistoricoSAI`) |
+| `ID_WAREHOUSE_USUARIOS` | `Biometria.js` | Same spreadsheet as `TARGET_SOLICITUDES_SS_ID` (same literal ID), referenced under a different constant name for biometría code |
+| `ID_SHEET_BIOMETRIA_PENDIENTE` | `Biometria.js` | Holds `pendiente_biometria` |
+| `ID_HOJA_REESTUDIOS` | `Reestudios.js` | Re-studies spreadsheet — one of the few with a working Script Property override (`ID_HOJA_REESTUDIOS`) in ~6 call sites |
+
+`ID_SHEET_ORIGEN`/`ID_SHEET_GESTION` (previously documented here as "Biometry pending queue"/"management log") are **obsolete** — they only exist as commented-out dead constants in `Biometria.js`, already marked `OBSOLETA` in the code. Biometries are sourced from the `solicitud` sheet instead (see `descargarBiometriasAPI`, suspended, below).
+
+Actual Script Properties (genuinely read via `PropertiesService`, no hardcoded fallback):
 
 | Property | Purpose |
 |----------|---------|
-| `TARGET_SOLICITUDES_SS_ID` | Main spreadsheet (solicitudes, Usuarios, score, Festivos) |
-| `WAREHOUSE_ID` | Policy warehouse |
-| `ID_SHEET_ORIGEN` | Biometry pending queue |
-| `ID_SHEET_GESTION` | Biometry management log |
-| `ID_HOJA_REESTUDIOS` | Re-studies spreadsheet |
 | `KeyEndPointSaiFullProd` | SAI API key |
 | `endPointSaiFullStageProd` | SAI endpoint (by request ID) |
-| `endpointSaiNewApi` | SAI endpoint (by consecutive) |
+| `endpointSaiNewApi` | SAI endpoint (by consecutive) — used for individual case lookups |
+| `endPointSaiNewApiDate` | SAI endpoint (by date range, paginated) — used by `actualizarSolicitudesNuevasAPI`/`sincronizarHistoricoSAI` |
 | `GLOBAL_PRIORIDAD` | Assignment priority mode (DIGITAL_PRIMERO, DESAPLAZAMIENTO_PRIMERO, INDUCCION_PRIMERO) |
 | `ORDEN_DESAPLAZAMIENTO` | Within the desaplazamiento/biometría queue: `RECIENTE_PRIMERO` (LIFO by fechaResultado, default) or `ANTIGUO_PRIMERO` (FIFO). Admin-configurable via `admin_setOrdenDesaplazamiento()`; read by both `RequestLeadUnificado` and `autoAsignarBiometria`. |
-| `PUNTERO_ROTACION` | Category rotation pointer |
+| `PUNTERO_ROTACION` | Category rotation pointer (VIP rotation) |
+| `PUNTERO_BACKFILL_SAI_DIAS` | Rotation pointer for `sincronizarHistoricoSAI()`'s backfill chunks (same pattern as `PUNTERO_ROTACION`) |
 | `CUPOS_{EQUIPO}_{TIPO}` | Daily cupo limits per team and type |
 
 ### Dynamic Type Catalog
