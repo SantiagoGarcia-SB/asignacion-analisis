@@ -27,72 +27,27 @@ function eliminarTriggersBio() {
   });
 }
 
-function updateBiometriagpt(solicitud) {
-  if (!solicitud) return false;
-  const baseUrl = getEndPointNewSai();
-  const keyFull = getKeyFull();
-  if (!baseUrl || !keyFull) return false;
-  const url = baseUrl + solicitud;
-  const options = {
-    method: "GET",
-    muteHttpExceptions: true,
-    headers: { "x-api-key": keyFull, "Accept": "application/json" }
-  };
-  try {
-    const response = UrlFetchApp.fetch(url, options);
-    if (response.getResponseCode() !== 200) {
-      console.warn("updateBiometriagpt - Error HTTP " + response.getResponseCode() + " para solicitud: " + solicitud);
-      return false;
-    }
-    const parsed = JSON.parse(response.getContentText());
-    const status = String(parsed.studyStatus || '').trim().toUpperCase();
-    return status === 'APROBADO_PENDIENTE_BIOMETRIA';
-  } catch (e) {
-    console.error("updateBiometriagpt - Excepción para solicitud " + solicitud + ": " + e.toString());
-    return false;
-  }
-}
-
-function verificarEstadoBiometria(solicitud) {
-  if (!solicitud) return "ERROR";
-  const baseUrl = getEndPointNewSai();
-  const keyFull = getKeyFull();
-  if (!baseUrl || !keyFull) return "ERROR";
-
-  const url = baseUrl + solicitud;
-  const options = {
-    method: "GET",
-    muteHttpExceptions: true,
-    headers: { "x-api-key": keyFull, "Accept": "application/json" }
-  };
-
-  try {
-    const response = UrlFetchApp.fetch(url, options);
-    if (response.getResponseCode() !== 200) {
-      console.warn("verificarEstadoBiometria - HTTP " + response.getResponseCode() + " para: " + solicitud);
-      return "ERROR";
-    }
-    const parsed = JSON.parse(response.getContentText());
-    const status = String(parsed.studyStatus || '').trim().toUpperCase();
-    console.log("verificarEstadoBiometria - Solicitud: " + solicitud + " | Status: " + status);
-
-    if (status === 'APROBADO_PENDIENTE_BIOMETRIA') {
-      return "PENDIENTE";
-    }
-    return "YA_NO_PENDIENTE";
-  } catch (e) {
-    console.error("verificarEstadoBiometria - Error para " + solicitud + ": " + e.toString());
-    return "ERROR";
-  }
-}
-
 // IMPORTANTE: la consulta paginada a SAI (lenta, con pausas de 2s entre páginas) corre
 // SIN el ScriptLock — igual que se corrigió en verificarAprobacionDesaplazamientos/Uar
 // (ver commit "Corrige retención de lock durante llamadas a SAI"). El lock solo se toma
 // al final, para el borrado, y justo antes se vuelve a leer la hoja para confirmar que
 // la fila sigue ahí con el mismo estado (evita borrar una fila que otro proceso ya movió
 // o reemplazó mientras se esperaba la respuesta de SAI).
+// Se llama tanto desde el ciclo horario (cicloLimpiezaBiometriaEscalada) como desde el
+// de corte 8am/12pm (cicloBiometriaPendiente) — si ambos triggers coinciden en una misma
+// franja, esta guarda evita repetir la misma tanda de consultas individuales a SAI.
+const _MIN_ENTRE_CORRIDAS_LIMPIAR_BIOMETRIAS = 5;
 function limpiarBiometriasResueltas() {
+  var propsGuarda = PropertiesService.getScriptProperties();
+  var ULTIMA_CORRIDA_KEY = 'ULTIMA_CORRIDA_LIMPIAR_BIOMETRIAS_MS';
+  var ahoraMs = Date.now();
+  var ultimaMs = parseInt(propsGuarda.getProperty(ULTIMA_CORRIDA_KEY), 10) || 0;
+  if (ahoraMs - ultimaMs < _MIN_ENTRE_CORRIDAS_LIMPIAR_BIOMETRIAS * 60000) {
+    Logger.log("⏭️ limpiarBiometriasResueltas: ya corrió hace menos de " + _MIN_ENTRE_CORRIDAS_LIMPIAR_BIOMETRIAS + " min (el ciclo horario y el de corte probablemente coincidieron) — se salta para no repetir las mismas consultas a SAI.");
+    return;
+  }
+  propsGuarda.setProperty(ULTIMA_CORRIDA_KEY, String(ahoraMs));
+
   try {
     const ss = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
     const hoja = ss.getSheetByName("solicitud");
@@ -623,11 +578,16 @@ function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
   }
 }
 
-// Trigger cada 10 min: captura nuevas biometrías de SAI
+// SUSPENDIDA (2026-07-13): la captura de nuevas biometrías se fusionó dentro de
+// actualizarSolicitudesNuevasAPI (Código.js) — antes esta función paginaba el mismo
+// endpoint y el mismo rango de fechas de SAI por separado, solo para quedarse con el
+// subconjunto complementario (APROBADO_PENDIENTE_BIOMETRIA). Ahora esa clasificación
+// pasa en la misma pasada que la consulta principal, así que este trigger ya no tiene
+// nada propio que hacer. Se puede borrar el trigger de tiempo asociado a esta función
+// en el editor de Apps Script (ícono del reloj) cuando sea conveniente.
 function consultarBiometriasPeriodicaAPI() {
-  Logger.log("=== INICIO consultarBiometriasPeriodicaAPI ===");
-  _capturarNuevasBiometrias();
-  Logger.log("=== FIN consultarBiometriasPeriodicaAPI ===");
+  Logger.log("consultarBiometriasPeriodicaAPI SUSPENDIDA — la captura de biometrías ahora corre dentro de actualizarSolicitudesNuevasAPI (Código.js)");
+  return;
 }
 
 // Trigger cada hora: primer contacto (fase vacía) → si ya pasaron >=4h desde fecha_resultado
@@ -1673,93 +1633,18 @@ function _eliminarSolicitudDeCola(hojaSol, solId) {
   }
 }
 
-// PASO 2: Capturar nuevas biometrías desde la API
 // Únicos resultCode de SAI que indican biometría genuinamente pendiente para la persona
 // evaluada en ese registro (500 = pendiente, 503 = igual pendiente por otro motivo).
 // Cualquier otro resultCode (aunque estadoGeneral siga APROBADO_PENDIENTE_BIOMETRIA) es
 // el resultado de otra acción no relacionada con biometría — p.ej. evaluación de un
 // codeudor, error de sistema — y NO debe usarse para decidir a quién escribirle por
 // WhatsApp ni para dejar entrar la solicitud a pendiente_biometria. Usado por los tres
-// puntos que pueden insertar en esa hoja: _capturarNuevasBiometrias(),
-// corregirBiometriasMalEnrutadas() y revisarEnEsperaCodeudor() (Código.js).
+// puntos que pueden insertar en esa hoja: actualizarSolicitudesNuevasAPI (Código.js,
+// fusionó aquí la captura de nuevas biometrías el 2026-07-13), corregirBiometriasMalEnrutadas()
+// y revisarEnEsperaCodeudor() (Código.js).
 function _esResultCodeBiometriaPendiente(resultCode) {
   var rc = String(resultCode || "").trim();
   return rc === "500" || rc === "503";
-}
-
-function _capturarNuevasBiometrias() {
-  Logger.log("--- Paso 2: Captura de nuevas biometrías ---");
-
-  var keyFull_ = getKeyFull();
-  var endpointBase = getEndPointNewApiDate();
-  if (!keyFull_ || !endpointBase) {
-    Logger.log("❌ Faltan credenciales o endpoint.");
-    return;
-  }
-
-  var hoy = new Date();
-  var fechaInicio = new Date();
-  fechaInicio.setDate(hoy.getDate() - 3);
-  var sIni = formatDateCustom(fechaInicio);
-  var sFin = formatDateCustom(hoy);
-
-  var TIPOS_EXCLUIR = new Set(["AC"]);
-  var biometriasNuevas = [];
-  var paginaActual = 1;
-  var totalPaginas = 1;
-
-  try {
-    do {
-      var url = endpointBase + '?startDate=' + sIni + '&endDate=' + sFin + '&page=' + paginaActual + '&size=200';
-      Logger.log("[Biometría] Página " + paginaActual + " consultando...");
-
-      var response = UrlFetchApp.fetch(url, {
-        method: 'get',
-        headers: { 'x-api-key': keyFull_, 'Accept': 'application/json' },
-        muteHttpExceptions: true
-      });
-
-      if (response.getResponseCode() !== 200) {
-        Logger.log("❌ API error HTTP " + response.getResponseCode());
-        break;
-      }
-
-      var json = JSON.parse(response.getContentText());
-      totalPaginas = json.totalPages || 1;
-      var contenido = json.content || [];
-
-      contenido.forEach(function(item) {
-        var esUar = (item.uar === true || String(item.uar).toLowerCase() === "true");
-        if (esUar) return;
-
-        var estadoGeneral = String(item.studyStatus || "").toUpperCase().trim();
-        var tipoSolicitud = String(item.requestType || "").toUpperCase().trim();
-
-        if (estadoGeneral !== "APROBADO_PENDIENTE_BIOMETRIA") return;
-        if (!_esResultCodeBiometriaPendiente(item.resultCode)) return;
-        if (String(item.mainResultCode) !== "2") return;
-        if (TIPOS_EXCLUIR.has(tipoSolicitud)) return;
-
-        biometriasNuevas.push(_homologarDatosApi(item));
-      });
-
-      paginaActual++;
-      if (paginaActual <= totalPaginas) Utilities.sleep(2000);
-
-    } while (paginaActual <= totalPaginas);
-
-  } catch (e) {
-    Logger.log("❌ Error en consulta API biometrías: " + e.message);
-    return;
-  }
-
-  if (biometriasNuevas.length === 0) {
-    Logger.log("No se encontraron nuevas biometrías pendientes.");
-    return;
-  }
-
-  Logger.log(biometriasNuevas.length + " biometrías candidatas encontradas.");
-  _guardarLoteBiometriaPendiente(biometriasNuevas);
 }
 
 function _guardarLoteBiometriaPendiente(listaObjetos) {
@@ -1994,32 +1879,33 @@ var VENTANA_DIAS_VERIFICACION_SAI = 3;
 var TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = new Set(['desaplazamiento', 'induccion']);
 var VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = 90;
 
-/**
- * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducción
- * (Historico_Gestiones principal) que un analista dejó sin resolución definitiva
- * (aplazado, negado con motivo pendiente, etc.). No toca digital/canones altos.
- * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
- */
-function verificarAprobacionDesaplazamientos() {
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+// Núcleo compartido de verificarAprobacionDesaplazamientos() y
+// verificarAprobacionReestudiosUar() — mismo patrón de consulta (candidatos → SAI
+// caso por caso, sin lock → escritura con lock al final), solo cambia la hoja/columnas
+// de origen y la ventana de días. Unificado el 2026-07-13 (antes eran ~90% el mismo
+// código copiado dos veces).
+function _verificarAprobacionesPendientesEnSAI(config) {
+  const ss = SpreadsheetApp.openById(config.ssId);
   const hojaHist = ss.getSheetByName("Historico_Gestiones");
   if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
 
   const lastRow = hojaHist.getLastRow();
   if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
 
-  const data = hojaHist.getRange(2, 1, lastRow - 1, 61).getValues();
+  const data = hojaHist.getRange(2, 1, lastRow - 1, config.numCols).getValues();
   const limiteFecha = new Date();
-  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION);
+  limiteFecha.setDate(limiteFecha.getDate() - config.ventanaDias);
 
   var candidatos = [];
   for (var i = 0; i < data.length; i++) {
-    var fechaAsig = data[i][24];
-    var solicitudId = String(data[i][0]).trim();
-    var estadoActual = String(data[i][16]).toUpperCase().trim();
-    var tipoAsignado = String(data[i][60]).trim().toLowerCase();
+    var fechaAsig = data[i][config.colFechaAsig];
+    var solicitudId = String(data[i][config.colSolicitud]).trim();
+    var estadoActual = String(data[i][config.colEstado]).toUpperCase().trim();
 
-    if (!TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION.has(tipoAsignado)) continue;
+    if (config.tiposFiltro) {
+      var tipoAsignado = String(data[i][config.colTipoAsignado]).trim().toLowerCase();
+      if (!config.tiposFiltro.has(tipoAsignado)) continue;
+    }
     if (!(fechaAsig instanceof Date)) continue;
     if (fechaAsig < limiteFecha) continue;
     if (!solicitudId) continue;
@@ -2090,7 +1976,7 @@ function verificarAprobacionDesaplazamientos() {
 
   try {
     actualizaciones.forEach(function(u) {
-      hojaHist.getRange(u.filaReal, 17).setValue(u.estado);
+      hojaHist.getRange(u.filaReal, config.colEscribirEstado).setValue(u.estado);
     });
     SpreadsheetApp.flush();
 
@@ -2106,6 +1992,26 @@ function verificarAprobacionDesaplazamientos() {
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
+}
+
+/**
+ * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducción
+ * (Historico_Gestiones principal) que un analista dejó sin resolución definitiva
+ * (aplazado, negado con motivo pendiente, etc.). No toca digital/canones altos.
+ * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ */
+function verificarAprobacionDesaplazamientos() {
+  return _verificarAprobacionesPendientesEnSAI({
+    ssId: TARGET_SOLICITUDES_SS_ID,
+    numCols: 61,
+    colSolicitud: 0,
+    colFechaAsig: 24,
+    colEstado: 16,
+    colEscribirEstado: 17,
+    colTipoAsignado: 60,
+    tiposFiltro: TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION,
+    ventanaDias: VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION
+  });
 }
 
 function triggerVerificacionDesaplazamientos() {
@@ -2117,25 +2023,14 @@ function triggerVerificacionDesaplazamientos() {
   }
 }
 
-/**
- * `verificarAprobacionDesaplazamientos()` ya cubre `induccion` explícitamente (mismo
- * Historico_Gestiones, mismo filtro de tipo). Este wrapper es 100% redundante — si el
- * trigger `triggerVerificacionInducciones` sigue activo en la UI de Apps Script junto
- * al de `triggerVerificacionDesaplazamientos`, hay que borrar uno de los dos: ambos
- * corren exactamente el mismo trabajo y disparar los dos duplica innecesariamente las
- * llamadas a SAI (y el riesgo de que la ejecución se pase del tiempo límite).
- */
-function verificarResultadoInducciones() {
-  return verificarAprobacionDesaplazamientos();
-}
-
+// SUSPENDIDA (2026-07-13): `verificarAprobacionDesaplazamientos()` ya cubre `induccion`
+// explícitamente (mismo Historico_Gestiones, mismo filtro de tipo) — este trigger corría
+// exactamente el mismo trabajo que `triggerVerificacionDesaplazamientos`, duplicando
+// innecesariamente las llamadas a SAI. Se puede borrar el trigger de tiempo asociado a
+// esta función en el editor de Apps Script (ícono del reloj) cuando sea conveniente.
 function triggerVerificacionInducciones() {
-  try {
-    var resultado = verificarResultadoInducciones();
-    Logger.log("Verificación inducciones: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
-  } catch (e) {
-    Logger.log("Error en trigger verificación inducciones: " + e.message);
-  }
+  Logger.log("triggerVerificacionInducciones SUSPENDIDA — ya cubierta por triggerVerificacionDesaplazamientos (verifica inducción internamente)");
+  return;
 }
 
 /**
@@ -2147,109 +2042,17 @@ function triggerVerificacionInducciones() {
  * 16:00-17:00, apuntando a triggerVerificacionReestudiosUar).
  */
 function verificarAprobacionReestudiosUar() {
-  const ss = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
-  const hojaHist = ss.getSheetByName("Historico_Gestiones");
-  if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
-
-  const lastRow = hojaHist.getLastRow();
-  if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
-
-  const data = hojaHist.getRange(2, 1, lastRow - 1, 11).getValues();
-  const limiteFecha = new Date();
-  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_SAI);
-
-  var candidatos = [];
-  for (var i = 0; i < data.length; i++) {
-    var solicitudId = String(data[i][1]).trim();
-    var fechaAsig = data[i][8];
-    var estadoActual = String(data[i][10]).toUpperCase().trim();
-
-    if (!(fechaAsig instanceof Date)) continue;
-    if (fechaAsig < limiteFecha) continue;
-    if (!solicitudId) continue;
-    if (ESTADOS_FINALES_GESTION.has(estadoActual)) continue;
-
-    candidatos.push({ filaReal: i + 2, solicitudId: solicitudId, estadoActual: estadoActual });
-  }
-
-  if (candidatos.length === 0) {
-    return { success: true, message: "No hay casos pendientes de verificación.", totalRevisados: 0, totalActualizados: 0, detalles: [] };
-  }
-
-  var endpoint = getEndPointNewSai();
-  var apiKey = getKeyFull();
-  if (!endpoint || !apiKey) return { success: false, message: "Endpoint o API key de SAI no configurados." };
-
-  // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
-  // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
-  // también usan la asignación de casos y el resto del sistema.
-  var actualizaciones = [];
-  var detalles = [];
-
-  for (var j = 0; j < candidatos.length; j++) {
-    var c = candidatos[j];
-    try {
-      var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
-        method: "GET",
-        muteHttpExceptions: true,
-        headers: { "x-api-key": apiKey, "Accept": "application/json" }
-      });
-
-      if (response.getResponseCode() === 200) {
-        var jsonData = JSON.parse(response.getContentText());
-        var studyStatus = String(jsonData.studyStatus || "").toUpperCase().trim();
-
-        if (ESTADOS_FINALES_GESTION.has(studyStatus)) {
-          actualizaciones.push({ filaReal: c.filaReal, estado: studyStatus });
-          detalles.push({ solicitudId: c.solicitudId, estado: "ACTUALIZADO", detalle: studyStatus });
-        } else {
-          detalles.push({ solicitudId: c.solicitudId, estado: "SIN_CAMBIO", detalle: studyStatus || "sin estado" });
-        }
-      } else {
-        detalles.push({ solicitudId: c.solicitudId, estado: "ERROR_HTTP", detalle: "HTTP " + response.getResponseCode() });
-      }
-    } catch (e) {
-      detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
-    }
-
-    if (j < candidatos.length - 1) Utilities.sleep(2000);
-  }
-
-  if (actualizaciones.length === 0) {
-    return {
-      success: true,
-      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
-      totalRevisados: candidatos.length,
-      totalActualizados: 0,
-      detalles: detalles
-    };
-  }
-
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (e) {
-    return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
-  }
-
-  try {
-    actualizaciones.forEach(function(u) {
-      hojaHist.getRange(u.filaReal, 11).setValue(u.estado);
-    });
-    SpreadsheetApp.flush();
-
-    return {
-      success: true,
-      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
-      totalRevisados: candidatos.length,
-      totalActualizados: actualizaciones.length,
-      detalles: detalles
-    };
-  } catch (error) {
-    return { success: false, message: "Error interno: " + error.toString() };
-  } finally {
-    if (lock.hasLock()) lock.releaseLock();
-  }
+  return _verificarAprobacionesPendientesEnSAI({
+    ssId: ID_HOJA_REESTUDIOS,
+    numCols: 11,
+    colSolicitud: 1,
+    colFechaAsig: 8,
+    colEstado: 10,
+    colEscribirEstado: 11,
+    colTipoAsignado: null,
+    tiposFiltro: null,
+    ventanaDias: VENTANA_DIAS_VERIFICACION_SAI
+  });
 }
 
 function triggerVerificacionReestudiosUar() {

@@ -849,38 +849,33 @@ function _normalizarFechaApiComoTexto(valorApi) {
   return resultado;
 }
 
-function actualizarSolicitudesNuevasAPI() {
-  Logger.log("Iniciando ejecución");
-  const hoy = new Date();
-  const horaActual = hoy.getHours(); 
-  if (horaActual < 8 || horaActual >= 18) {
-    Logger.log("Fuera de horario de operación (8am - 6pm). Terminando script.");
-    return;
-  }
-
+// Consulta paginada a SAI para el rango [sIni, sFin] (formato formatDateCustom),
+// clasificando en una sola pasada por página: solicitudes nuevas, biometrías pendientes
+// nuevas, finalizadas (RECHAZADO/APROBADO/CODEUDORES_REQUERIDOS) y en espera de
+// codeudor. Extraída el 2026-07-13 de actualizarSolicitudesNuevasAPI para poder
+// reutilizarse también en sincronizarHistoricoSAI (backfill rotativo hacia atrás,
+// ver esa función para el porqué). `etiquetaLog` identifica en los logs cuál de las
+// dos llamó, ya que ambas pueden estar corriendo en la misma franja horaria.
+function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
   const props = PropertiesService.getScriptProperties();
   const keyFull = getKeyFull();
   const endpointBase = props.getProperty('endPointSaiNewApiDate');
 
   if (!keyFull || !endpointBase) {
-    Logger.log("❌ Error: Faltan credenciales o endpointBase en PropertiesService.");
+    Logger.log(`❌ [${etiquetaLog}] Faltan credenciales o endpointBase en PropertiesService.`);
     return;
   }
 
   let paginaActual = 1;
   let totalPaginas = 1;
 
-  const fechaInicio = new Date();
-  fechaInicio.setDate(hoy.getDate() - 3); 
-
-  const sIni = formatDateCustom(fechaInicio);
-  const sFin = formatDateCustom(hoy);
   const ESTADOS_EXCLUIR = new Set(["RECHAZADO", "APROBADO","CODEUDORES_REQUERIDOS"]);
-  const TIPOS_EXCLUIR   = new Set(["AC"]); 
+  const TIPOS_EXCLUIR   = new Set(["AC"]);
 
-  Logger.log(`Rango de consulta: Desde ${sIni} hasta ${sFin}`);
-  
+  Logger.log(`[${etiquetaLog}] Rango de consulta: Desde ${sIni} hasta ${sFin}`);
+
   const solicitudesHomologadas = [];
+  const biometriasPendientesNuevas = [];
   const idsFinalizadas = new Set();
   const solicitudesCodeudorPendiente = [];
   const mapaTipos = {
@@ -891,19 +886,19 @@ function actualizarSolicitudesNuevasAPI() {
     "RC":  "REESTUDIO",
     "IND": "INDUCCION"
   };
-  
+
   try {
     do {
       const url = `${endpointBase}?startDate=${sIni}&endDate=${sFin}&page=${paginaActual}&size=200`;
-      Logger.log(`[Petición ${paginaActual}] Consultando endpoint`);
-      
+      Logger.log(`[${etiquetaLog}] [Petición ${paginaActual}] Consultando endpoint`);
+
       const response = UrlFetchApp.fetch(url, {
         method: 'get',
         headers: {
           'x-api-key': keyFull,
           'Accept': 'application/json'
         },
-        muteHttpExceptions: true 
+        muteHttpExceptions: true
       });
 
       const code = response.getResponseCode();
@@ -912,7 +907,7 @@ function actualizarSolicitudesNuevasAPI() {
         totalPaginas = json.totalPages || 1;
         const contenido = json.content || [];
 
-        Logger.log(`Página ${paginaActual} de ${totalPaginas} descargada exitosamente. Registros: ${contenido.length}`);
+        Logger.log(`[${etiquetaLog}] Página ${paginaActual} de ${totalPaginas} descargada exitosamente. Registros: ${contenido.length}`);
 
         let guardadosEnPagina = 0;
 
@@ -942,6 +937,13 @@ function actualizarSolicitudesNuevasAPI() {
           }
 
           if (estadoGeneral === "APROBADO_PENDIENTE_BIOMETRIA") {
+            // Bucket de biometría (antes era la consulta separada _capturarNuevasBiometrias):
+            // mismos 3 filtros que tenía esa función, homologación con _homologarDatosApi
+            // (no construirItemHomologado — trae resultCode de cada codeudor, que
+            // _guardarLoteBiometriaPendiente necesita para elegir destinatarios de WhatsApp).
+            if (_esResultCodeBiometriaPendiente(rc) && String(item.mainResultCode) === "2" && !tipoExcluido) {
+              biometriasPendientesNuevas.push(_homologarDatosApi(item));
+            }
             return;
           }
 
@@ -954,33 +956,33 @@ function actualizarSolicitudesNuevasAPI() {
             guardadosEnPagina++;
           }
         });
-        
-        Logger.log(`Registros extraídos: ${guardadosEnPagina}`);
+
+        Logger.log(`[${etiquetaLog}] Registros extraídos: ${guardadosEnPagina}`);
         paginaActual++;
-        
+
         if (paginaActual <= totalPaginas) {
           Utilities.sleep(2000);
         }
 
       } else {
         const errorDetail = response.getContentText();
-        Logger.log(`FALLO CRÍTICO en página ${paginaActual}. Código HTTP: ${code}. Detalle: ${errorDetail}`);
+        Logger.log(`[${etiquetaLog}] FALLO CRÍTICO en página ${paginaActual}. Código HTTP: ${code}. Detalle: ${errorDetail}`);
         throw new Error(`La API falló con código ${code}: ${errorDetail}`);
       }
 
     } while (paginaActual <= totalPaginas);
 
   } catch (e) {
-    Logger.log("❌ Ejecución cancelada: " + e.message);
+    Logger.log(`❌ [${etiquetaLog}] Ejecución cancelada: ` + e.message);
     return;
   }
 
   if (solicitudesHomologadas.length > 0) {
-    Logger.log(`Ejecutando guardado final: ${solicitudesHomologadas.length} solicitudes válidas encontradas.`);
+    Logger.log(`[${etiquetaLog}] Ejecutando guardado final: ${solicitudesHomologadas.length} solicitudes válidas encontradas.`);
     procesarYGuardarLote(solicitudesHomologadas);
-    Logger.log("Proceso completado exitosamente.");
+    Logger.log(`[${etiquetaLog}] Proceso completado exitosamente.`);
   } else {
-    Logger.log("Proceso finalizado. No hay solicitudes útiles en este periodo.");
+    Logger.log(`[${etiquetaLog}] Proceso finalizado. No hay solicitudes útiles en este periodo.`);
   }
 
   if (idsFinalizadas.size > 0) {
@@ -990,6 +992,64 @@ function actualizarSolicitudesNuevasAPI() {
   if (solicitudesCodeudorPendiente.length > 0) {
     moverAListaEsperaCodeudor(solicitudesCodeudorPendiente);
   }
+
+  if (biometriasPendientesNuevas.length > 0) {
+    Logger.log(`[${etiquetaLog}] ${biometriasPendientesNuevas.length} biometrías pendientes nuevas encontradas en esta misma pasada.`);
+    _guardarLoteBiometriaPendiente(biometriasPendientesNuevas);
+  }
+}
+
+// Trigger cada 5-10 min, 24/7. Cubre "lo recién radicado": últimos 3 días. ÚNICA
+// consulta paginada por rango de fechas contra SAI para todo el flujo de "solicitudes
+// nuevas": antes había una segunda consulta idéntica en Biometria.js
+// (_capturarNuevasBiometrias, fusionada aquí el 2026-07-13) que paginaba el mismo
+// endpoint/rango solo para quedarse con el subconjunto complementario
+// (APROBADO_PENDIENTE_BIOMETRIA). Ahora se clasifica todo en una sola pasada por página.
+// NOTA: esta ventana de 3 días solo detecta cambios de estado (p.ej. a
+// CODEUDORES_REQUERIDOS) que ocurren dentro de los primeros 3 días desde la radicación
+// — una solicitud radicada hace más de 3 días que cambia de estado después nunca entra
+// por aquí. Para eso existe sincronizarHistoricoSAI() (ver abajo).
+function actualizarSolicitudesNuevasAPI() {
+  Logger.log("Iniciando ejecución");
+  const hoy = new Date();
+  const fechaInicio = new Date();
+  fechaInicio.setDate(hoy.getDate() - 3);
+  _sincronizarVentanaSAI(formatDateCustom(fechaInicio), formatDateCustom(hoy), "SYNC-RECIENTE");
+}
+
+// Trigger propio, recomendado cada 1-2 horas. Backfill rotativo hacia atrás en el
+// tiempo: SAI se cuelga si se le pide una ventana de más de ~3-4 días de una vez (ver
+// caso real de la solicitud 12171019, jul-2026: radicada semanas atrás, cambió a
+// CODEUDORES_REQUERIDOS después de que su ventana de "recién radicada" ya había
+// cerrado, y como actualizarSolicitudesNuevasAPI solo mira los últimos 3 días, nunca
+// se detectó — quedó invisible para todo el sistema). En vez de ensanchar esa ventana
+// (rompe la API), esta función revisa el histórico más viejo en tandas del mismo
+// tamaño que SAI sí soporta (DIAS_POR_TANDA_BACKFILL_SAI), avanzando una tanda cada
+// vez que corre hasta VENTANA_MAXIMA_BACKFILL_SAI_DIAS, y luego vuelve a empezar desde
+// el principio — así con el tiempo cubre todo el histórico relevante sin pedirle a SAI
+// más de lo que aguanta en una sola consulta. El puntero de rotación vive en
+// PropertiesService (mismo patrón que PUNTERO_ROTACION para la rotación VIP).
+const DIAS_POR_TANDA_BACKFILL_SAI = 3;
+const VENTANA_MAXIMA_BACKFILL_SAI_DIAS = 90;
+function sincronizarHistoricoSAI() {
+  const props = PropertiesService.getScriptProperties();
+  const puntero = parseInt(props.getProperty('PUNTERO_BACKFILL_SAI_DIAS'), 10) || DIAS_POR_TANDA_BACKFILL_SAI;
+
+  const hoy = new Date();
+  const fechaFin = new Date(hoy);
+  fechaFin.setDate(hoy.getDate() - puntero);
+  const fechaInicio = new Date(hoy);
+  fechaInicio.setDate(hoy.getDate() - puntero - DIAS_POR_TANDA_BACKFILL_SAI);
+
+  let siguientePuntero = puntero + DIAS_POR_TANDA_BACKFILL_SAI;
+  if (siguientePuntero > VENTANA_MAXIMA_BACKFILL_SAI_DIAS) siguientePuntero = DIAS_POR_TANDA_BACKFILL_SAI;
+  props.setProperty('PUNTERO_BACKFILL_SAI_DIAS', String(siguientePuntero));
+
+  _sincronizarVentanaSAI(
+    formatDateCustom(fechaInicio),
+    formatDateCustom(fechaFin),
+    `BACKFILL-HISTORICO(${puntero}-${puntero + DIAS_POR_TANDA_BACKFILL_SAI}d)`
+  );
 }
 
 function eliminarSolicitudesFinalizadas(idsAEliminar) {
@@ -1214,6 +1274,165 @@ function revisarEnEsperaCodeudor() {
       Logger.log(`❌ Error guardando ${reactivadasBiometria.length} reactivadas en pendiente_biometria: ${e.message}. IDs a recuperar manualmente: ${ids}`);
     }
   }
+}
+
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor pasando un consecutivo,
+// p.ej. diagnosticarSolicitudCodeudor('12171019'), o usar el wrapper de abajo. No
+// modifica ninguna hoja. Busca la solicitud en las 4 ubicaciones relevantes al flujo
+// de codeudor (pendiente_codeudor, solicitud, Historico_Gestiones principal y de
+// reestudios) y consulta su estado real y actual en SAI, para entender en qué punto
+// exacto se quedó atascada. Borrar esta función (y su wrapper de test) cuando ya no
+// haga falta — es una herramienta puntual de investigación, no parte del flujo normal.
+function diagnosticarSolicitudCodeudorTest() {
+  diagnosticarSolicitudCodeudor('12171019');
+}
+
+function diagnosticarSolicitudCodeudor(consecutivo) {
+  var id = String(consecutivo).trim();
+  Logger.log("=== DIAGNÓSTICO solicitud " + id + " ===");
+
+  // 1. ¿Está en pendiente_codeudor (esperando que se resuelva el tema del codeudor)?
+  try {
+    var ssGestion = SpreadsheetApp.openById(ID_SHEET_GESTION_DIRECTA);
+    var hojaCodeudor = ssGestion.getSheetByName(NOMBRE_HOJA_PENDIENTE_CODEUDOR);
+    if (!hojaCodeudor || hojaCodeudor.getLastRow() < 2) {
+      Logger.log("1) pendiente_codeudor: hoja vacía o no encontrada.");
+    } else {
+      var matchCodeudor = hojaCodeudor.getRange(2, 1, hojaCodeudor.getLastRow() - 1, 1)
+        .createTextFinder(id).matchEntireCell(true).findNext();
+      if (matchCodeudor) {
+        var filaCodeudor = hojaCodeudor.getRange(matchCodeudor.getRow(), 1, 1, 5).getValues()[0];
+        Logger.log("1) ✅ SÍ está en pendiente_codeudor — fila " + matchCodeudor.getRow() + ":");
+        Logger.log("   FechaRadicacion=" + filaCodeudor[1] + " | FechaDeteccion=" + filaCodeudor[2] + " | UltimaVerificacion=" + filaCodeudor[3]);
+        Logger.log("   DatosJSON guardados: " + String(filaCodeudor[4]).substring(0, 300));
+      } else {
+        Logger.log("1) pendiente_codeudor: NO está ahí.");
+      }
+    }
+  } catch (e) {
+    Logger.log("1) ❌ Error revisando pendiente_codeudor: " + e.message);
+  }
+
+  // 2. ¿Está en la hoja "solicitud" (cola normal, pendiente de asignar)?
+  try {
+    var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+    if (!hojaSol || hojaSol.getLastRow() < 2) {
+      Logger.log("2) solicitud: hoja vacía o no encontrada.");
+    } else {
+      var matchSol = hojaSol.getRange(2, 1, hojaSol.getLastRow() - 1, 1)
+        .createTextFinder(id).matchEntireCell(true).findNext();
+      if (matchSol) {
+        var filaSol = hojaSol.getRange(matchSol.getRow(), 1, 1, 28).getValues()[0];
+        Logger.log("2) ✅ SÍ está en 'solicitud' — fila " + matchSol.getRow() + " | estado=" + filaSol[16] + " | asignado=" + (filaSol[27] || "(sin asignar)"));
+      } else {
+        Logger.log("2) solicitud: NO está ahí.");
+      }
+    }
+  } catch (e) {
+    Logger.log("2) ❌ Error revisando 'solicitud': " + e.message);
+  }
+
+  // 3. ¿Ya se gestionó (Historico_Gestiones principal)?
+  try {
+    var hojaHistP = ssSol.getSheetByName("Historico_Gestiones");
+    if (!hojaHistP || hojaHistP.getLastRow() < 2) {
+      Logger.log("3) Historico_Gestiones (principal): hoja vacía o no encontrada.");
+    } else {
+      var matchHistP = hojaHistP.getRange(2, 1, hojaHistP.getLastRow() - 1, 1)
+        .createTextFinder(id).matchEntireCell(true).findNext();
+      if (matchHistP) {
+        var filaHistP = hojaHistP.getRange(matchHistP.getRow(), 1, 1, 27).getValues()[0];
+        Logger.log("3) ✅ SÍ está en Historico_Gestiones (principal) — fila " + matchHistP.getRow() + " | estado=" + filaHistP[16] + " | analista=" + filaHistP[25] + " | fechaFin=" + (filaHistP[26] || "(en gestión, sin cerrar)"));
+      } else {
+        Logger.log("3) Historico_Gestiones (principal): NO está ahí.");
+      }
+    }
+  } catch (e) {
+    Logger.log("3) ❌ Error revisando Historico_Gestiones principal: " + e.message);
+  }
+
+  // 4. ¿Ya se gestionó como reestudio/UAR (Historico_Gestiones de reestudios)?
+  try {
+    var ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    var hojaHistR = ssReest.getSheetByName("Historico_Gestiones");
+    if (!hojaHistR || hojaHistR.getLastRow() < 2) {
+      Logger.log("4) Historico_Gestiones (reestudios): hoja vacía o no encontrada.");
+    } else {
+      var matchHistR = hojaHistR.getRange(2, 2, hojaHistR.getLastRow() - 1, 1)
+        .createTextFinder(id).matchEntireCell(true).findNext();
+      if (matchHistR) {
+        var filaHistR = hojaHistR.getRange(matchHistR.getRow(), 1, 1, 11).getValues()[0];
+        Logger.log("4) ✅ SÍ está en Historico_Gestiones (reestudios) — fila " + matchHistR.getRow() + " | analista=" + filaHistR[6] + " | estadoGestion=" + (filaHistR[10] || "(en gestión, sin cerrar)"));
+      } else {
+        Logger.log("4) Historico_Gestiones (reestudios): NO está ahí.");
+      }
+    }
+  } catch (e) {
+    Logger.log("4) ❌ Error revisando Historico_Gestiones de reestudios: " + e.message);
+  }
+
+  // 5. Estado REAL y ACTUAL según SAI ahora mismo.
+  try {
+    var datosApi = _consultarSaiIndividual(id);
+    if (!datosApi) {
+      Logger.log("5) ❌ SAI no respondió (o la solicitud no existe para SAI).");
+    } else {
+      Logger.log("5) Estado actual en SAI: studyStatus=" + datosApi.studyStatus + " | resultCode=" + datosApi.resultCode + " | mainResultCode=" + datosApi.mainResultCode + " | lastMovementDate=" + datosApi.lastMovementDate + " | lastResultDate=" + datosApi.lastResultDate);
+      Logger.log("   Descripción del inquilino: " + (datosApi.resultDescription || "(sin descripción)"));
+      if (datosApi.codebtors && datosApi.codebtors.length > 0) {
+        datosApi.codebtors.forEach(function(c, idx) {
+          Logger.log("   Codeudor " + (idx + 1) + ": " + c.name + " | studyStatus=" + c.studyStatus + " | resultCode=" + c.resultCode + " | descripción=" + (c.resultDescription || "(sin descripción)"));
+        });
+      } else {
+        Logger.log("   Sin codeudores en la respuesta de SAI.");
+      }
+      Logger.log("5b) Respuesta cruda completa de SAI:");
+      Logger.log(JSON.stringify(datosApi, null, 2));
+    }
+  } catch (e) {
+    Logger.log("5) ❌ Error consultando SAI: " + e.message);
+  }
+
+  Logger.log("=== FIN DIAGNÓSTICO " + id + " ===");
+}
+
+// RECUPERACIÓN MANUAL PUNTUAL — correr desde el editor pasando un consecutivo, p.ej.
+// recuperarSolicitudCodeudorManual('12171019'), o usar el wrapper de abajo. Consulta
+// SAI en tiempo real; si la solicitud sigue en CODEUDORES_REQUERIDOS, la mueve a
+// pendiente_codeudor (mismo camino que si actualizarSolicitudesNuevasAPI la hubiera
+// capturado a tiempo) para que revisarEnEsperaCodeudor() la retome en su próxima
+// corrida horaria. Si SAI ya no la tiene en ese estado, no hace nada — hay que
+// investigar manualmente por qué quedó fuera. Es para recuperar casos puntuales ya
+// identificados como perdidos; sincronizarHistoricoSAI() es la que evita que esto
+// vuelva a pasar hacia adelante.
+function recuperarSolicitudCodeudorManualTest() {
+  recuperarSolicitudCodeudorManual('12171019');
+}
+
+function recuperarSolicitudCodeudorManual(consecutivo) {
+  var id = String(consecutivo).trim();
+  var datosApi = _consultarSaiIndividual(id);
+  if (!datosApi) {
+    Logger.log("❌ SAI no respondió para " + id + " — no se puede recuperar.");
+    return;
+  }
+
+  var estadoGeneral = String(datosApi.studyStatus || "").toUpperCase().trim();
+  if (estadoGeneral !== "CODEUDORES_REQUERIDOS") {
+    Logger.log("ℹ️ " + id + " ya NO está en CODEUDORES_REQUERIDOS (estado actual: " + estadoGeneral + "). No se movió a pendiente_codeudor — si debería estar en otro lado, revisa manualmente.");
+    return;
+  }
+
+  var mapaTipos = {
+    "TS": "NUEVA", "AD": "ADICIONAL", "RSD": "REESTUDIO", "RE": "REESTUDIO", "RC": "REESTUDIO", "IND": "INDUCCION"
+  };
+  moverAListaEsperaCodeudor([{
+    solicitud: id,
+    fechaRadicacion: datosApi.registrationDate || "",
+    item: construirItemHomologado(datosApi, estadoGeneral, mapaTipos)
+  }]);
+  Logger.log("✅ " + id + " movida a pendiente_codeudor. revisarEnEsperaCodeudor() la revisará en su próxima corrida horaria.");
 }
 
 function formatDateCustom(date) {
