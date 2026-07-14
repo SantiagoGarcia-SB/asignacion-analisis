@@ -1038,7 +1038,7 @@ html { scroll-behavior: smooth; }
                 </div>
                 <div class="metric-value" id="countBioPendiente">0</div>
                 <div class="metric-trend">
-                    <span class="trend-chip" style="background:rgba(234,179,8,0.1);color:#a16207;"><i class="bi bi-whatsapp me-1"></i>Broadcast enviado</span>
+                    <span class="trend-chip" style="background:rgba(234,179,8,0.1);color:#a16207;"><i class="bi bi-clock-history me-1"></i>En seguimiento</span>
                     <span id="chipBioProcesadas" style="font-size:0.75rem;color:var(--text-muted);margin-left:4px;"></span>
                 </div>
             </div>
@@ -2507,6 +2507,79 @@ function seleccionarOrdenDesaplazamiento(botonClick) {
     });
 }
 
+// ==============================================================
+// DESARCHIVADO MANUAL DE BIOMETRÍAS
+// ==============================================================
+function abrirDesarchivarBiometrias() {
+    Swal.fire({
+        title: 'Consultando archivadas...',
+        allowOutsideClick: false,
+        didOpen: function() { Swal.showLoading(); }
+    });
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (!res || !res.success) {
+                Swal.fire('Error', (res && res.message) || 'Error desconocido', 'error');
+                return;
+            }
+            if (res.total === 0) {
+                Swal.fire('Sin archivadas', 'No hay biometrías archivadas para recuperar.', 'info');
+                return;
+            }
+
+            var listaTexto = res.lista.slice(0, 5).map(function(item) {
+                return item.solicitud + ' (archivada ' + item.fechaArchivado + ')';
+            }).join('<br>');
+
+            Swal.fire({
+                title: 'Desarchivar biometrías',
+                html: '<p style="text-align:left;font-size:0.85rem;color:var(--gris);">Hay <b>' + res.total + '</b> biometría(s) archivada(s). Se recuperarán las más recientes primero. Cada una se revalida contra SAI antes de reponerla — si ya se resolvió, se deja cerrada.</p>' +
+                      '<p style="text-align:left;font-size:0.78rem;color:var(--gris-light);margin-top:8px;">Más recientes:<br>' + listaTexto + '</p>',
+                input: 'number',
+                inputLabel: '¿Cuántas quieres recuperar?',
+                inputValue: Math.min(res.total, 10),
+                inputAttributes: { min: 1, max: res.total, step: 1 },
+                showCancelButton: true,
+                confirmButtonColor: '#253150',
+                cancelButtonColor: '#706F6F',
+                confirmButtonText: 'Recuperar',
+                inputValidator: function(value) {
+                    var n = parseInt(value, 10);
+                    if (!n || n <= 0) return 'Ingresa una cantidad válida.';
+                    if (n > res.total) return 'Solo hay ' + res.total + ' archivada(s).';
+                }
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+
+                Swal.fire({
+                    title: 'Recuperando casos...',
+                    text: 'Revalidando contra SAI, puede tardar unos segundos.',
+                    allowOutsideClick: false,
+                    didOpen: function() { Swal.showLoading(); }
+                });
+
+                google.script.run
+                    .withSuccessHandler(function(resDes) {
+                        if (resDes && resDes.success) {
+                            Swal.fire('Listo', resDes.message, 'success');
+                            refrescarDashboard();
+                        } else {
+                            Swal.fire('Error', (resDes && resDes.message) || 'Error desconocido', 'error');
+                        }
+                    })
+                    .withFailureHandler(function(err) {
+                        Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+                    })
+                    .admin_desarchivarBiometrias(parseInt(result.value, 10));
+            });
+        })
+        .withFailureHandler(function(err) {
+            Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+        })
+        .admin_listarBiometriasArchivadas();
+}
+
 function cargarOrdenDesaplazamientoActual() {
     google.script.run.withSuccessHandler(function(ordenGuardado) {
         if (ordenGuardado) {
@@ -3109,12 +3182,14 @@ function refrescarDashboard() {
         document.getElementById('countInactivos').innerText = res.inactivos || 0;
 
         if (res.biometriaPendiente) {
-            document.getElementById('countBioPendiente').innerText = res.biometriaPendiente.pendientes || 0;
-            var env = res.biometriaPendiente.enviadasAsignar || 0;
-            var apr = res.biometriaPendiente.aprobadasSinGestion || 0;
+            document.getElementById('countBioPendiente').innerText = res.biometriaPendiente.total || 0;
+            var espContacto = res.biometriaPendiente.pendientes || 0;
+            var wa = res.biometriaPendiente.waEnviado || 0;
+            var cola = res.biometriaPendiente.enColaLlamada || 0;
             var chipParts = [];
-            if (env > 0) chipParts.push(env + ' a asignar');
-            if (apr > 0) chipParts.push(apr + ' aprobadas');
+            if (espContacto > 0) chipParts.push(espContacto + ' esperando contacto');
+            if (wa > 0) chipParts.push(wa + ' con WA');
+            if (cola > 0) chipParts.push(cola + ' en cola');
             document.getElementById('chipBioProcesadas').innerText = chipParts.length > 0 ? '· ' + chipParts.join(', ') : '';
         }
 
@@ -3327,17 +3402,26 @@ function _renderDetalleModal(tipo, filtroTipo) {
 
         htmlBio += '<div style="display:flex;gap:10px;margin-bottom:20px;">';
         htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(234,179,8,0.1);color:#a16207;border:2px solid rgba(234,179,8,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-hourglass-split me-1"></i>Esperando al cliente</div>';
+        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-hourglass-split me-1"></i>Esperando contacto</div>';
         htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.pendientes || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#a16207;opacity:0.8;margin-top:4px;">Broadcast enviado, pendiente de completar biometría</div></div>';
+        htmlBio += '<div style="font-size:0.65rem;color:#a16207;opacity:0.8;margin-top:4px;">Aún no se le envía WhatsApp</div></div>';
+        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(147,51,234,0.1);color:#7e22ce;border:2px solid rgba(147,51,234,0.25);">';
+        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-whatsapp me-1"></i>WA enviado</div>';
+        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.waEnviado || 0) + '</div>';
+        htmlBio += '<div style="font-size:0.65rem;color:#7e22ce;opacity:0.8;margin-top:4px;">Esperando el próximo corte para escalar</div></div>';
         htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(29,78,216,0.1);color:#1d4ed8;border:2px solid rgba(29,78,216,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-arrow-right-circle me-1"></i>Enviadas a asignar</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.enviadasAsignar || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#1d4ed8;opacity:0.8;margin-top:4px;">No completó biometría, pasan a gestión</div></div>';
-        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(34,197,94,0.1);color:#15803d;border:2px solid rgba(34,197,94,0.25);">';
-        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-check-circle me-1"></i>Aprobadas sin gestión</div>';
-        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.aprobadasSinGestion || 0) + '</div>';
-        htmlBio += '<div style="font-size:0.65rem;color:#15803d;opacity:0.8;margin-top:4px;">Completó biometría, no requiere analista</div></div></div>';
+        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-arrow-right-circle me-1"></i>En cola de llamada</div>';
+        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.enColaLlamada || 0) + '</div>';
+        htmlBio += '<div style="font-size:0.65rem;color:#1d4ed8;opacity:0.8;margin-top:4px;">Ya la puede tomar un analista</div></div>';
+        htmlBio += '<div style="flex:1;padding:14px 10px;border-radius:14px;text-align:center;background:rgba(185,28,28,0.08);color:#b91c1c;border:2px solid rgba(185,28,28,0.25);">';
+        htmlBio += '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;"><i class="bi bi-archive me-1"></i>Archivadas</div>';
+        htmlBio += '<div style="font-size:1.8rem;font-weight:800;letter-spacing:-1px;line-height:1;">' + (bio.archivadas || 0) + '</div>';
+        htmlBio += '<div style="font-size:0.65rem;color:#b91c1c;opacity:0.8;margin-top:4px;">Se venció en cola sin ser llamada</div></div></div>';
+
+        htmlBio += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">';
+        htmlBio += '<span style="font-size:0.75rem;color:var(--gris-light);"><i class="bi bi-check2-circle me-1"></i>' + (bio.resueltasHoy || 0) + ' resuelta(s) hoy por SAI sin necesitar analista</span>';
+        htmlBio += '<button type="button" class="btn btn-sm" style="background:rgba(185,28,28,0.08);color:#b91c1c;border:1px solid rgba(185,28,28,0.3);font-weight:700;font-size:0.78rem;" onclick="abrirDesarchivarBiometrias()"><i class="bi bi-arrow-counterclockwise me-1"></i>Desarchivar casos</button>';
+        htmlBio += '</div>';
 
         htmlBio += '<div style="background:white;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">';
         htmlBio += '<div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;">';
@@ -3354,25 +3438,16 @@ function _renderDetalleModal(tipo, filtroTipo) {
             htmlBio += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;">Póliza</th>';
             htmlBio += '<th style="padding:10px 14px;text-align:right;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;">Estado</th>';
             htmlBio += '</tr></thead><tbody>';
+            var ESTILO_FASE = {
+                'Esperando contacto': { color: '#a16207', icon: 'bi-hourglass-split' },
+                'WA enviado': { color: '#7e22ce', icon: 'bi-whatsapp' },
+                'En cola de llamada': { color: '#1d4ed8', icon: 'bi-arrow-right-circle' }
+            };
             items.forEach(function(item) {
-                var estadoLabel, estadoColor, estadoIcon;
-                if (item.estadoSai === 'ESPERANDO RE-CONSULTA') {
-                    estadoLabel = 'Esperando biometría';
-                    estadoColor = '#a16207';
-                    estadoIcon = 'bi-hourglass-split';
-                } else if (item.estadoSai === 'APROBADO_PENDIENTE_BIOMETRIA') {
-                    estadoLabel = 'Enviada a asignar';
-                    estadoColor = '#1d4ed8';
-                    estadoIcon = 'bi-arrow-right-circle';
-                } else if (item.estadoSai === 'APROBADO') {
-                    estadoLabel = 'Aprobada (sin gestión)';
-                    estadoColor = '#15803d';
-                    estadoIcon = 'bi-check-circle';
-                } else {
-                    estadoLabel = item.estadoSai;
-                    estadoColor = '#706F6F';
-                    estadoIcon = 'bi-info-circle';
-                }
+                var estilo = ESTILO_FASE[item.estadoSai] || { color: '#706F6F', icon: 'bi-info-circle' };
+                var estadoLabel = item.estadoSai;
+                var estadoColor = estilo.color;
+                var estadoIcon = estilo.icon;
                 htmlBio += '<tr style="border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">';
                 htmlBio += '<td style="padding:10px 14px;font-weight:700;color:#1e293b;">' + item.id + '</td>';
                 htmlBio += '<td style="padding:10px 14px;color:var(--gris);">' + item.poliza + '</td>';

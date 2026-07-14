@@ -87,7 +87,12 @@ function limpiarBiometriasResueltas() {
       const datosApi = _consultarSaiIndividual(bioIds[i]);
       if (datosApi) {
         estadosSai.set(bioIds[i], String(datosApi.studyStatus || "").toUpperCase().trim());
-        const fechaResultadoApi = datosApi.lastMovementDate || "";
+        // Mismo campo que _homologarDatosApi() usa para fechaResultado (lastResultDate con
+        // fallback a lastMovementDate) — si aquí se comparara contra un campo distinto al que
+        // se guardó al escalar, cualquier caso recién escalado se vería como "cambiado" en su
+        // primera revisión horaria solo por la diferencia entre campos, no porque SAI haya
+        // movido algo de verdad.
+        const fechaResultadoApi = datosApi.lastResultDate || datosApi.lastMovementDate || "";
         if (fechaResultadoApi) fechasSai.set(bioIds[i], fechaResultadoApi);
       } else {
         Logger.log("⚠️ Sin respuesta API para " + bioIds[i]);
@@ -622,11 +627,42 @@ function _calcularUmbralArchivoColaBiometria(ahora) {
   return { umbral: base, corteOrigen: "CORTE_12PM" };
 }
 
+// Lee pendiente_biometria y devuelve un mapa solicitud → fecha en que pasó a fase
+// "ESCALADA" (col 77, fecha_actualizacion_fase). Es el momento real en que el caso
+// entró a la cola de llamada en "solicitud" — a diferencia de fechaResultado/
+// fechaRadicacion (fechas de SAI, que no reflejan cuánto lleva el caso en cola).
+function _mapaFechaEscaladaBiometria() {
+  var mapa = new Map();
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio || hojaBio.getLastRow() < 2) return mapa;
+
+  var lastRow = hojaBio.getLastRow();
+  var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+  var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+  for (var i = 0; i < ids.length; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "ESCALADA") continue;
+    var solId = String(ids[i][0]).trim();
+    if (!solId) continue;
+    var fecha = _parseFechaGAS(fechas[i][0]);
+    if (fecha) mapa.set(solId, fecha);
+  }
+  return mapa;
+}
+
 // Archiva a biometria_cola_archivada (mismo spreadsheet de pendiente_biometria) las
-// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuyo fechaResultado
-// (con fallback a fechaRadicacion) sea anterior al umbral del corte actual — es decir, que
-// tuvieron un ciclo completo de ~12h para ser llamadas y no se lograron asignar.
-// Es una bandeja de solo revisión manual: no hay reactivación automática.
+// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuya antigüedad
+// en cola sea anterior al umbral del corte actual — es decir, que tuvieron un ciclo
+// completo de ~12h para ser llamadas y no se lograron asignar. La antigüedad se mide
+// desde que el caso realmente entró a la cola (fecha de escalada en pendiente_biometria,
+// ver _mapaFechaEscaladaBiometria), con fallback a fechaResultado/fechaRadicacion solo
+// si no hay match (no debería pasar en el flujo normal) — usar directamente fechaResultado
+// archivaba casos casi apenas escalaban cuando el WA previo se había demorado varios días
+// por Ley 2300/festivos, sin darles el ciclo completo de ~12h.
+// Es una bandeja de solo revisión manual: no hay reactivación automática (ver
+// admin_desarchivarBiometrias() para la recuperación manual).
 function _archivarColaBiometriaVencida() {
   Logger.log("--- Archivado de cola de biometría vencida ---");
 
@@ -639,6 +675,7 @@ function _archivarColaBiometriaVencida() {
 
   var ahora = new Date();
   var vent = _calcularUmbralArchivoColaBiometria(ahora);
+  var mapaEscalada = _mapaFechaEscaladaBiometria();
 
   // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
   var datos = hoja.getRange(2, 1, lastRow - 1, 58).getValues();
@@ -654,9 +691,9 @@ function _archivarColaBiometriaVencida() {
     var solicitud = String(row[0]).trim();
     if (!solicitud) continue;
 
-    var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
+    var fecha = mapaEscalada.get(solicitud) || _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
     if (!fecha) {
-      Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable — no se archiva.");
+      Logger.log("⚠️ Solicitud " + solicitud + " sin fecha de escalada ni fechaResultado/fechaRadicacion parseable — no se archiva.");
       continue;
     }
 
@@ -964,7 +1001,7 @@ function _homologarDatosApi(item) {
     correoAsesor: item.advisorEmail,
     estadoGeneral: item.studyStatus,
     fechaRadicacion: item.registrationDate,
-    fechaResultado: item.lastMovementDate,
+    fechaResultado: item.lastResultDate || item.lastMovementDate,
     clase: claseNormalizada,
     digitalUar: "No",
     canal: String(item.channel || "").trim(),
@@ -1411,6 +1448,129 @@ function corregirBiometriasMalEnrutadas() {
 
   Logger.log("Resumen — movidas: " + idsAMover.size + " | ya no aplica (dejadas para revisión manual): " + yaNoAplica);
   Logger.log("=== FIN corregirBiometriasMalEnrutadas ===");
+}
+
+// ===================================================================
+// DESARCHIVADO MANUAL DE BIOMETRÍAS (panel admin)
+// ===================================================================
+// Red de seguridad manual para _archivarColaBiometriaVencida(): esa función no tiene
+// reactivación automática por diseño (es "bandeja de solo revisión manual"). Estas dos
+// funciones le dan al admin una forma de ver qué se archivó y recuperar los N casos más
+// recientes, siempre revalidando contra SAI antes de reponerlos en la cola.
+
+// Devuelve las solicitudes en pendiente_biometria con fase "ARCHIVADA", más recientes
+// primero (por fecha_actualizacion_fase), para que el admin decida cuántas recuperar.
+function admin_listarBiometriasArchivadas() {
+  try {
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    if (!hojaBio || hojaBio.getLastRow() < 2) {
+      return { success: true, total: 0, lista: [] };
+    }
+
+    var lastRow = hojaBio.getLastRow();
+    var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+    var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+    var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+    var archivadas = [];
+    for (var i = 0; i < ids.length; i++) {
+      if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
+      var solId = String(ids[i][0]).trim();
+      if (!solId) continue;
+      var fecha = _parseFechaGAS(fechas[i][0]);
+      archivadas.push({ solicitud: solId, fechaArchivado: fecha ? Utilities.formatDate(fecha, "GMT-5", "dd/MM/yyyy HH:mm") : "" , _ts: fecha ? fecha.getTime() : 0 });
+    }
+
+    archivadas.sort(function(a, b) { return b._ts - a._ts; });
+    archivadas.forEach(function(a) { delete a._ts; });
+
+    return { success: true, total: archivadas.length, lista: archivadas.slice(0, 50) };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// Recupera las `cantidad` solicitudes más recientemente archivadas: revalida cada una
+// contra SAI (mismo patrón que corregirBiometriasMalEnrutadas) y solo repone en la cola
+// de llamada ("solicitud") las que SAI sigue reportando como pendientes de biometría. Las
+// que ya se resolvieron por otro lado se dejan cerradas (fase "RESUELTA") en vez de
+// reabrirlas. Se salta a propósito la protección de _actualizarFaseBiometriaPendiente()
+// contra fases terminales, porque esta sí es una reactivación deliberada del admin.
+function admin_desarchivarBiometrias(cantidad) {
+  try {
+    var n = parseInt(cantidad, 10);
+    if (!n || n <= 0) return { success: false, message: "La cantidad debe ser un número mayor a 0." };
+
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    if (!hojaBio || hojaBio.getLastRow() < 2) {
+      return { success: true, message: "No hay biometrías archivadas.", restauradas: 0, yaResueltas: 0, sinRespuestaSai: 0 };
+    }
+
+    var lastRow = hojaBio.getLastRow();
+    var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+    var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+    var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+    var candidatos = [];
+    for (var i = 0; i < ids.length; i++) {
+      if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
+      var solId = String(ids[i][0]).trim();
+      if (!solId) continue;
+      var fecha = _parseFechaGAS(fechas[i][0]);
+      candidatos.push({ fila: i + 2, solicitud: solId, ts: fecha ? fecha.getTime() : 0 });
+    }
+
+    candidatos.sort(function(a, b) { return b.ts - a.ts; });
+    candidatos = candidatos.slice(0, n);
+
+    if (candidatos.length === 0) {
+      return { success: true, message: "No hay biometrías archivadas para recuperar.", restauradas: 0, yaResueltas: 0, sinRespuestaSai: 0 };
+    }
+
+    var paraReponer = [];
+    var filasAActualizar = []; // { fila, nuevaFase }
+    var yaResueltas = 0, sinRespuestaSai = 0;
+
+    for (var c = 0; c < candidatos.length; c++) {
+      var datosApi = _consultarSaiIndividual(candidatos[c].solicitud);
+      if (!datosApi) {
+        sinRespuestaSai++;
+        continue;
+      }
+
+      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA" || !_esResultCodeBiometriaPendiente(datosApi.resultCode)) {
+        filasAActualizar.push({ fila: candidatos[c].fila, nuevaFase: "RESUELTA" });
+        yaResueltas++;
+        continue;
+      }
+
+      paraReponer.push(_homologarDatosApi(datosApi));
+      filasAActualizar.push({ fila: candidatos[c].fila, nuevaFase: "ESCALADA" });
+      Utilities.sleep(1000);
+    }
+
+    var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    filasAActualizar.forEach(function(item) {
+      hojaBio.getRange(item.fila, 76).setValue(item.nuevaFase);
+      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+    });
+    if (filasAActualizar.length > 0) SpreadsheetApp.flush();
+
+    if (paraReponer.length > 0) {
+      procesarYGuardarLote(paraReponer);
+    }
+
+    var msg = paraReponer.length + " biometría(s) repuestas en la cola de llamada.";
+    if (yaResueltas > 0) msg += " " + yaResueltas + " ya se habían resuelto en SAI (se dejaron cerradas).";
+    if (sinRespuestaSai > 0) msg += " " + sinRespuestaSai + " sin respuesta de SAI (se dejaron archivadas, reintentar luego).";
+
+    return { success: true, message: msg, restauradas: paraReponer.length, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
 }
 
 // CORRECCIÓN PUNTUAL — correr una sola vez (idempotente) para el caso contrario a
