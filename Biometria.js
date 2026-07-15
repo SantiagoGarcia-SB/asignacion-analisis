@@ -146,30 +146,40 @@ function limpiarBiometriasResueltas() {
       // se esperaba la respuesta de SAI, esta relectura evita tocar la fila equivocada.
       const lastRowActual = hoja.getLastRow();
       if (lastRowActual < 2) return;
-      const idsActuales = hoja.getRange(2, 1, lastRowActual - 1, 19).getValues();
+      const lastColActual = hoja.getLastColumn();
+      const filasCompletas = hoja.getRange(2, 1, lastRowActual - 1, lastColActual).getValues();
 
-      const filasAEliminar = [];
+      let eliminadas = 0;
       let actualizadas = 0;
-      for (let i = 0; i < idsActuales.length; i++) {
-        const solicitud = String(idsActuales[i][0]).trim();
-        const estado = String(idsActuales[i][16]).toUpperCase().trim();
-        if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") continue;
+      const filasFinales = [];
+      for (let i = 0; i < filasCompletas.length; i++) {
+        const fila = filasCompletas[i];
+        const solicitud = String(fila[0]).trim();
+        const estado = String(fila[16]).toUpperCase().trim();
 
-        if (idsAEliminar.has(solicitud)) {
-          filasAEliminar.push(i + 2);
-        } else if (fechasAActualizar.has(solicitud)) {
-          hoja.getRange(i + 2, 19).setValue(fechasAActualizar.get(solicitud));
+        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && idsAEliminar.has(solicitud)) {
+          eliminadas++;
+          continue; // se excluye del recorte en bloque
+        }
+        if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && fechasAActualizar.has(solicitud)) {
+          fila[18] = fechasAActualizar.get(solicitud);
           actualizadas++;
         }
+        filasFinales.push(fila);
       }
 
-      for (let j = filasAEliminar.length - 1; j >= 0; j--) {
-        hoja.deleteRow(filasAEliminar[j]);
-      }
-
-      if (filasAEliminar.length > 0 || actualizadas > 0) {
+      // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes, cientos de
+      // deleteRow() secuenciales son lentos y mantienen el ScriptLock ocupado más tiempo del
+      // necesario (mismo problema ya corregido en _archivarColaBiometriaVencida()). En su
+      // lugar se reescribe toda la hoja de una sola vez, conservando el orden de las filas
+      // que quedan.
+      if (eliminadas > 0 || actualizadas > 0) {
+        hoja.getRange(2, 1, filasCompletas.length, lastColActual).clearContent();
+        if (filasFinales.length > 0) {
+          hoja.getRange(2, 1, filasFinales.length, lastColActual).setValues(filasFinales);
+        }
         SpreadsheetApp.flush();
-        Logger.log("✅ " + filasAEliminar.length + " biometrías resueltas eliminadas. " + actualizadas + " fechaResultado actualizadas.");
+        Logger.log("✅ " + eliminadas + " biometrías resueltas eliminadas. " + actualizadas + " fechaResultado actualizadas.");
       } else {
         Logger.log("ℹ️ Las filas candidatas ya no estaban disponibles al momento de actuar (probablemente asignadas mientras tanto).");
       }
@@ -688,7 +698,7 @@ function _archivarColaBiometriaVencida() {
   var mapaEscalada = _mapaFechaEscaladaBiometria();
 
   // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
-  var datos = hoja.getRange(2, 1, lastRow - 1, 58).getValues();
+  var datos = hoja.getRange(2, 1, lastRow - 1, hoja.getLastColumn()).getValues();
   var idsCandidatos = new Set();
 
   for (var i = 0; i < datos.length; i++) {
@@ -730,7 +740,13 @@ function _archivarColaBiometriaVencida() {
   try {
     var lastRowActual = hoja.getLastRow();
     if (lastRowActual < 2) return;
-    var datosActuales = hoja.getRange(2, 1, lastRowActual - 1, 58).getValues();
+    // Ancho dinámico (no fijo a 58): la columna 59 (BG) guarda el flag REASIGNADA
+    // (ver desasignarSolicitud en Admin.js y su lectura en MotorAsignacion.js) — un
+    // ancho fijo la deja fuera de la reescritura de abajo y esa columna queda con el
+    // valor viejo de esa posición de fila tras el corrimiento, desalineando REASIGNADA
+    // entre solicitudes.
+    var numColsActual = hoja.getLastColumn();
+    var datosActuales = hoja.getRange(2, 1, lastRowActual - 1, numColsActual).getValues();
 
     var filasAArchivar = [];
     for (var j = 0; j < datosActuales.length; j++) {
@@ -763,9 +779,9 @@ function _archivarColaBiometriaVencida() {
       return !idsAQuitarDeSolicitud.has(String(row[0]).trim());
     });
 
-    hoja.getRange(2, 1, datosActuales.length, 58).clearContent();
+    hoja.getRange(2, 1, datosActuales.length, numColsActual).clearContent();
     if (filasRestantes.length > 0) {
-      hoja.getRange(2, 1, filasRestantes.length, 58).setValues(filasRestantes);
+      hoja.getRange(2, 1, filasRestantes.length, numColsActual).setValues(filasRestantes);
     }
 
     SpreadsheetApp.flush();
@@ -1270,6 +1286,7 @@ function _enviarPrimerContactoBiometria() {
     var rowsParaWA = [];
     var filasParaWA = [];
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    var huboCambios = false;
 
     for (var r = 0; r < resultados.length; r++) {
       var item = resultados[r].item;
@@ -1281,23 +1298,33 @@ function _enviarPrimerContactoBiometria() {
       }
 
       var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
-      hojaBio.getRange(item.fila, 63).setValue(statusActual); // nuevo_estado_sai
+      item.datosFila[62] = statusActual; // nuevo_estado_sai
+      huboCambios = true;
 
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
-        hojaBio.getRange(item.fila, 76).setValue("RESUELTA");
-        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+        item.datosFila[75] = "RESUELTA";
+        item.datosFila[76] = ahora;
         Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
         continue;
       }
 
       rowsParaWA.push(item.datosFila);
       filasParaWA.push(item.fila);
-      hojaBio.getRange(item.fila, 76).setValue("WA_ENVIADO");
-      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+      item.datosFila[75] = "WA_ENVIADO";
+      item.datosFila[76] = ahora;
       Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
     }
 
-    SpreadsheetApp.flush();
+    // Una sola escritura en bloque (toda la hoja leída al inicio, mutada en memoria) en
+    // vez de hasta 3 setValue() individuales por candidato — mismo motivo que en
+    // limpiarBiometriasResueltas() y eliminarSolicitudesFinalizadas(): con backlogs
+    // grandes, cientos de llamadas individuales a Sheets mantienen el ScriptLock ocupado
+    // más tiempo del necesario, bloqueando a otros procesos que esperan el mismo candado
+    // global (p.ej. guardarGestionBiometria()).
+    if (huboCambios) {
+      hojaBio.getRange(2, 1, datos.length, 76).setValues(datos);
+      SpreadsheetApp.flush();
+    }
     lock.releaseLock();
 
     if (rowsParaWA.length > 0) {

@@ -1057,17 +1057,27 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     const lastRow = hoja.getLastRow();
     if (lastRow < 2) return;
 
-    const ids = hoja.getRange(2, 1, lastRow - 1, 1).getValues();
-    let eliminadas = 0;
+    // Ancho dinámico (no fijo a 58): la columna 59 (BG) guarda el flag REASIGNADA
+    // (ver desasignarSolicitud en Admin.js y su lectura en MotorAsignacion.js) — un
+    // ancho fijo de 58 la deja fuera del recorte/reescritura de abajo y esa columna
+    // queda con el valor viejo de esa posición de fila tras el corrimiento,
+    // desalineando REASIGNADA entre solicitudes.
+    const numCols = hoja.getLastColumn();
+    const datos = hoja.getRange(2, 1, lastRow - 1, numCols).getValues();
+    const filasFinales = datos.filter(row => !idsAEliminar.has(String(row[0]).trim()));
+    const eliminadas = datos.length - filasFinales.length;
 
-    for (let i = ids.length - 1; i >= 0; i--) {
-      if (idsAEliminar.has(String(ids[i][0]).trim())) {
-        hoja.deleteRow(i + 2);
-        eliminadas++;
-      }
-    }
-
+    // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes, cientos de
+    // deleteRow() secuenciales son lentos y mantienen el ScriptLock ocupado más tiempo del
+    // necesario, bloqueando a otros procesos (p.ej. guardarGestionBiometria()) que esperan
+    // el mismo lock global — mismo problema ya corregido en _archivarColaBiometriaVencida()
+    // y limpiarBiometriasResueltas(). En su lugar se reescribe toda la hoja de una sola vez,
+    // conservando el orden de las filas que quedan.
     if (eliminadas > 0) {
+      hoja.getRange(2, 1, datos.length, numCols).clearContent();
+      if (filasFinales.length > 0) {
+        hoja.getRange(2, 1, filasFinales.length, numCols).setValues(filasFinales);
+      }
       SpreadsheetApp.flush();
       Logger.log(`🧹 ${eliminadas} solicitudes finalizadas eliminadas de la hoja (APROBADO/RECHAZADO/CODEUDORES_REQUERIDOS).`);
     }
@@ -2999,50 +3009,79 @@ function verificarPermisoVigenteHoy() {
   }
 }
 
+// Recorre ambos Historico_Gestiones UNA vez y arma el conteo de "cerradas hoy" de
+// TODAS las analistas a la vez (no solo la que llamó) — así una sola pasada sirve
+// para cachear y repartir entre todo el equipo en obtenerGestionesHoyCruzadas().
+function _calcularGestionesHoyTodos(hoyStr) {
+  const totales = {}; // email -> { digital, reestudios }
+  function sumar(email, campo) {
+    if (!email) return;
+    if (!totales[email]) totales[email] = { digital: 0, reestudios: 0 };
+    totales[email][campo]++;
+  }
+
+  // 1. Contar desde Historico_Gestiones del warehouse (digitales, biometría, inducciones)
+  try {
+    const hojaHistG = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
+                        .getSheetByName("Historico_Gestiones");
+    if (hojaHistG && hojaHistG.getLastRow() > 1) {
+      const dataHistG = hojaHistG.getRange(2, 26, hojaHistG.getLastRow() - 1, 2).getDisplayValues(); // cols 26-27
+      for (let i = 0; i < dataHistG.length; i++) {
+        const asignado = String(dataHistG[i][0]).trim().toLowerCase(); // col 26
+        const fechaFin = String(dataHistG[i][1]).trim();               // col 27
+        if (fechaFin.includes(hoyStr)) sumar(asignado, 'digital');
+      }
+    }
+  } catch(e) { Logger.log("_calcularGestionesHoyTodos Hist: " + e.message); }
+
+  // 2. Contar desde Historico_Gestiones de ssReestudios
+  try {
+    const hojaHistReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS)
+                            .getSheetByName("Historico_Gestiones");
+    if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
+      const dataReest = hojaHistReest.getRange(2, 7, hojaHistReest.getLastRow() - 1, 4).getDisplayValues(); // cols G(7)..J(10)
+      for (let i = 0; i < dataReest.length; i++) {
+        const asignado = String(dataReest[i][0]).trim().toLowerCase(); // col G
+        const fechaFin = String(dataReest[i][3]).trim();               // col J
+        if (fechaFin.includes(hoyStr)) sumar(asignado, 'reestudios');
+      }
+    }
+  } catch (e) {
+    Logger.log("_calcularGestionesHoyTodos Reest: " + e.message);
+  }
+
+  return totales;
+}
+
+// Antes esta función recorría Historico_Gestiones completo (que solo crece y nunca
+// se archiva) en CADA login/refresco de CADA analista — con el histórico ya grande
+// eso hacía lento el ingreso a la plataforma para todos. Ahora el cálculo (para
+// todas las analistas a la vez) se cachea 60s compartido entre todo el equipo
+// (mismo patrón de _getDataUsuarios(), Código.js:248): como máximo se recorre el
+// histórico una vez por minuto sin importar cuánta gente entre a la vez, y el
+// número siempre es el cálculo real (nunca puede desincronizarse) — solo puede
+// tardar hasta 60s en reflejar el cierre más reciente.
 function obtenerGestionesHoyCruzadas() {
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
     const hoyStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
+    const cacheKey = 'GESTIONES_HOY_' + hoyStr;
 
-    let conteoDigital = 0;
-    let conteoReestudios = 0;
-
-    // 1. Contar desde Historico_Gestiones del warehouse (digitales, biometría, inducciones)
+    let totales = null;
     try {
-      const hojaHistG = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID)
-                          .getSheetByName("Historico_Gestiones");
-      if (hojaHistG && hojaHistG.getLastRow() > 1) {
-        const dataHistG = hojaHistG.getRange(2, 26, hojaHistG.getLastRow() - 1, 2).getDisplayValues(); // cols 26-27
-        for (let i = 0; i < dataHistG.length; i++) {
-          const asignado = String(dataHistG[i][0]).trim().toLowerCase(); // col 26
-          const fechaFin = String(dataHistG[i][1]).trim();               // col 27
-          if (asignado === userEmail && fechaFin.includes(hoyStr)) conteoDigital++;
-        }
-      }
-    } catch(e) { Logger.log("obtenerGestionesHoyCruzadas Hist: " + e.message); }
+      const cached = CacheService.getScriptCache().get(cacheKey);
+      if (cached) totales = JSON.parse(cached);
+    } catch (e) {}
 
-    // 2. Contar desde Historico_Gestiones de ssReestudios
-    try {
-      const hojaHistReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS)
-                              .getSheetByName("Historico_Gestiones");
-      if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
-        const dataReest = hojaHistReest.getRange(2, 7, hojaHistReest.getLastRow() - 1, 4).getDisplayValues(); // cols G(7)..J(10)
-        for (let i = 0; i < dataReest.length; i++) {
-          const asignado = String(dataReest[i][0]).trim().toLowerCase(); // col G
-          const fechaFin = String(dataReest[i][3]).trim();               // col J
-          if (asignado === userEmail && fechaFin.includes(hoyStr)) conteoReestudios++;
-        }
-      }
-    } catch (e) {
-      Logger.log("obtenerGestionesHoyCruzadas Reest: " + e.message);
+    if (!totales) {
+      totales = _calcularGestionesHoyTodos(hoyStr);
+      try { CacheService.getScriptCache().put(cacheKey, JSON.stringify(totales), 60); } catch (e) {}
     }
 
+    const mio = totales[userEmail] || { digital: 0, reestudios: 0 };
     return {
-      hoyTotal: conteoDigital + conteoReestudios,
-      detalle: {
-        digital: conteoDigital,
-        reestudios: conteoReestudios
-      }
+      hoyTotal: mio.digital + mio.reestudios,
+      detalle: { digital: mio.digital, reestudios: mio.reestudios }
     };
   } catch (e) {
     Logger.log("Error en obtenerGestionesHoyCruzadas: " + e.message);
