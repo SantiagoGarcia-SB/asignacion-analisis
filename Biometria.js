@@ -1246,7 +1246,7 @@ function _enviarPrimerContactoBiometria() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, 77).getValues();
 
   var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
@@ -1322,7 +1322,7 @@ function _enviarPrimerContactoBiometria() {
     // más tiempo del necesario, bloqueando a otros procesos que esperan el mismo candado
     // global (p.ej. guardarGestionBiometria()).
     if (huboCambios) {
-      hojaBio.getRange(2, 1, datos.length, 76).setValues(datos);
+      hojaBio.getRange(2, 1, datos.length, 77).setValues(datos);
       SpreadsheetApp.flush();
     }
     lock.releaseLock();
