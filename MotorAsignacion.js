@@ -512,7 +512,7 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
   hojaHist.getRange(nuevaFila, 1, 1, histRow.length).setValues([histRow]);
   hojaHist.getRange(nuevaFila, 35, 1, 3).setNumberFormat("0.00");
   solicitudesSheet.deleteRow(lead.rowIndex);
-  _registrarAsignacionContador(userEmail, lead.tipo);
+  _registrarAsignacionContador(userEmail, lead.tipo, String(lead.rowData[0]).trim());
 }
 
 function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios, hojaHistR) {
@@ -528,7 +528,7 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
   var nuevaFila = hojaHistR.getLastRow() + 1;
   hojaHistR.getRange(nuevaFila, 1, 1, filaCompleta.length).setValues([filaCompleta]);
   reestudiosSheet.deleteRow(lead.rowIndex);
-  _registrarAsignacionContador(userEmail, lead.tipo);
+  _registrarAsignacionContador(userEmail, lead.tipo, String(lead.rowData[1] || lead.rowData[0]).trim());
 }
 
 // ============================================================

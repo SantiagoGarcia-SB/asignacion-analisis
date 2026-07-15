@@ -369,6 +369,9 @@ function autoAsignarBiometria() {
     var idsAsignadas = candidatosParaAsignar.map(c => String(c.row[0]).trim()).filter(id => id);
     _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");
 
+    // Agregar al índice de casos abiertos
+    idsAsignadas.forEach(function(id) { _agregarCasoAbierto(userEmail, id); });
+
     return { success: true, message: `Se te asignaron ${filasHist.length} nuevas solicitudes.`, nueva: true };
 
   } catch (error) {
@@ -440,7 +443,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
 
-        _registrarCierreContador(userEmail, 'desaplazamiento', fechaAsignacion);
+        _registrarCierreContador(userEmail, 'desaplazamiento', fechaAsignacion, String(idSolicitud).trim());
 
         SpreadsheetApp.flush();
         lock.releaseLock();

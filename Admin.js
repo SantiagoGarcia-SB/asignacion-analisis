@@ -447,12 +447,19 @@ function admin_recalcularContadores() {
 function _recalcularContadoresInterno() {
   var cargaPendiente = {};
   var cupoHoy = {};
+  var casosAbiertos = {}; // índice de IDs abiertos por analista
   var hoy = _hoyYMD();
 
-  function acumular(email, tipo, esPendiente, esHoy) {
+  function acumular(email, tipo, esPendiente, esHoy, solicitudId) {
     email = String(email).toLowerCase().trim();
     if (!email) return;
-    if (esPendiente) cargaPendiente[email] = (cargaPendiente[email] || 0) + 1;
+    if (esPendiente) {
+      cargaPendiente[email] = (cargaPendiente[email] || 0) + 1;
+      if (solicitudId) {
+        if (!casosAbiertos[email]) casosAbiertos[email] = [];
+        casosAbiertos[email].push(solicitudId);
+      }
+    }
     if (esHoy) {
       var key = email + '|' + tipo;
       cupoHoy[key] = (cupoHoy[key] || 0) + 1;
@@ -470,7 +477,7 @@ function _recalcularContadoresInterno() {
       var tipo = String(row[60] || '').trim() || 'digital';
       var tieneFin = row[26] instanceof Date || String(row[26]).trim() !== "";
       var esHoy = _fechaEsHoyYMD(row[24]) || _fechaEsHoyYMD(row[26]);
-      acumular(row[25], tipo, !tieneFin, esHoy);
+      acumular(row[25], tipo, !tieneFin, esHoy, String(row[0] || '').trim());
     }
   }
 
@@ -491,12 +498,13 @@ function _recalcularContadoresInterno() {
       }
       var tieneFinR = rowR[9] instanceof Date || String(rowR[9]).trim() !== "";
       var esHoyR = _fechaEsHoyYMD(rowR[8]) || _fechaEsHoyYMD(rowR[9]);
-      acumular(rowR[6], tipoR, !tieneFinR, esHoyR);
+      acumular(rowR[6], tipoR, !tieneFinR, esHoyR, String(rowR[1] || '').trim());
     }
   }
 
   _guardarCargaPendienteTodos(cargaPendiente);
   _guardarContadoresCupoHoy({ fecha: hoy, datos: cupoHoy });
+  _guardarCasosAbiertos(casosAbiertos);
 
   return {
     success: true,
@@ -578,6 +586,7 @@ function desasignarSolicitud(idSolicitud){
           var emailAnaOriginal = String(filaCompleta[25] || '').toLowerCase().trim();
           if (emailAnaOriginal) {
             _ajustarCargaPendiente(emailAnaOriginal, -1);
+            _removerCasoAbierto(emailAnaOriginal, idBuscado);
             // Si el caso se había asignado hoy, también libera el cupo diario que
             // ya se le había descontado al momento de asignarlo — de lo contrario
             // le queda contando contra su cupo un caso que nunca gestionó.
@@ -677,6 +686,7 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
           if (emailAnteriorR && emailAnteriorR !== correoNorm) {
             _ajustarCargaPendiente(emailAnteriorR, -1);
             _ajustarCargaPendiente(correoNorm, 1);
+            _moverCasoAbierto(emailAnteriorR, correoNorm, String(idSolicitud).trim());
             // Si el caso se asignó hoy, el cupo diario ya se le había descontado
             // al analista original — se lo devolvemos y se lo cargamos al nuevo,
             // igual que en desasignarSolicitud.
@@ -715,6 +725,7 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
           if (emailAnteriorP && emailAnteriorP !== correoNorm) {
             _ajustarCargaPendiente(emailAnteriorP, -1);
             _ajustarCargaPendiente(correoNorm, 1);
+            _moverCasoAbierto(emailAnteriorP, correoNorm, String(idSolicitud).trim());
             if (_fechaEsHoyYMD(fechaAsigP)) {
               _decrementarContadorCupo(emailAnteriorP, tipoGuardadoP);
               _incrementarContadorCupo(correoNorm, tipoGuardadoP);

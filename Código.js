@@ -216,17 +216,21 @@ function _obtenerCargaPendienteAnalista(userEmail) {
 }
 
 // Se llama justo al asignar un caso nuevo (MotorAsignacion.js).
-function _registrarAsignacionContador(userEmail, tipo) {
+function _registrarAsignacionContador(userEmail, tipo, solicitudId) {
   _incrementarContadorCupo(userEmail, tipo);
   _ajustarCargaPendiente(userEmail, 1);
+  if (solicitudId) _agregarCasoAbierto(userEmail, solicitudId);
 }
 
 // Se llama al cerrar un caso (las 3 funciones de "guardar gestión").
 // fechaAsignacionOriginal es la fecha que ya tenía el caso antes de cerrarlo.
 // Optimizado: usa getProperties/setProperties batch para minimizar roundtrips.
-function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal) {
+function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal, solicitudId) {
   var email = String(userEmail).toLowerCase().trim();
   if (!email) return;
+
+  // Remover del índice de casos abiertos
+  if (solicitudId) _removerCasoAbierto(email, solicitudId);
 
   var props = PropertiesService.getScriptProperties();
   // 1 sola lectura batch en vez de 2 getProperty individuales
@@ -266,6 +270,69 @@ function _derivarTipoReestudio(origenNorm, tipoPNorm) {
 }
 
 // ============================================================
+// ÍNDICE DE CASOS ABIERTOS (evita leer Historico_Gestiones al cargar panel)
+// ============================================================
+// JSON en PropertiesService con los IDs de solicitudes abiertas por analista.
+// Se actualiza en los mismos puntos que los contadores (asignar, cerrar, desasignar).
+// Si se desincroniza: admin_recalcularContadores() lo reconstruye desde cero.
+
+const _PROP_CASOS_ABIERTOS = 'CASOS_ABIERTOS';
+
+function _leerCasosAbiertos() {
+  var raw = PropertiesService.getScriptProperties().getProperty(_PROP_CASOS_ABIERTOS);
+  if (raw) {
+    try { return JSON.parse(raw); } catch (e) {}
+  }
+  return {};
+}
+
+function _guardarCasosAbiertos(obj) {
+  PropertiesService.getScriptProperties().setProperty(_PROP_CASOS_ABIERTOS, JSON.stringify(obj));
+}
+
+function _agregarCasoAbierto(userEmail, solicitudId) {
+  var email = String(userEmail).toLowerCase().trim();
+  var id = String(solicitudId).trim();
+  if (!email || !id) return;
+  var datos = _leerCasosAbiertos();
+  if (!datos[email]) datos[email] = [];
+  if (datos[email].indexOf(id) === -1) datos[email].push(id);
+  _guardarCasosAbiertos(datos);
+}
+
+function _removerCasoAbierto(userEmail, solicitudId) {
+  var email = String(userEmail).toLowerCase().trim();
+  var id = String(solicitudId).trim();
+  if (!email || !id) return;
+  var datos = _leerCasosAbiertos();
+  if (!datos[email]) return;
+  datos[email] = datos[email].filter(function(x) { return x !== id; });
+  if (datos[email].length === 0) delete datos[email];
+  _guardarCasosAbiertos(datos);
+}
+
+function _moverCasoAbierto(emailOrigen, emailDestino, solicitudId) {
+  var id = String(solicitudId).trim();
+  if (!id) return;
+  var datos = _leerCasosAbiertos();
+  var origen = String(emailOrigen).toLowerCase().trim();
+  var destino = String(emailDestino).toLowerCase().trim();
+  if (datos[origen]) {
+    datos[origen] = datos[origen].filter(function(x) { return x !== id; });
+    if (datos[origen].length === 0) delete datos[origen];
+  }
+  if (destino) {
+    if (!datos[destino]) datos[destino] = [];
+    if (datos[destino].indexOf(id) === -1) datos[destino].push(id);
+  }
+  _guardarCasosAbiertos(datos);
+}
+
+function _obtenerCasosAbiertosAnalista(userEmail) {
+  var email = String(userEmail).toLowerCase().trim();
+  var datos = _leerCasosAbiertos();
+  return datos[email] || [];
+}
 // CACHÉ CORTA DE USUARIOS (evita releer la hoja completa en cada acción)
 // ============================================================
 // TTL de 30s: si un admin cambia equipo/estado/cupos de un analista, el
@@ -547,21 +614,22 @@ function getTableData() {
   }
 
   // 1. Historico_Gestiones — casos ya movidos al asignar (nueva lógica)
-  // Antes leía TODA la hoja (crece sin límite) en cada carga de panel. Ahora se
-  // salta la lectura si el contador de carga pendiente dice que este analista
-  // no tiene nada abierto, y si sí tiene, ubica sus filas con TextFinder
-  // acotado a la columna de asignado en vez de traer todo a memoria.
+  // Usa el índice de casos abiertos (PropertiesService) para saber CUÁLES IDs buscar,
+  // en vez de TextFinder sobre toda la columna de email (que trae 1000+ matches para
+  // analistas con historia larga). Solo lee las filas puntuales de los ~3-5 pendientes.
+  const idsAbiertos = _obtenerCasosAbiertosAnalista(userEmail);
   try {
     const hojaHist = ss.getSheetByName("Historico_Gestiones");
     const lastRowHist = hojaHist ? hojaHist.getLastRow() : 0;
-    if (hojaHist && lastRowHist > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
+    if (hojaHist && lastRowHist > 1 && idsAbiertos.length > 0) {
       const colsHist = Math.max(numCols, 60);
-      const colAsignadoHist = hojaHist.getRange(2, 26, lastRowHist - 1, 1);
-      const matchesHist = colAsignadoHist.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      const filasHist = matchesHist.map(function(m) {
-        return hojaHist.getRange(m.getRow(), 1, 1, colsHist).getDisplayValues()[0];
-      });
-      agregarDesdeRegistros(filasHist, 'HISTORICO');
+      for (var ia = 0; ia < idsAbiertos.length; ia++) {
+        var matchId = hojaHist.getRange(2, 1, lastRowHist - 1, 1).createTextFinder(idsAbiertos[ia]).matchEntireCell(true).findNext();
+        if (matchId) {
+          var filaHist = hojaHist.getRange(matchId.getRow(), 1, 1, colsHist).getDisplayValues()[0];
+          agregarDesdeRegistros([filaHist], 'HISTORICO');
+        }
+      }
     }
   } catch(e) { Logger.log("getTableData Historico: " + e.message); }
 
@@ -616,49 +684,49 @@ function getTableData() {
   }
 
   // 4. Historico_Gestiones de reestudios (casos movidos al asignar)
-  // Mismo cambio: se salta si no hay carga pendiente, y si hay, ubica la fila
-  // con TextFinder en vez de leer toda la hoja.
+  // Usa el índice de casos abiertos: busca por ID puntual en vez de TextFinder
+  // sobre toda la columna de email (misma lógica que bloque 1 arriba).
   try {
     const ssReestH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaHistReest = ssReestH.getSheetByName("Historico_Gestiones");
     const lastRowHistReest = hojaHistReest ? hojaHistReest.getLastRow() : 0;
-    if (hojaHistReest && lastRowHistReest > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-      const colAsignadoHR = hojaHistReest.getRange(2, 7, lastRowHistReest - 1, 1);
-      const matchesHR = colAsignadoHR.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      matchesHR.forEach(function(m) {
-        const rowHR = m.getRow();
-        const dataHistReest = hojaHistReest.getRange(rowHR, 1, 1, 18).getDisplayValues()[0];
-        const asignado = String(dataHistReest[6]).trim().toLowerCase();
-        const fechaFinR = String(dataHistReest[9]).trim();
-        const fechaAsigR = String(dataHistReest[8]).trim();
+    // Los IDs de reestudios están en el mismo índice (_obtenerCasosAbiertosAnalista).
+    // Los que ya se encontraron en el bloque 1 (principal) no van a matchear aquí
+    // porque están en spreadsheets distintos — no hay riesgo de duplicado.
+    if (hojaHistReest && lastRowHistReest > 1 && idsAbiertos && idsAbiertos.length > 0) {
+      for (var ir = 0; ir < idsAbiertos.length; ir++) {
+        // En reestudios, el ID de solicitud está en col B (2), no col A (1)
+        var matchIdR = hojaHistReest.getRange(2, 2, lastRowHistReest - 1, 1).createTextFinder(idsAbiertos[ir]).matchEntireCell(true).findNext();
+        if (!matchIdR) continue;
+        var rowHR = matchIdR.getRow();
+        var dataHistReest = hojaHistReest.getRange(rowHR, 1, 1, 18).getDisplayValues()[0];
+        var asignadoHR = String(dataHistReest[6]).trim().toLowerCase();
+        var fechaFinHR = String(dataHistReest[9]).trim();
+        var fechaAsigHR = String(dataHistReest[8]).trim();
 
-        if (fechaFinR !== "") {
-          if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
-          gestionadasTotal++;
-          return;
-        }
-        if (fechaAsigR === "") return;
+        if (asignadoHR !== userEmail) continue;
+        if (fechaFinHR !== "" || fechaAsigHR === "") continue;
 
-        const tipoProc = String(dataHistReest[4]).trim();
-        const claseR = String(dataHistReest[5]).trim();
-        let filaAdaptada = new Array(numCols).fill("");
+        var tipoProcHR = String(dataHistReest[4]).trim();
+        var claseHR = String(dataHistReest[5]).trim();
+        var filaAdaptada = new Array(numCols).fill("");
         filaAdaptada[0] = String(dataHistReest[1]).trim();
         filaAdaptada[1] = String(dataHistReest[3]).trim();
         filaAdaptada[2] = String(dataHistReest[2]).trim();
         filaAdaptada[3] = String(dataHistReest[3]).trim();
-        filaAdaptada[4] = tipoProc;
-        filaAdaptada[5] = claseR;
-        filaAdaptada[8] = fechaAsigR;
+        filaAdaptada[4] = tipoProcHR;
+        filaAdaptada[5] = claseHR;
+        filaAdaptada[8] = fechaAsigHR;
         filaAdaptada[16] = "__REESTUDIO__";
         filaAdaptada[17] = String(dataHistReest[0]).trim();
-        filaAdaptada[20] = tipoProc || claseR;
-        filaAdaptada[26] = fechaAsigR;
-        filaAdaptada[27] = asignado;
+        filaAdaptada[20] = tipoProcHR || claseHR;
+        filaAdaptada[26] = fechaAsigHR;
+        filaAdaptada[27] = asignadoHR;
         filaAdaptada[28] = "";
         filaAdaptada[30] = String(dataHistReest[7]).trim();
         filaAdaptada.push("");
         misFilasPendientes.push(filaAdaptada);
-      });
+      }
     }
   } catch(e) {
     Logger.log("Error incluyendo reestudios historico en getTableData: " + e.message);
@@ -1708,7 +1776,7 @@ function guardarCambiosInternos(data) {
       if (fechaDiligenciada instanceof Date) hojaHistorico.getRange(targetRow, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
       hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
 
-      _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion);
+      _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion, data.solicitudId);
 
       SpreadsheetApp.flush();
 
@@ -1765,7 +1833,7 @@ function guardarCambiosInternos(data) {
       var origenNormR = String(filaReest[3]).toUpperCase().trim();
       var tipoPNormR = String(filaReest[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
       var tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
-      _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR);
+      _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR, data.solicitudId);
 
       SpreadsheetApp.flush();
     }

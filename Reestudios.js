@@ -77,22 +77,22 @@ function getReestudiosData() {
     }
 
     // --- Casos asignados ya movidos a Historico_Gestiones (MotorAsignacion los mueve al asignar) ---
-    // Antes esto leía y recorría TODA la hoja (crece sin límite). Ahora, como ya
-    // sabemos por el contador de carga pendiente si este analista tiene algo
-    // abierto, solo buscamos cuando corresponde, y con TextFinder acotado a la
-    // columna de analista asignado en vez de traer todas las columnas a memoria.
+    // Usa el índice de casos abiertos para buscar solo los IDs pendientes del analista,
+    // en vez de TextFinder sobre toda la columna de email.
+    const idsAbiertosR = _obtenerCasosAbiertosAnalista(userEmail);
     try {
       const hojaHistR = ssReestudios.getSheetByName('Historico_Gestiones');
       const lastRowH = hojaHistR ? hojaHistR.getLastRow() : 0;
-      if (hojaHistR && lastRowH > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-        const colAsignado = hojaHistR.getRange(2, 7, lastRowH - 1, 1);
-        const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matches.forEach(function(m) {
-          const row = m.getRow();
-          const fila = hojaHistR.getRange(row, 1, 1, 14).getDisplayValues()[0];
-          const fechaAsignacion = String(fila[8]).trim();
-          const fechaFin = String(fila[9]).trim();
-          if (fechaAsignacion === '' || fechaFin !== '') return;
+      if (hojaHistR && lastRowH > 1 && idsAbiertosR.length > 0) {
+        for (var iRst = 0; iRst < idsAbiertosR.length; iRst++) {
+          var matchRst = hojaHistR.getRange(2, 2, lastRowH - 1, 1).createTextFinder(idsAbiertosR[iRst]).matchEntireCell(true).findNext();
+          if (!matchRst) continue;
+          var row = matchRst.getRow();
+          var fila = hojaHistR.getRange(row, 1, 1, 14).getDisplayValues()[0];
+          var fechaAsignacionH = String(fila[8]).trim();
+          var fechaFinH = String(fila[9]).trim();
+          if (String(fila[6]).trim().toLowerCase() !== userEmail) continue;
+          if (fechaAsignacionH === '' || fechaFinH !== '') continue;
 
           listaPendientes.push({
             fuente: 'REESTUDIO',
@@ -102,10 +102,10 @@ function getReestudiosData() {
             origen: String(fila[3]).trim(),
             tipoProceso: String(fila[4]).trim(),
             claseSolicitud: String(fila[5]).trim(),
-            fechaAsignacion: fechaAsignacion,
+            fechaAsignacion: fechaAsignacionH,
             fechaRadicacion: String(fila[0]).trim()
           });
-        });
+        }
       }
     } catch (eHistR) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones reestudios: ' + eHistR.toString());
@@ -195,24 +195,23 @@ function getReestudiosData() {
     }
 
     // --- Historico_Gestiones principal (casos movidos al asignar desde solicitud) ---
-    // Mismo cambio que arriba: se salta la lectura completa si el contador de
-    // carga pendiente dice que este analista no tiene nada abierto, y si sí
-    // tiene, ubica la fila con TextFinder en vez de recorrer toda la hoja.
+    // Usa el índice de casos abiertos para buscar solo por ID puntual.
     try {
       const ssPrincipal = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
       const hojaHistPrincipal = ssPrincipal.getSheetByName('Historico_Gestiones');
       const lastRowHP = hojaHistPrincipal ? hojaHistPrincipal.getLastRow() : 0;
-      if (hojaHistPrincipal && lastRowHP > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
+      if (hojaHistPrincipal && lastRowHP > 1 && idsAbiertosR.length > 0) {
         const colsHP = Math.max(61, hojaHistPrincipal.getLastColumn());
-        const colAsignadoHP = hojaHistPrincipal.getRange(2, 26, lastRowHP - 1, 1);
-        const matchesHP = colAsignadoHP.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesHP.forEach(function(m) {
-          const rowHP = m.getRow();
-          const fila = hojaHistPrincipal.getRange(rowHP, 1, 1, colsHP).getDisplayValues()[0];
-          const fechaAsig = String(fila[24]).trim();
-          const fechaFin  = String(fila[26]).trim();
+        for (var iHP = 0; iHP < idsAbiertosR.length; iHP++) {
+          var matchHP = hojaHistPrincipal.getRange(2, 1, lastRowHP - 1, 1).createTextFinder(idsAbiertosR[iHP]).matchEntireCell(true).findNext();
+          if (!matchHP) continue;
+          var rowHP = matchHP.getRow();
+          var fila = hojaHistPrincipal.getRange(rowHP, 1, 1, colsHP).getDisplayValues()[0];
+          var fechaAsig = String(fila[24]).trim();
+          var fechaFin  = String(fila[26]).trim();
 
-          if (fechaAsig === '' || fechaFin !== '') return;
+          if (String(fila[25]).trim().toLowerCase() !== userEmail) continue;
+          if (fechaAsig === '' || fechaFin !== '') continue;
 
           var polHP = String(fila[1]).trim();
           var polHPNorm = polHP.replace(/\D/g, '').replace(/^0+/, '');
@@ -246,7 +245,7 @@ function getReestudiosData() {
             categoriaScore: mapaScoreR.get(polHP) || mapaScoreR.get(polHPNorm) || '',
             inmobiliaria: mapaInmobiliariaR.get(polHP) || mapaInmobiliariaR.get(polHPNorm) || ''
           });
-        });
+        }
       }
     } catch (eHistPrincipal) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones principal: ' + eHistPrincipal.toString());
@@ -358,7 +357,7 @@ function guardarGestionReestudio(datos) {
       var origenNormReest = String(filaBase[3]).toUpperCase().trim();
       var tipoPNormReest = String(filaBase[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
       var tipoCierreReest = _derivarTipoReestudio(origenNormReest, tipoPNormReest) || 'reestudio';
-      _registrarCierreContador(emailAnalista, tipoCierreReest, fechaAsignacion);
+      _registrarCierreContador(emailAnalista, tipoCierreReest, fechaAsignacion, String(datos.solicitud || datos.solicitudId || '').trim());
     }
 
     SpreadsheetApp.flush();
