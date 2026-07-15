@@ -1474,6 +1474,8 @@ function admin_guardarTurno(turno) {
       hoja.getRange(nuevaFila, 1, 1, fila.length).setValues([fila]);
     }
     SpreadsheetApp.flush();
+    // Invalidar caché de turnos
+    try { CacheService.getScriptCache().removeAll(['TURNOS_DEF_DATA', 'TURNOS_DEF_DISPLAY', 'CONFIG_HORARIA']); } catch (e) {}
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1514,6 +1516,8 @@ function admin_desactivarTurno(idTurno) {
     }
 
     SpreadsheetApp.flush();
+    // Invalidar caché de turnos
+    try { CacheService.getScriptCache().removeAll(['TURNOS_ANALISTAS_DATA', 'TURNOS_DEF_DATA', 'TURNOS_DEF_DISPLAY', 'CONFIG_HORARIA']); } catch (e) {}
     return { success: true, message: 'Turno desactivado.', afectados: afectados };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1552,6 +1556,8 @@ function admin_asignarTurnoAnalista(email, idTurno, desde) {
     hojaAT.appendRow([emailNorm, idTurno, fechaDesde, '']);
     hojaAT.getRange(hojaAT.getLastRow(), 3).setNumberFormat('yyyy-MM-dd');
     SpreadsheetApp.flush();
+    // Invalidar caché de turnos para que verificarTurnoActivo refleje el cambio
+    try { CacheService.getScriptCache().removeAll(['TURNOS_ANALISTAS_DATA', 'TURNOS_DEF_DATA', 'TURNOS_DEF_DISPLAY', 'CONFIG_HORARIA']); } catch (e) {}
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1633,6 +1639,7 @@ function admin_guardarHorasExtra(extra) {
       extra.descripcion || ''
     ]);
     SpreadsheetApp.flush();
+    try { CacheService.getScriptCache().remove('CONFIG_HORARIA'); } catch (e) {}
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1648,6 +1655,7 @@ function admin_eliminarHorasExtra(fila) {
     if (fila < 2 || fila > hoja.getLastRow()) return { success: false, message: 'Fila inválida.' };
     hoja.deleteRow(fila);
     SpreadsheetApp.flush();
+    try { CacheService.getScriptCache().remove('CONFIG_HORARIA'); } catch (e) {}
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -2866,6 +2874,7 @@ function admin_agregarFestivo(fecha, descripcion) {
   hoja.appendRow([fechaObj, descripcion || '']);
   hoja.getRange(hoja.getLastRow(), 1).setNumberFormat('yyyy-MM-dd');
   SpreadsheetApp.flush();
+  try { CacheService.getScriptCache().remove('CONFIG_HORARIA'); } catch (e) {}
   return { success: true, message: 'Festivo agregado: ' + fecha };
 
   } catch (e) {
@@ -2882,6 +2891,7 @@ function admin_eliminarFestivo(fila) {
   if (fila < 1 || fila > hoja.getLastRow()) return { success: false, message: 'Fila inválida.' };
   hoja.deleteRow(fila);
   SpreadsheetApp.flush();
+  try { CacheService.getScriptCache().remove('CONFIG_HORARIA'); } catch (e) {}
   return { success: true, message: 'Festivo eliminado.' };
 
   } catch (e) {
@@ -2954,6 +2964,7 @@ function _importarFestivosColombiaInterno(anio) {
   hoja.getRange(startRow, 1, filasNuevas.length, 2).setValues(filasNuevas);
   hoja.getRange(startRow, 1, filasNuevas.length, 1).setNumberFormat('yyyy-MM-dd');
   SpreadsheetApp.flush();
+  try { CacheService.getScriptCache().remove('CONFIG_HORARIA'); } catch (e) {}
 
   return { success: true, message: filasNuevas.length + ' festivo(s) importado(s) para ' + anio + '.', agregados: filasNuevas.length };
 

@@ -223,11 +223,38 @@ function _registrarAsignacionContador(userEmail, tipo) {
 
 // Se llama al cerrar un caso (las 3 funciones de "guardar gestión").
 // fechaAsignacionOriginal es la fecha que ya tenía el caso antes de cerrarlo.
+// Optimizado: usa getProperties/setProperties batch para minimizar roundtrips.
 function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal) {
-  _ajustarCargaPendiente(userEmail, -1);
-  if (!_fechaEsHoyYMD(fechaAsignacionOriginal)) {
-    _incrementarContadorCupo(userEmail, tipo);
+  var email = String(userEmail).toLowerCase().trim();
+  if (!email) return;
+
+  var props = PropertiesService.getScriptProperties();
+  // 1 sola lectura batch en vez de 2 getProperty individuales
+  var allProps = props.getProperties();
+  var hoy = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+
+  // --- Ajustar carga pendiente (-1) ---
+  var cargaRaw = allProps[_PROP_CARGA_PENDIENTE];
+  var cargaDatos;
+  try { cargaDatos = cargaRaw ? JSON.parse(cargaRaw) : {}; } catch (e) { cargaDatos = {}; }
+  cargaDatos[email] = Math.max(0, (cargaDatos[email] || 0) - 1);
+
+  // --- Incrementar cupo si la asignación NO fue hoy ---
+  var cupoRaw = allProps[_PROP_CONTADORES_CUPO];
+  var cupoEstado;
+  try { cupoEstado = cupoRaw ? JSON.parse(cupoRaw) : { fecha: hoy, datos: {} }; } catch (e) { cupoEstado = { fecha: hoy, datos: {} }; }
+  if (cupoEstado.fecha !== hoy) cupoEstado = { fecha: hoy, datos: {} };
+
+  if (tipo && !_fechaEsHoyYMD(fechaAsignacionOriginal)) {
+    var key = email + '|' + tipo;
+    cupoEstado.datos[key] = (cupoEstado.datos[key] || 0) + 1;
   }
+
+  // 1 sola escritura batch en vez de 2 setProperty individuales
+  props.setProperties({
+    [_PROP_CARGA_PENDIENTE]: JSON.stringify(cargaDatos),
+    [_PROP_CONTADORES_CUPO]: JSON.stringify(cupoEstado)
+  });
 }
 
 function _derivarTipoReestudio(origenNorm, tipoPNorm) {
@@ -1600,10 +1627,6 @@ function guardarCambiosInternos(data) {
   try {
     const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
 
-    const ssReestudios = SpreadsheetApp.openById(
-      PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
-    );
-
     const ahora = new Date();
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
     
@@ -1655,28 +1678,29 @@ function guardarCambiosInternos(data) {
       }
 
       Logger.log('[guardarCambios] tipo=' + data.tipoSolicitudActual + ' | fechaAsig raw=' + fechaAsignacion + ' | parsed=' + tAsiParsed + ' | tRadCola=' + tRadCola + ' | email=' + emailAnalista);
+      // Pasar ssOrigen para evitar openById redundante dentro de calcularTiemposCaso
       const tiempos = calcularTiemposCaso(
         tRadCola,
         tAsiParsed,
         ahora,
-        emailAnalista
+        emailAnalista,
+        ssOrigen
       );
       Logger.log('[guardarCambios] tiempos=' + JSON.stringify(tiempos));
 
-      hojaHistorico.getRange(targetRow, 17).setValue(estado_q);
-      hojaHistorico.getRange(targetRow, 21).setValue(valorClaseActual);
-      hojaHistorico.getRange(targetRow, 23).setValue(data.biometria || '');
-      hojaHistorico.getRange(targetRow, 24).setValue(data.comentarios_gestion || '');
-      hojaHistorico.getRange(targetRow, 27).setValue(ahora).setNumberFormat("dd/mm/yyyy HH:mm:ss");
-      hojaHistorico.getRange(targetRow, 29, 1, 2).setValues([[motivo_aplazamiento, motivo_negacion]]);
-      hojaHistorico.getRange(targetRow, 31).setValue(fechaSoloDia);
-
+      // Consolidar escrituras en bloques batch (best practice GAS: no intercalar reads/writes)
       const fechaDiligenciada = (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion')
         ? (tAsiParsed || '')
         : (data.fecha_radicacion_sai || '');
-      hojaHistorico.getRange(targetRow, 34).setValue(fechaDiligenciada);
+
+      hojaHistorico.getRange(targetRow, 17).setValue(estado_q);
+      hojaHistorico.getRange(targetRow, 21).setValue(valorClaseActual);
+      hojaHistorico.getRange(targetRow, 23, 1, 2).setValues([[data.biometria || '', data.comentarios_gestion || '']]);
+      hojaHistorico.getRange(targetRow, 27).setValue(ahora);
+      hojaHistorico.getRange(targetRow, 27).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+      hojaHistorico.getRange(targetRow, 29, 1, 3).setValues([[motivo_aplazamiento, motivo_negacion, fechaSoloDia]]);
+      hojaHistorico.getRange(targetRow, 34, 1, 4).setValues([[fechaDiligenciada, tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
       if (fechaDiligenciada instanceof Date) hojaHistorico.getRange(targetRow, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
-      hojaHistorico.getRange(targetRow, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
       hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
 
       _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion);
@@ -1684,7 +1708,10 @@ function guardarCambiosInternos(data) {
       SpreadsheetApp.flush();
 
     } else {
-      // 🔵 RUTA B: REESTUDIO — buscar en Historico_Gestiones de ssReestudios
+      // 🔵 RUTA B: REESTUDIO — abrir ssReestudios solo cuando se necesita (ahorra ~1s en 80% de casos)
+      const ssReestudios = SpreadsheetApp.openById(
+        PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
+      );
       const hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
       let targetRowReest = -1;
 
@@ -1712,11 +1739,13 @@ function guardarCambiosInternos(data) {
       const emailAnalistaR = String(filaReest[6] || usuarioActual).toLowerCase().trim();
 
       const tRadColaR = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadR);
+      // Pasar ssOrigen para evitar openById redundante
       const tiemposR = calcularTiemposCaso(
         tRadColaR,
         _parseFechaGAS(fechaAsiR),
         ahora,
-        emailAnalistaR
+        emailAnalistaR,
+        ssOrigen
       );
 
       hojaHistoricoR.getRange(targetRowReest, 10, 1, 9).setValues([[
@@ -2121,21 +2150,36 @@ function verificarTurnoActivo(userEmail, ss) {
       return h * 60 + m;
     }
 
-    // 1. Buscar turno vigente del analista
-    const hojaAT = ss.getSheetByName('Analistas_Turnos');
-    if (!hojaAT || hojaAT.getLastRow() <= 1) return { ok: true };
+    // 1. Buscar turno vigente del analista (con caché de 90s — los turnos cambian raramente)
+    const cache = CacheService.getScriptCache();
+    let dataAT;
+    const cachedAT = cache.get('TURNOS_ANALISTAS_DATA');
+    if (cachedAT) {
+      try { dataAT = JSON.parse(cachedAT); } catch (e) { dataAT = null; }
+    }
+    if (!dataAT) {
+      const hojaAT = ss.getSheetByName('Analistas_Turnos');
+      if (!hojaAT || hojaAT.getLastRow() <= 1) return { ok: true };
+      dataAT = hojaAT.getDataRange().getValues();
+      try { cache.put('TURNOS_ANALISTAS_DATA', JSON.stringify(dataAT), 90); } catch (e) {}
+    }
 
-    const dataAT = hojaAT.getDataRange().getValues();
     let idTurnoActivo = null;
     for (let i = 1; i < dataAT.length; i++) {
       const r = dataAT[i];
       const email = String(r[0]).toLowerCase().trim();
       if (email !== userEmail) continue;
       const idT = String(r[1]).trim();
-      const desde = r[2] instanceof Date ? r[2] : null;
-      const hasta = r[3] instanceof Date ? r[3] : null;
-      if (!idT || !desde) continue;
-      if (now >= desde && (!hasta || now <= hasta)) {
+      // Tras JSON roundtrip: Date→string (ISO), Number→number (serial de Sheets).
+      // Manejar ambos formatos:
+      const desde = r[2] instanceof Date ? r[2]
+        : (typeof r[2] === 'string' && r[2] ? new Date(r[2])
+        : (typeof r[2] === 'number' ? new Date(Math.round((r[2] - 25569) * 86400000)) : null));
+      const hasta = r[3] instanceof Date ? r[3]
+        : (typeof r[3] === 'string' && r[3] ? new Date(r[3])
+        : (typeof r[3] === 'number' ? new Date(Math.round((r[3] - 25569) * 86400000)) : null));
+      if (!idT || !desde || isNaN(desde.getTime())) continue;
+      if (now >= desde && (!hasta || isNaN(hasta.getTime()) || now <= hasta)) {
         idTurnoActivo = idT;
         break;
       }
@@ -2147,17 +2191,31 @@ function verificarTurnoActivo(userEmail, ss) {
       };
     }
 
-    // 2. Leer definición del turno
-    const hojaTurnos = ss.getSheetByName('Turnos');
-    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) {
-      return {
-        ok: false,
-        message: '⏰ Tu turno no está correctamente configurado. Contacta a tu administrador.'
-      };
+    // 2. Leer definición del turno (con caché de 90s)
+    let dataTurnos, dispTurnos;
+    const cachedT = cache.get('TURNOS_DEF_DATA');
+    const cachedTD = cache.get('TURNOS_DEF_DISPLAY');
+    if (cachedT && cachedTD) {
+      try {
+        dataTurnos = JSON.parse(cachedT);
+        dispTurnos = JSON.parse(cachedTD);
+      } catch (e) { dataTurnos = null; }
     }
-
-    const dataTurnos = hojaTurnos.getDataRange().getValues();
-    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
+    if (!dataTurnos) {
+      const hojaTurnos = ss.getSheetByName('Turnos');
+      if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) {
+        return {
+          ok: false,
+          message: '⏰ Tu turno no está correctamente configurado. Contacta a tu administrador.'
+        };
+      }
+      dataTurnos = hojaTurnos.getDataRange().getValues();
+      dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
+      try {
+        cache.put('TURNOS_DEF_DATA', JSON.stringify(dataTurnos), 90);
+        cache.put('TURNOS_DEF_DISPLAY', JSON.stringify(dispTurnos), 90);
+      } catch (e) {}
+    }
     // Día ISO: 1=Lun…7=Dom → d_idx 0=Lun…6=Dom
     // bool col: 3+d_idx, Fin col (display): 11+d_idx*2
     const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
@@ -2583,15 +2641,13 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
 function autoAsignarAlEntrar() {
   const correo = Session.getActiveUser().getEmail().toLowerCase().trim();
   
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-  const hojaUsuarios = ss.getSheetByName("Usuarios");
-  const datos = hojaUsuarios.getDataRange().getValues();
-  
-  const usuario = datos.find(fila => fila[2].toString().toLowerCase().trim() === correo);
+  // Usar _getDataUsuarios (con cache de 30s) en vez de abrir un spreadsheet nuevo
+  const datos = _getDataUsuarios();
+  const usuario = datos.find(function(fila) { return String(fila[2]).toLowerCase().trim() === correo; });
   
   if (!usuario) return { success: false, message: "Usuario no registrado" };
   
-  const estadoReal = usuario[5].toString().toUpperCase(); 
+  const estadoReal = String(usuario[5]).toUpperCase().trim();
 
   if (estadoReal !== "ACTIVO") {
     return { success: false, message: "Bloqueo de seguridad: El estado en base de datos es " + estadoReal };
@@ -2599,7 +2655,6 @@ function autoAsignarAlEntrar() {
 
   try {
     const resultado = autoAsignarDesdeEquipo();
-    SpreadsheetApp.flush();
     return resultado;
   } catch (e) {
     return { success: false, message: e.toString() };
@@ -2986,9 +3041,9 @@ function _construirCorreoResolucionPermiso_(nombre, tipo, fechaInicio, fechaFin,
 </div>`;
 }
 
-function verificarPermisoVigenteHoy() {
+function verificarPermisoVigenteHoy(ssOpcional) {
   try {
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const ss = ssOpcional || SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
     const hoja = ss.getSheetByName('Permisos_Incapacidades');
     if (!hoja || hoja.getLastRow() <= 1) return { tienePermiso: false };
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();

@@ -50,9 +50,35 @@ function _parsearHora(valor) {
 
 // ─── CARGA DE CONFIGURACIÓN ────────────────────────────────────────────────────
 // Lee todas las hojas de configuración en un solo bloque para minimizar
-// llamadas a la API de Sheets. Se llama una vez por ejecución de calcularTiemposCaso.
-function _cargarConfigHoraria() {
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+// llamadas a la API de Sheets. Se cachea con CacheService (TTL 120s) porque
+// estos datos cambian raramente (festivos: 1/año, turnos: 1/semana, horas extra: esporádico).
+// La invalidación se hace desde las funciones admin que modifican estos datos.
+function _cargarConfigHoraria(ssOpcional) {
+  // Intentar leer desde cache
+  var cache = CacheService.getScriptCache();
+  var cachedConfig = cache.get('CONFIG_HORARIA');
+  if (cachedConfig) {
+    try {
+      var parsed = JSON.parse(cachedConfig);
+      // Reconstruir Sets y Maps desde objetos planos
+      var config = {
+        festivos: new Set(parsed.festivos),
+        turnos: new Map(),
+        analistaTurnos: new Map(),
+        horasExtra: new Map()
+      };
+      Object.keys(parsed.turnos).forEach(function(k) { config.turnos.set(k, parsed.turnos[k]); });
+      Object.keys(parsed.analistaTurnos).forEach(function(k) {
+        config.analistaTurnos.set(k, parsed.analistaTurnos[k].map(function(a) {
+          return { idTurno: a.idTurno, desde: new Date(a.desde), hasta: a.hasta ? new Date(a.hasta) : null };
+        }));
+      });
+      Object.keys(parsed.horasExtra).forEach(function(k) { config.horasExtra.set(k, parsed.horasExtra[k]); });
+      return config;
+    } catch (e) { /* cache corrupto, leer de hojas */ }
+  }
+
+  const ss = ssOpcional || SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
 
   // --- Festivos: Set<"yyyy-MM-dd"> ---
   const festivos = new Set();
@@ -155,6 +181,23 @@ function _cargarConfigHoraria() {
   } catch (e) {
     Logger.log('MotorTiempos Horas_Extra: ' + e.message);
   }
+
+  // Serializar y cachear (TTL 120s). Maps no son JSON-serializables directamente.
+  try {
+    var turnosObj = {};
+    turnos.forEach(function(v, k) { turnosObj[k] = v; });
+    var analistaObj = {};
+    analistaTurnos.forEach(function(v, k) { analistaObj[k] = v; });
+    var extraObj = {};
+    horasExtra.forEach(function(v, k) { extraObj[k] = v; });
+    var toCache = {
+      festivos: Array.from(festivos),
+      turnos: turnosObj,
+      analistaTurnos: analistaObj,
+      horasExtra: extraObj
+    };
+    cache.put('CONFIG_HORARIA', JSON.stringify(toCache), 120);
+  } catch (e) { /* si excede 100KB o falla, seguimos sin cache */ }
 
   return { festivos, turnos, analistaTurnos, horasExtra };
 }
@@ -312,12 +355,12 @@ function _parseFechaGAS(valor) {
  * @param {string} emailAnalista - Email del analista asignado (para su horario de turno).
  * @returns {{ minutos_cola: number, minutos_gestion: number, minutos_general: number }}
  */
-function calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista) {
+function calcularTiemposCaso(tRadicacion, tAsignacion, tResultado, emailAnalista, ssOpcional) {
   if (!(tResultado instanceof Date) || isNaN(tResultado.getTime())) {
     return { minutos_cola: 0, minutos_gestion: 0, minutos_general: 0 };
   }
 
-  const config = _cargarConfigHoraria();
+  const config = _cargarConfigHoraria(ssOpcional);
   Logger.log('[MotorTiempos] turnos cargados: ' + config.turnos.size +
     ' | tRad=' + tRadicacion + ' | tAsi=' + tAsignacion +
     ' | festivos=' + config.festivos.size +

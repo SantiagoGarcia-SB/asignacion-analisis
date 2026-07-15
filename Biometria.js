@@ -436,7 +436,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const tRadCola = fechaAsignacion;
         hojaHist.getRange(filaReal, 34).setValue(fechaAsignacion || '');
         if (fechaAsignacion) hojaHist.getRange(filaReal, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
-        const tiempos = calcularTiemposCaso(tRadCola, fechaAsignacion, ahora, userEmail);
+        const tiempos = calcularTiemposCaso(tRadCola, fechaAsignacion, ahora, userEmail, ss);
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
 

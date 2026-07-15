@@ -310,7 +310,7 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
 // VIP ROTATION & SCORE CATEGORIES
 // ============================================================
 
-function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
+function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef, allPropsCache) {
   var dataScore = scoreSheet.getDataRange().getDisplayValues();
   var buckets = { vip: new Set(), grande: new Set(), mediana: new Set(), pequena: new Set(), gen: new Set(), dev: new Set(), rev: new Set(), otros: new Set() };
 
@@ -328,8 +328,9 @@ function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
     else buckets.otros.add(key);
   }
 
-  var punteroRotacion = parseInt(propsRef.getProperty('PUNTERO_ROTACION')) || 0;
-  var contadorVIP = parseInt(propsRef.getProperty('VIP_COUNT_' + userEmail)) || 0;
+  // Leer del cache de properties si está disponible (evita 2 getProperty individuales)
+  var punteroRotacion = parseInt(allPropsCache ? allPropsCache['PUNTERO_ROTACION'] : propsRef.getProperty('PUNTERO_ROTACION')) || 0;
+  var contadorVIP = parseInt(allPropsCache ? allPropsCache['VIP_COUNT_' + userEmail] : propsRef.getProperty('VIP_COUNT_' + userEmail)) || 0;
 
   var tipoAsignar = 'vip';
   if (contadorVIP >= MAX_VIP_CONSECUTIVAS_UNIF) {
@@ -374,13 +375,20 @@ function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
 // sintéticos en una simulación (ver test_X1_SimulacionDiaProduccion en Tests.js)
 // sin tocar ninguna hoja real ni PropertiesService real.
 function _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn) {
+  // propsLocal puede ser un objeto plano (de getProperties()) o un PropertiesService obj.
+  // Helper para leer de ambos formatos:
+  function _leerProp(key) {
+    if (typeof propsLocal.getProperty === 'function') return propsLocal.getProperty(key);
+    return propsLocal[key] || null;
+  }
+
   var ordenPrioridad;
   if (equipo.ordenPrioridad && equipo.ordenPrioridad.length > 0) {
     ordenPrioridad = equipo.ordenPrioridad;
   } else if (equipo.id === 'REESTUDIOS') {
     ordenPrioridad = ORDEN_PRIORIDAD_MODOS['REESTUDIOS_PRIMERO'];
   } else {
-    var prioridadGlobal = propsLocal.getProperty('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
+    var prioridadGlobal = _leerProp('GLOBAL_PRIORIDAD') || 'DIGITAL_PRIMERO';
     if (prioridadGlobal === 'BIOMETRIA_PRIMERO') prioridadGlobal = 'DESAPLAZAMIENTO_PRIMERO';
     if (prioridadGlobal === 'NUEVAS_PRIMERO') prioridadGlobal = 'DIGITAL_PRIMERO';
     ordenPrioridad = ORDEN_PRIORIDAD_MODOS[prioridadGlobal] || ORDEN_PRIORIDAD_MODOS['DIGITAL_PRIMERO'];
@@ -419,7 +427,7 @@ function _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equi
   // Desaplazamiento/biometría: el admin decide si se llama primero al más reciente
   // (RECIENTE_PRIMERO, valor histórico por defecto) o al más antiguo (ANTIGUO_PRIMERO),
   // siempre según fechaResultado (ver _recolectarPendientesPrincipal).
-  var ordenDesaplazamientoReciente = (propsLocal.getProperty('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
+  var ordenDesaplazamientoReciente = (_leerProp('ORDEN_DESAPLAZAMIENTO') || 'RECIENTE_PRIMERO') === 'RECIENTE_PRIMERO';
 
   pendientes.sort(function(a, b) {
     if (a.tipoPrioridad !== b.tipoPrioridad) return a.tipoPrioridad - b.tipoPrioridad;
@@ -468,15 +476,23 @@ function _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equi
 // ASIGNACIÓN: escribir en la hoja y mover a histórico
 // ============================================================
 
-function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solicitudesSheet, ss) {
+function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solicitudesSheet, ss, hojaHist) {
+  // Escribir datos de asignación en la fila del caso
   solicitudesSheet.getRange(lead.rowIndex, 27, 1, 5).setValues([[fechaHora, userEmail, "", "", nombreUsuario]]);
   solicitudesSheet.getRange(lead.rowIndex, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
   solicitudesSheet.getRange(lead.rowIndex, 59).clearContent();
 
-  // Dentro de la misma ejecución, las lecturas ya ven las escrituras anteriores
-  // sin necesidad de flush() — el flush real se hace una sola vez al final del
-  // lote completo, en RequestLeadUnificado (evita decenas de confirmaciones sueltas).
-  var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 58).getValues()[0];
+  // Construir histRow desde lead.rowData (ya leído en el batch inicial) en vez de
+  // re-leer la fila del sheet — evita un getValues() intermedio que fuerza flush
+  // implícito y rompe el batching interno de GAS (best practice: no intercalar reads/writes).
+  var s = lead.rowData.slice(); // copia superficial para no mutar el array original
+  // Parchear los campos que acabamos de escribir para que histRow refleje la asignación
+  s[26] = fechaHora;
+  s[27] = userEmail;
+  s[28] = "";
+  s[29] = "";
+  s[30] = nombreUsuario;
+
   var histRow = [
     s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
     s[16],s[17],s[18],s[19],s[20],s[21],
@@ -491,23 +507,26 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
     s[51],s[52],s[53],s[54],s[55],s[56],s[57],
     lead.tipo
   ];
-  var hojaHist = ss.getSheetByName("Historico_Gestiones");
-  if (!hojaHist) hojaHist = ss.insertSheet("Historico_Gestiones");
-  hojaHist.appendRow(histRow);
-  hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
+  // setValues en posición exacta es más rápido que appendRow (que busca la última fila internamente)
+  var nuevaFila = hojaHist.getLastRow() + 1;
+  hojaHist.getRange(nuevaFila, 1, 1, histRow.length).setValues([histRow]);
+  hojaHist.getRange(nuevaFila, 35, 1, 3).setNumberFormat("0.00");
   solicitudesSheet.deleteRow(lead.rowIndex);
   _registrarAsignacionContador(userEmail, lead.tipo);
 }
 
-function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios) {
+function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios, hojaHistR) {
   reestudiosSheet.getRange(lead.rowIndex, 7, 1, 3).setValues([[userEmail, nombreUsuario, fechaHora]]);
   reestudiosSheet.getRange(lead.rowIndex, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
 
-  var filaCompleta = reestudiosSheet.getRange(lead.rowIndex, 1, 1, 18).getValues()[0];
+  // Construir desde lead.rowData en memoria en vez de re-leer la fila del sheet
+  var filaCompleta = lead.rowData.slice(0, 18);
+  filaCompleta[6] = userEmail;
+  filaCompleta[7] = nombreUsuario;
+  filaCompleta[8] = fechaHora;
   filaCompleta.push(lead.tipo);
-  var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
-  if (!hojaHistR) hojaHistR = ssReestudios.insertSheet("Historico_Gestiones");
-  hojaHistR.appendRow(filaCompleta);
+  var nuevaFila = hojaHistR.getLastRow() + 1;
+  hojaHistR.getRange(nuevaFila, 1, 1, filaCompleta.length).setValues([filaCompleta]);
   reestudiosSheet.deleteRow(lead.rowIndex);
   _registrarAsignacionContador(userEmail, lead.tipo);
 }
@@ -542,7 +561,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var turnoCheck = verificarTurnoActivo(userEmail, ss);
     if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
 
-    var permisoCheck = verificarPermisoVigenteHoy();
+    var permisoCheck = verificarPermisoVigenteHoy(ss);
     if (permisoCheck.tienePermiso) return { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
 
     // Resolver equipo
@@ -556,6 +575,8 @@ function RequestLeadUnificado(equipoIdOverride) {
     var equipoId = equipo.id;
 
     var propsLocal = PropertiesService.getScriptProperties();
+    // Batch: leer TODAS las properties en una sola llamada de red (best practice GAS)
+    var allProps = propsLocal.getProperties();
     var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
 
     var ctx = _buildFechaHoyFormats();
@@ -567,22 +588,61 @@ function RequestLeadUnificado(equipoIdOverride) {
     var refPrincipal = null;
     var refReestudios = null;
 
-    // Contar desde hoja principal (siempre se necesita para cualquier equipo)
-    var cPrincipal = _contarDesdeHojaPrincipal(userEmail, ss, ctx);
-    for (var k in cPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + cPrincipal.conteoHoy[k]; }
-    capPendienteReal += cPrincipal.cargaPendiente;
-    refPrincipal = { hoja: cPrincipal.hojaRef, data: cPrincipal.dataSolicitudes };
+    // Leer hoja principal (necesaria tanto para conteo como para candidatos)
+    var hojaSolicitud = ss.getSheetByName("solicitud");
+    if (hojaSolicitud && hojaSolicitud.getLastRow() >= 2) {
+      var dataSolicitudes = hojaSolicitud.getRange("A1:BG" + hojaSolicitud.getLastRow()).getValues();
+      refPrincipal = { hoja: hojaSolicitud, data: dataSolicitudes };
 
-    // Contar desde hoja reestudios
-    var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
+      // Contar carga pendiente y cupo de hoy desde la data ya en memoria (sin roundtrip extra)
+      for (var i = 1; i < dataSolicitudes.length; i++) {
+        var row = dataSolicitudes[i];
+        var asignado = String(row[27]).trim().toLowerCase();
+        if (asignado !== userEmail) continue;
+        var fechaAsig = row[26];
+        var fechaFin = row[28];
+        var claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var estadoSinGuion = estadoNorm.replace(/_/g, ' ');
+        var tipo = 'digital';
+        if (estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA') tipo = 'desaplazamiento';
+        else if (claseNorm === "INDUCCION") tipo = 'induccion';
+        if (_cumpleHoyUnif(fechaAsig, ctx) || _cumpleHoyUnif(fechaFin, ctx)) conteoHoyTotal[tipo]++;
+        var tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
+        var tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
+        if (tieneAsig && !tieneFin) capPendienteReal++;
+      }
+    } // fin if hojaSolicitud
+
+    // Leer hoja reestudios
+    var ID_REEST = allProps['ID_HOJA_REESTUDIOS'] || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
     var ssReestudios = SpreadsheetApp.openById(ID_REEST);
-    var cReestudios = _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx);
-    for (var k2 in cReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2]; }
-    capPendienteReal += cReestudios.cargaPendiente;
-    refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
+    var hojaReestudios = ssReestudios.getSheetByName("ORIGEN");
+    if (hojaReestudios && hojaReestudios.getLastRow() >= 2) {
+      var dataReestudios = hojaReestudios.getDataRange().getValues();
+      refReestudios = { hoja: hojaReestudios, data: dataReestudios };
 
-    // Suma lo que ya se cerró/asignó hoy vía Historico_Gestiones — de los contadores
-    // incrementales, no de un escaneo completo de la hoja (ver Código.js).
+      // Contar desde data ya en memoria
+      for (var i2 = 1; i2 < dataReestudios.length; i2++) {
+        var rowR = dataReestudios[i2];
+        var asignadoR = String(rowR[6]).trim().toLowerCase();
+        if (asignadoR !== userEmail) continue;
+        var origenR = String(rowR[3]).toUpperCase().trim();
+        var tipoPNorm = String(rowR[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var tipoR = null;
+        if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoR = 'biometriaFallida';
+        else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipoR = 'nuevaUar';
+        else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipoR = 'deudorUar';
+        else if (tipoPNorm === "REESTUDIO") tipoR = 'reestudio';
+        if (!tipoR) continue;
+        if (_cumpleHoyUnif(rowR[8], ctx) || _cumpleHoyUnif(rowR[9], ctx)) conteoHoyTotal[tipoR]++;
+        var tieneAsigR = rowR[8] instanceof Date ? true : String(rowR[8]).trim() !== "";
+        var tieneFinR = rowR[9] instanceof Date ? true : String(rowR[9]).trim() !== "";
+        if (tieneAsigR && !tieneFinR) capPendienteReal++;
+      }
+    }
+
+    // Sumar contadores incrementales (captura lo que ya salió de las hojas a Historico_Gestiones)
     var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
     for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
     capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
@@ -621,9 +681,9 @@ function RequestLeadUnificado(equipoIdOverride) {
     var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
     var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
     var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
-    var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
+    var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal, allProps); } : null;
 
-    var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);
+    var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, allProps, cupoDisponible, aplicarVipYScoreFn);
     var seleccionados = resultadoSeleccion.seleccionados;
     var _tiposConPendientes = resultadoSeleccion.tiposConPendientes;
 
@@ -641,11 +701,20 @@ function RequestLeadUnificado(equipoIdOverride) {
     var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
     var reestudios = seleccionados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
+    // Resolver hojas de histórico una sola vez (evita N llamadas a getSheetByName dentro del loop)
+    var hojaHistPrincipal = ss.getSheetByName("Historico_Gestiones");
+    if (!hojaHistPrincipal) hojaHistPrincipal = ss.insertSheet("Historico_Gestiones");
+    var hojaHistReestudios = null;
+    if (reestudios.length > 0) {
+      hojaHistReestudios = ssReestudios.getSheetByName("Historico_Gestiones");
+      if (!hojaHistReestudios) hojaHistReestudios = ssReestudios.insertSheet("Historico_Gestiones");
+    }
+
     principales.forEach(function(lead) {
-      _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, refPrincipal.hoja, ss);
+      _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, refPrincipal.hoja, ss, hojaHistPrincipal);
     });
     reestudios.forEach(function(lead) {
-      _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
+      _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios, hojaHistReestudios);
     });
 
     // Una sola confirmación para todo el lote (antes era hasta 2 por caso asignado).
