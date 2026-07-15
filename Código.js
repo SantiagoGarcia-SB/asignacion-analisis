@@ -972,6 +972,11 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
             if (_esResultCodeBiometriaPendiente(rc) && String(item.mainResultCode) === "2" && !tipoExcluido) {
               biometriasPendientesNuevas.push(_homologarDatosApi(item));
             }
+            // Si la solicitud ya existía en la cola "solicitud" con otro estado (p.ej.
+            // EN_ESTUDIO), debe eliminarse de ahí para que siga el flujo correcto de
+            // biometría (WA → escalación → llamada). Sin esto queda duplicada.
+            const solIdBio = String(item.consecutive || "").trim();
+            if (solIdBio) idsFinalizadas.add(solIdBio);
             return;
           }
 
