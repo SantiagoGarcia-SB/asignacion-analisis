@@ -266,6 +266,16 @@
               <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-event me-1"></i>Radicación</label><span class="fw-bold text-dark fs-6" id="dig_fechaRadicacion"></span></div></div>
               <div class="col-md"><div class="p-3 border rounded-4 bg-white h-100"><label class="d-block mb-1"><i class="bi bi-calendar-check me-1"></i>Resultado</label><span class="fw-bold text-dark fs-6" id="dig_fechaResultado"></span></div></div>
             </div>
+            <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-house-door me-2 text-primary"></i>Detalles del Inmueble y Contrato</h6>
+            <div class="bg-white border rounded-4 p-4 mb-4">
+              <div class="row g-4">
+                <div class="col-md-6"><label class="d-block"><i class="bi bi-geo-alt me-1"></i>Dirección</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_direccionInmueble"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-geo me-1"></i>Ciudad</label><p class="fw-bold text-dark mb-0" id="dig_ciudadInmueble"></p></div>
+                <div class="col-md-3"><label class="d-block"><i class="bi bi-info-circle me-1"></i>Destino</label><p class="fw-bold text-dark mb-0" id="dig_destinoInmueble"></p></div>
+                <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-cash-coin me-1"></i>Canon</label><p class="fw-bold text-success mb-0" id="dig_canon"></p></div>
+                <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-percent me-1"></i>Cuota Admin</label><p class="fw-bold text-dark mb-0" id="dig_cuota"></p></div>
+              </div>
+            </div>
             <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-person-vcard me-2 text-primary"></i>Datos del Solicitante e Ingresos</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
               <div class="row g-4">
@@ -277,15 +287,9 @@
                 <div class="col-md-4 border-top pt-3"><label class="d-block"><i class="bi bi-graph-up-arrow me-1"></i>Ingresos</label><p class="fw-bold text-success mb-0" id="dig_ingresos"></p></div>
               </div>
             </div>
-            <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-house-door me-2 text-primary"></i>Detalles del Inmueble y Contrato</h6>
-            <div class="bg-white border rounded-4 p-4 mb-4">
-              <div class="row g-4">
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-geo-alt me-1"></i>Dirección</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_direccionInmueble"></p></div>
-                <div class="col-md-3"><label class="d-block"><i class="bi bi-geo me-1"></i>Ciudad</label><p class="fw-bold text-dark mb-0" id="dig_ciudadInmueble"></p></div>
-                <div class="col-md-3"><label class="d-block"><i class="bi bi-info-circle me-1"></i>Destino</label><p class="fw-bold text-dark mb-0" id="dig_destinoInmueble"></p></div>
-                <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-cash-coin me-1"></i>Canon</label><p class="fw-bold text-success mb-0" id="dig_canon"></p></div>
-                <div class="col-md-6 border-top pt-3"><label class="d-block"><i class="bi bi-percent me-1"></i>Cuota Admin</label><p class="fw-bold text-dark mb-0" id="dig_cuota"></p></div>
-              </div>
+            <div id="dig_codeudores_section" class="d-none">
+              <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-people-fill me-2 text-primary"></i>Codeudores</h6>
+              <div id="dig_codeudores_container"></div>
             </div>
             <h6 class="fw-bold mb-3 text-muted" style="font-size:0.9rem;"><i class="bi bi-tag me-2"></i>Clasificación</h6>
             <div class="bg-white border rounded-4 p-4 mb-4">
@@ -295,17 +299,6 @@
                 <div class="col-md-3"><label class="d-block"><i class="bi bi-megaphone me-1"></i>Canal</label><p class="fw-bold text-dark mb-0" id="dig_canal"></p></div>
                 <div class="col-md-3"><label class="d-block"><i class="bi bi-star me-1"></i>Categoría Score<i class="bi bi-question-circle-fill" title="Calificación de riesgo asignada a la póliza (ej. VIP, NEGAR). Determina la prioridad y el tratamiento de la solicitud." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;"></i></label><p class="fw-bold text-dark mb-0" id="dig_categoriaScore"></p></div>
               </div>
-            </div>
-            <h6 class="fw-bold mb-3 text-muted" style="font-size:0.9rem;"><i class="bi bi-person-workspace me-2"></i>Información del Asesor</h6>
-            <div class="bg-white border rounded-4 p-4 mb-4">
-              <div class="row g-4">
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-person-badge me-1"></i>Nombre</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_nombreAsesor"></p></div>
-                <div class="col-md-6"><label class="d-block"><i class="bi bi-envelope-at me-1"></i>Correo</label><p class="fw-bold text-dark mb-0" style="word-break:break-word;" id="dig_correoAsesor"></p></div>
-              </div>
-            </div>
-            <div id="dig_codeudores_section" class="d-none">
-              <h6 class="fw-bold mb-3" style="color:var(--color-secundario);font-size:0.9rem;"><i class="bi bi-people-fill me-2 text-primary"></i>Codeudores</h6>
-              <div id="dig_codeudores_container"></div>
             </div>
           </div>
 

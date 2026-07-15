@@ -341,7 +341,7 @@ $(document).ready(function () {
         try { MotivoPicker.setValue('dig_motivo_aplazamiento', 'Pendiente resultado lote'); } catch(e) {}
       }
     }
-    else if (estado.indexOf('NEGAD') !== -1) { contNeg.removeClass('d-none').hide().fadeIn(200); }
+    else if (estado.indexOf('NEGAD') !== -1 || estado.indexOf('RECHAZ') !== -1) { contNeg.removeClass('d-none').hide().fadeIn(200); }
     _validarFormDig();
   });
 
