@@ -663,12 +663,50 @@ Los analistas pueden solicitar permisos o registrar incapacidades directamente d
 |---------|--------------|-----------|-------------|
 | `actualizarSolicitudesNuevasAPI()` | Trigger por tiempo | Cada X minutos (8am - 6pm) | Descarga nuevas solicitudes desde la API SAI |
 | `descargarBiometriasAPI()` | Trigger por tiempo | Periódico | Descarga biometrías pendientes (resultCode 500/503) |
+| `cicloPrimerContactoBiometria()` | Trigger por tiempo | Cada 1-2h (L-V 7:00-19:00, Sáb 8:00-15:00) | Envía WhatsApp a pendientes de biometría que cumplieron ventana de 4h desde `fechaResultado` de SAI y siguen en `APROBADO_PENDIENTE_BIOMETRIA` |
+| `cicloBiometriaPendiente()` | Trigger por tiempo | 8am y 12pm | **Corte principal de biometría:** 1) Limpia resueltas (consulta SAI), 2) Archiva vencidas por `fechaResultado` de SAI, 3) Escala a cola de llamada los que ya tuvieron WA y siguen pendientes |
+| `trigger_recalcularContadores()` | Trigger por tiempo | Nocturno (1x/día) | Reconstruye contadores incrementales de cupo/carga desde las hojas reales |
+| `trigger_importarFestivosColombiaAnual()` | Trigger mensual | Mensual (solo actúa en diciembre) | Importa festivos del año siguiente desde Google Calendar |
+
+### Ciclo de Vida de una Biometría Pendiente
+
+```
+SAI reporta APROBADO_PENDIENTE_BIOMETRIA (resultCode 500/503)
+    │
+    ▼
+[pendiente_biometria] fase="" (recién ingresada)
+    │
+    │ cicloPrimerContactoBiometria (cada 1-2h)
+    │ Condición: fechaResultado SAI > 4h atrás Y sigue pendiente
+    ▼
+[pendiente_biometria] fase="WA_ENVIADO" → WhatsApp al cliente
+    │
+    │ cicloBiometriaPendiente (8am / 12pm)
+    │ _procesarCortePendientes: SAI confirma que sigue pendiente
+    ▼
+[solicitud] estado="APROBADO_PENDIENTE_BIOMETRIA" → cola de llamada
+[pendiente_biometria] fase="ESCALADA"
+    │
+    │ Analista de desaplazamiento toma el caso (RequestLeadUnificado)
+    │ O bien: cicloBiometriaPendiente archiva si venció la ventana
+    ▼
+[Asignado] o [Archivado]
+```
+
+**Criterio de archivado (`_archivarColaBiometriaVencida`):**
+Se archivan las solicitudes en cola de llamada cuya `fechaResultado` de SAI (col S de la hoja `solicitud`) sea anterior al umbral del corte:
+- **Corte 8am** (hora < 9): umbral = ayer a las 12:00pm
+- **Corte 12pm** (hora >= 9): umbral = hoy a las 00:00
+
+Esto da una ventana de ~12h para que un analista tome el caso. `limpiarBiometriasResueltas()` refresca la `fechaResultado` contra SAI justo antes del archivado en el mismo ciclo, asegurando que siempre sea el dato más reciente del API.
 
 ### Validaciones en Background
 
 - **Horario de operación:** `actualizarSolicitudesNuevasAPI()` no se ejecuta fuera del rango 8:00 - 18:00.
+- **Ley 2300:** `cicloPrimerContactoBiometria()` solo envía WhatsApp dentro del horario legal (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos).
+- **Días no hábiles:** `cicloBiometriaPendiente()` no archiva ni escala en domingos/festivos (nadie está llamando).
 - **Timeout de ejecución:** `descargarBiometriasAPI()` incluye un límite de 5 minutos.
-- **Anti rate-limiting:** Pausas de 2 segundos entre páginas de la API.
+- **Anti rate-limiting:** Pausas de 1-2 segundos entre consultas individuales a SAI.
 - **Control de duplicados:** Se verifican IDs existentes antes de insertar.
 
 ---

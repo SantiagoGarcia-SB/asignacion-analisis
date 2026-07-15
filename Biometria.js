@@ -673,14 +673,11 @@ function _mapaFechaEscaladaBiometria() {
 }
 
 // Archiva a biometria_cola_archivada (mismo spreadsheet de pendiente_biometria) las
-// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuya antigüedad
-// en cola sea anterior al umbral del corte actual — es decir, que tuvieron un ciclo
-// completo de ~12h para ser llamadas y no se lograron asignar. La antigüedad se mide
-// desde que el caso realmente entró a la cola (fecha de escalada en pendiente_biometria,
-// ver _mapaFechaEscaladaBiometria), con fallback a fechaResultado/fechaRadicacion solo
-// si no hay match (no debería pasar en el flujo normal) — usar directamente fechaResultado
-// archivaba casos casi apenas escalaban cuando el WA previo se había demorado varios días
-// por Ley 2300/festivos, sin darles el ciclo completo de ~12h.
+// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuya fechaResultado
+// de SAI (col S) sea anterior al umbral del corte actual — es decir, que según la hora
+// de SAI ya tuvieron un ciclo completo de ~12h para ser llamadas y no se lograron asignar.
+// limpiarBiometriasResueltas() refresca esta fecha contra SAI justo antes en el mismo ciclo,
+// así que siempre refleja el dato más reciente del API.
 // Es una bandeja de solo revisión manual: no hay reactivación automática (ver
 // admin_desarchivarBiometrias() para la recuperación manual).
 function _archivarColaBiometriaVencida() {
@@ -695,7 +692,6 @@ function _archivarColaBiometriaVencida() {
 
   var ahora = new Date();
   var vent = _calcularUmbralArchivoColaBiometria(ahora);
-  var mapaEscalada = _mapaFechaEscaladaBiometria();
 
   // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
   var datos = hoja.getRange(2, 1, lastRow - 1, hoja.getLastColumn()).getValues();
@@ -711,9 +707,13 @@ function _archivarColaBiometriaVencida() {
     var solicitud = String(row[0]).trim();
     if (!solicitud) continue;
 
-    var fecha = mapaEscalada.get(solicitud) || _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
+    // Usar fechaResultado de SAI (col S, índice 18) como criterio de antigüedad —
+    // es la fecha actualizada por SAI que operación usa como referencia real.
+    // limpiarBiometriasResueltas() ya la refresca contra SAI en el mismo ciclo,
+    // justo antes de esta función. Fallback a fechaRadicacion solo si no hay fecha.
+    var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
     if (!fecha) {
-      Logger.log("⚠️ Solicitud " + solicitud + " sin fecha de escalada ni fechaResultado/fechaRadicacion parseable — no se archiva.");
+      Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable — no se archiva.");
       continue;
     }
 
