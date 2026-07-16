@@ -444,13 +444,59 @@ function getEquipoDelUsuario() {
   return resolverEquipoDesdeEspecialidad(info.especialidad);
 }
 
+// Cacheada (CacheService, 90s) — antes Código.js:getTableData y Reestudios.js:
+// getReestudiosData cada una releía la hoja "score" completa por separado en cada carga de
+// panel; con 40 analistas refrescando en la misma franja horaria era la misma lectura
+// completa repetida una y otra vez. mapaScore: póliza → categoría; mapaInmobiliaria: póliza
+// → inmobiliaria. Ambas claves con y sin normalizar (solo dígitos, sin ceros a la izq.).
+function _getScoreMapCacheado() {
+  const cache = CacheService.getScriptCache();
+  try {
+    const cached = cache.get('SCORE_MAP_V1');
+    if (cached) {
+      const obj = JSON.parse(cached);
+      return { mapaScore: new Map(obj.mapaScore), mapaInmobiliaria: new Map(obj.mapaInmobiliaria) };
+    }
+  } catch (e) {}
+
+  const mapaScore = new Map();
+  const mapaInmobiliaria = new Map();
+  try {
+    const ssScore = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const hojaScore = ssScore.getSheetByName("score");
+    if (hojaScore) {
+      const dataScore = hojaScore.getDataRange().getDisplayValues();
+      for (let i = 1; i < dataScore.length; i++) {
+        let pol = String(dataScore[i][0]).trim();
+        let polNorm = pol.replace(/\D/g, '').replace(/^0+/, '');
+        let categoria = String(dataScore[i][2] || "").trim().toUpperCase();
+        let inmobiliaria = String(dataScore[i][3] || "").trim();
+
+        if (pol) { mapaScore.set(pol, categoria); mapaInmobiliaria.set(pol, inmobiliaria); }
+        if (polNorm) { mapaScore.set(polNorm, categoria); mapaInmobiliaria.set(polNorm, inmobiliaria); }
+      }
+    }
+  } catch (e) {
+    Logger.log('_getScoreMapCacheado: ' + e.message);
+  }
+
+  try {
+    cache.put('SCORE_MAP_V1', JSON.stringify({
+      mapaScore: Array.from(mapaScore.entries()),
+      mapaInmobiliaria: Array.from(mapaInmobiliaria.entries())
+    }), 90);
+  } catch (e) {}
+
+  return { mapaScore: mapaScore, mapaInmobiliaria: mapaInmobiliaria };
+}
+
 function getTableData() {
   const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   const sheet = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
   const userEmail = (Session.getActiveUser().getEmail() || "usuario@prueba.com").toLowerCase();
 
   if (!sheet) return { tabla: [], stats: { hoy: 0, total: 0 } };
-  
+
   const lastRow = sheet.getLastRow();
   if (lastRow < 1) return { tabla: [], stats: { hoy: 0, total: 0 } };
 
@@ -459,21 +505,9 @@ function getTableData() {
   const headers = data[0];
   const registros = data.slice(1);
 
-  const hojaScore = ss.getSheetByName("score");
-  const mapaScore = new Map();
-  const mapaInmobiliaria = new Map();
-  if (hojaScore) {
-    const dataScore = hojaScore.getDataRange().getDisplayValues();
-    for (let i = 1; i < dataScore.length; i++) {
-      let pol = String(dataScore[i][0]).trim();
-      let polNorm = pol.replace(/\D/g, '').replace(/^0+/, '');
-      let categoria = String(dataScore[i][2] || "").trim().toUpperCase();
-      let inmobiliaria = String(dataScore[i][3] || "").trim();
-
-      if (pol) { mapaScore.set(pol, categoria); mapaInmobiliaria.set(pol, inmobiliaria); }
-      if (polNorm) { mapaScore.set(polNorm, categoria); mapaInmobiliaria.set(polNorm, inmobiliaria); }
-    }
-  }
+  const scoreMaps = _getScoreMapCacheado();
+  const mapaScore = scoreMaps.mapaScore;
+  const mapaInmobiliaria = scoreMaps.mapaInmobiliaria;
   headers.push("CategoriaScore");
   headers.push("Inmobiliaria"); 
 
@@ -1128,6 +1162,14 @@ function moverAListaEsperaCodeudor(lista) {
   }
 }
 
+// Mismo respaldo que MAX_CANDIDATOS_POR_CORTE/TIEMPO_MAXIMO_CONSULTAS_CORTE_MS en
+// Biometria.js: sin tope, un backlog grande de consultas SAI (una por fila pendiente) puede
+// superar el límite de ejecución de Apps Script y la corrida se corta sin haber escrito
+// nada. Más relevante aún porque sincronizarHistoricoSAI() está suspendida — esta es una de
+// las pocas vías que le quedan a los casos que cambian de estado tarde.
+const MAX_CANDIDATOS_CODEUDOR = 500;
+const TIEMPO_MAXIMO_CODEUDOR_MS = 20 * 60 * 1000;
+
 // Trigger periódico (independiente del sync de 10 min): purga expiradas (>3 meses) y reactiva las que ya salieron de CODEUDORES_REQUERIDOS.
 function revisarEnEsperaCodeudor() {
   const keyFull = getKeyFull();
@@ -1152,7 +1194,17 @@ function revisarEnEsperaCodeudor() {
 
   // === FASE 1: consultar SAI para cada solicitud pendiente. Sin candado tomado —
   // esto puede tardar varios segundos y no debe bloquear a los analistas mientras tanto. ===
-  for (let i = 0; i < datos.length; i++) {
+  const totalPendientesCodeudor = datos.length;
+  const limiteFilasCodeudor = Math.min(datos.length, MAX_CANDIDATOS_CODEUDOR);
+  const inicioMsCodeudor = Date.now();
+  if (totalPendientesCodeudor > limiteFilasCodeudor) {
+    Logger.log(`📋 ${totalPendientesCodeudor} solicitudes en pendiente_codeudor; verificando hasta ${limiteFilasCodeudor} en esta corrida (las demás quedan para la próxima).`);
+  }
+  for (let i = 0; i < limiteFilasCodeudor; i++) {
+    if (Date.now() - inicioMsCodeudor > TIEMPO_MAXIMO_CODEUDOR_MS) {
+      Logger.log(`⏱️ Tope de tiempo alcanzado en revisarEnEsperaCodeudor, se dejan ${limiteFilasCodeudor - i} para la próxima corrida.`);
+      break;
+    }
     const solicitud = String(datos[i][0]).trim();
     if (!solicitud) continue;
 
@@ -1877,17 +1929,23 @@ function obtenerCasosPendientesAnalista() {
   const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
   const resultado = [];
 
-  // Digital: Historico_Gestiones principal
+  // Mismo guard que getTableData (Código.js): si el contador incremental de carga
+  // pendiente dice 0, el analista no tiene nada abierto en ningún lado y no vale la pena
+  // escanear ninguna de las dos hojas de Historico_Gestiones.
+  if (_obtenerCargaPendienteAnalista(userEmail) === 0) return resultado;
+
+  // Digital: Historico_Gestiones principal — TextFinder acotado a la columna de asignado
+  // (26) en vez de traer todas las filas a memoria (mismo patrón que getTableData).
   try {
     const hoja = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
-    if (hoja && hoja.getLastRow() > 1) {
+    const lastRowHoja = hoja ? hoja.getLastRow() : 0;
+    if (hoja && lastRowHoja > 1) {
       const ncols = Math.max(60, hoja.getLastColumn());
-      const data  = hoja.getRange(2, 1, hoja.getLastRow() - 1, ncols).getDisplayValues();
-      for (let i = 0; i < data.length; i++) {
-        const h       = data[i];
-        const email   = String(h[25]).toLowerCase().trim();  // col 26 = email analista
+      const colAsignado = hoja.getRange(2, 26, lastRowHoja - 1, 1);
+      const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
+      for (let m = 0; m < matches.length; m++) {
+        const h = hoja.getRange(matches[m].getRow(), 1, 1, ncols).getDisplayValues()[0];
         const estadoQ = String(h[16]).trim().toUpperCase(); // col 17 = estado_q
-        if (email !== userEmail) continue;
         if (!ESTADOS_PEND.includes(estadoQ)) continue;
         // Mapeo histToSol para que poblarModalDig reciba la fila en formato correcto
         const s = new Array(58).fill('');
@@ -1912,16 +1970,17 @@ function obtenerCasosPendientesAnalista() {
     }
   } catch(e) { Logger.log('obtenerCasosPendientes digital: ' + e.message); }
 
-  // Reestudio: Historico_Gestiones de la hoja de reestudios
+  // Reestudio: Historico_Gestiones de la hoja de reestudios — mismo patrón de TextFinder,
+  // acotado a la columna de asignado (7).
   try {
     const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
-    if (hojaR && hojaR.getLastRow() > 1) {
-      const data = hojaR.getRange(2, 1, hojaR.getLastRow() - 1, 18).getDisplayValues();
-      for (let i = 0; i < data.length; i++) {
-        const fila    = data[i];
-        const email   = String(fila[6]).toLowerCase().trim();  // col 7
+    const lastRowR = hojaR ? hojaR.getLastRow() : 0;
+    if (hojaR && lastRowR > 1) {
+      const colAsignadoR = hojaR.getRange(2, 7, lastRowR - 1, 1);
+      const matchesR = colAsignadoR.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
+      for (let m = 0; m < matchesR.length; m++) {
+        const fila    = hojaR.getRange(matchesR[m].getRow(), 1, 1, 18).getDisplayValues()[0];
         const estadoQ = String(fila[10]).trim().toUpperCase(); // col 11
-        if (email !== userEmail) continue;
         if (!ESTADOS_PEND.includes(estadoQ)) continue;
         const tipoProc = String(fila[4]).trim();
         const claseR   = String(fila[5]).trim();

@@ -49,9 +49,75 @@ function _parsearHora(valor) {
 
 
 // ─── CARGA DE CONFIGURACIÓN ────────────────────────────────────────────────────
-// Lee todas las hojas de configuración en un solo bloque para minimizar
-// llamadas a la API de Sheets. Se llama una vez por ejecución de calcularTiemposCaso.
+// Cacheada (CacheService, 10 min — mismo patrón que _getDataUsuarios en Código.js):
+// calcularTiemposCaso() se llama dentro del ScriptLock global desde
+// guardarCambiosInternos()/guardarGestionReestudio() en cada cierre de gestión, así que
+// releer 4 hojas completas ahí adentro alarga la ventana de bloqueo para los demás
+// analistas. Turnos/festivos/horas extra no cambian intra-jornada, así que un TTL corto
+// es seguro.
+const _CACHE_KEY_CONFIG_HORARIA = 'CONFIG_HORARIA_V1';
+const _CACHE_TTL_CONFIG_HORARIA_SEG = 600;
+
 function _cargarConfigHoraria() {
+  try {
+    const cached = CacheService.getScriptCache().get(_CACHE_KEY_CONFIG_HORARIA);
+    if (cached) return _deserializarConfigHoraria(JSON.parse(cached));
+  } catch (e) {
+    Logger.log('MotorTiempos cache lectura: ' + e.message);
+  }
+
+  const config = _cargarConfigHorariaSinCache();
+
+  try {
+    CacheService.getScriptCache().put(_CACHE_KEY_CONFIG_HORARIA, JSON.stringify(_serializarConfigHoraria(config)), _CACHE_TTL_CONFIG_HORARIA_SEG);
+  } catch (e) {
+    Logger.log('MotorTiempos cache escritura: ' + e.message);
+  }
+
+  return config;
+}
+
+// CacheService solo guarda strings, y Map/Set/Date no sobreviven un JSON.stringify/parse
+// directo — se convierten a arrays planos (y las fechas a ISO) para poder cachearlos, y se
+// reconstruyen exactamente igual al leer de caché.
+function _serializarConfigHoraria(config) {
+  return {
+    festivos: Array.from(config.festivos),
+    turnos: Array.from(config.turnos.entries()),
+    analistaTurnos: Array.from(config.analistaTurnos.entries()).map(function(e) {
+      return [e[0], e[1].map(function(t) {
+        return { idTurno: t.idTurno, desde: t.desde.toISOString(), hasta: t.hasta ? t.hasta.toISOString() : null };
+      })];
+    }),
+    horasExtra: Array.from(config.horasExtra.entries())
+  };
+}
+
+// Llamar desde cualquier función de Admin.js que escriba en Turnos/Analistas_Turnos/
+// Horas_Extra/Festivos, para que el cambio se refleje de inmediato en vez de esperar el
+// TTL de 10 min (mismo patrón que _invalidarCacheUsuarios() en Código.js).
+function _invalidarCacheConfigHoraria() {
+  try { CacheService.getScriptCache().remove(_CACHE_KEY_CONFIG_HORARIA); } catch (e) {}
+}
+
+function _deserializarConfigHoraria(obj) {
+  return {
+    festivos: new Set(obj.festivos),
+    turnos: new Map(obj.turnos),
+    analistaTurnos: new Map(obj.analistaTurnos.map(function(e) {
+      return [e[0], e[1].map(function(t) {
+        return { idTurno: t.idTurno, desde: new Date(t.desde), hasta: t.hasta ? new Date(t.hasta) : null };
+      })];
+    })),
+    horasExtra: new Map(obj.horasExtra)
+  };
+}
+
+// Lee todas las hojas de configuración en un solo bloque para minimizar
+// llamadas a la API de Sheets. Antes se llamaba directamente en cada ejecución de
+// calcularTiemposCaso; ahora _cargarConfigHoraria() (arriba) le pone una capa de caché
+// delante y esta es la lectura real de las hojas cuando el caché no tiene el dato.
+function _cargarConfigHorariaSinCache() {
   const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
 
   // --- Festivos: Set<"yyyy-MM-dd"> ---

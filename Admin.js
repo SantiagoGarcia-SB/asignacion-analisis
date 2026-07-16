@@ -1474,6 +1474,7 @@ function admin_guardarTurno(turno) {
       hoja.getRange(nuevaFila, 1, 1, fila.length).setValues([fila]);
     }
     SpreadsheetApp.flush();
+    _invalidarCacheConfigHoraria();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1514,6 +1515,7 @@ function admin_desactivarTurno(idTurno) {
     }
 
     SpreadsheetApp.flush();
+    _invalidarCacheConfigHoraria();
     return { success: true, message: 'Turno desactivado.', afectados: afectados };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1552,6 +1554,7 @@ function admin_asignarTurnoAnalista(email, idTurno, desde) {
     hojaAT.appendRow([emailNorm, idTurno, fechaDesde, '']);
     hojaAT.getRange(hojaAT.getLastRow(), 3).setNumberFormat('yyyy-MM-dd');
     SpreadsheetApp.flush();
+    _invalidarCacheConfigHoraria();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1633,6 +1636,7 @@ function admin_guardarHorasExtra(extra) {
       extra.descripcion || ''
     ]);
     SpreadsheetApp.flush();
+    _invalidarCacheConfigHoraria();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1648,6 +1652,7 @@ function admin_eliminarHorasExtra(fila) {
     if (fila < 2 || fila > hoja.getLastRow()) return { success: false, message: 'Fila inválida.' };
     hoja.deleteRow(fila);
     SpreadsheetApp.flush();
+    _invalidarCacheConfigHoraria();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };

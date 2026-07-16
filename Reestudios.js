@@ -112,25 +112,11 @@ function getReestudiosData() {
     }
 
     // --- Lookup score/inmobiliaria para casos DIGITAL ---
-    const mapaScoreR = new Map();
-    const mapaInmobiliariaR = new Map();
-    try {
-      const ssScore = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-      const hojaScore = ssScore.getSheetByName("score");
-      if (hojaScore) {
-        const dataScore = hojaScore.getDataRange().getDisplayValues();
-        for (let s = 1; s < dataScore.length; s++) {
-          let pol = String(dataScore[s][0]).trim();
-          let polNorm = pol.replace(/\D/g, '').replace(/^0+/, '');
-          let categoria = String(dataScore[s][2] || "").trim().toUpperCase();
-          let inmobiliaria = String(dataScore[s][3] || "").trim();
-          if (pol) { mapaScoreR.set(pol, categoria); mapaInmobiliariaR.set(pol, inmobiliaria); }
-          if (polNorm) { mapaScoreR.set(polNorm, categoria); mapaInmobiliariaR.set(polNorm, inmobiliaria); }
-        }
-      }
-    } catch (eScore) {
-      Logger.log('getReestudiosData - Error leyendo score: ' + eScore.toString());
-    }
+    // _getScoreMapCacheado() (Código.js) — cachea 90s vía CacheService en vez de releer la
+    // hoja "score" completa en cada carga de panel (misma hoja que ya lee getTableData).
+    const scoreMapsR = _getScoreMapCacheado();
+    const mapaScoreR = scoreMapsR.mapaScore;
+    const mapaInmobiliariaR = scoreMapsR.mapaInmobiliaria;
 
     // --- Hoja principal (digitales, biometría, inducciones) ---
     try {

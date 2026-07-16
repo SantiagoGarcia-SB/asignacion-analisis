@@ -37,6 +37,12 @@ function eliminarTriggersBio() {
 // de corte 8am/12pm (cicloBiometriaPendiente) — si ambos triggers coinciden en una misma
 // franja, esta guarda evita repetir la misma tanda de consultas individuales a SAI.
 const _MIN_ENTRE_CORRIDAS_LIMPIAR_BIOMETRIAS = 5;
+// Mismo respaldo que MAX_CANDIDATOS_POR_CORTE/TIEMPO_MAXIMO_CONSULTAS_CORTE_MS (más abajo
+// en este archivo): sin tope, un backlog grande de consultas SAI (1s de pausa c/u) puede
+// superar el límite de ejecución de Apps Script y la corrida se corta sin haber escrito
+// nada — el siguiente disparo repetiría las mismas consultas desde cero sin avanzar nunca.
+const MAX_CANDIDATOS_LIMPIAR_BIOMETRIAS = 500;
+const TIEMPO_MAXIMO_LIMPIAR_BIOMETRIAS_MS = 20 * 60 * 1000;
 function limpiarBiometriasResueltas() {
   var propsGuarda = PropertiesService.getScriptProperties();
   var ULTIMA_CORRIDA_KEY = 'ULTIMA_CORRIDA_LIMPIAR_BIOMETRIAS_MS';
@@ -74,7 +80,9 @@ function limpiarBiometriasResueltas() {
       return;
     }
 
-    Logger.log("📋 " + bioIds.length + " biometrías pendientes a verificar contra SAI (consulta individual).");
+    const totalBioIds = bioIds.length;
+    const idsAConsultar = bioIds.slice(0, MAX_CANDIDATOS_LIMPIAR_BIOMETRIAS);
+    Logger.log("📋 " + totalBioIds + " biometrías pendientes en total; verificando hasta " + idsAConsultar.length + " en esta corrida (las demás se revisan en la próxima).");
 
     // Consulta individual por solicitud (mismo patrón que _procesarCortePendientes()) en vez
     // de la búsqueda paginada por rango de fechas: con la cola típica (decenas, no miles de
@@ -83,19 +91,26 @@ function limpiarBiometriasResueltas() {
     // quedaba fuera del rango de búsqueda y nunca se revisaba.
     const estadosSai = new Map();
     const fechasSai = new Map();
-    for (let i = 0; i < bioIds.length; i++) {
-      const datosApi = _consultarSaiIndividual(bioIds[i]);
+    const inicioMsLimpieza = Date.now();
+    let dejadosPorTiempoLimpieza = 0;
+    for (let i = 0; i < idsAConsultar.length; i++) {
+      if (Date.now() - inicioMsLimpieza > TIEMPO_MAXIMO_LIMPIAR_BIOMETRIAS_MS) {
+        dejadosPorTiempoLimpieza = idsAConsultar.length - i;
+        Logger.log("⏱️ Tope de tiempo alcanzado en limpiarBiometriasResueltas, se dejan " + dejadosPorTiempoLimpieza + " para la próxima corrida.");
+        break;
+      }
+      const datosApi = _consultarSaiIndividual(idsAConsultar[i]);
       if (datosApi) {
-        estadosSai.set(bioIds[i], String(datosApi.studyStatus || "").toUpperCase().trim());
+        estadosSai.set(idsAConsultar[i], String(datosApi.studyStatus || "").toUpperCase().trim());
         // Mismo campo que _homologarDatosApi() usa para fechaResultado (lastResultDate con
         // fallback a lastMovementDate) — si aquí se comparara contra un campo distinto al que
         // se guardó al escalar, cualquier caso recién escalado se vería como "cambiado" en su
         // primera revisión horaria solo por la diferencia entre campos, no porque SAI haya
         // movido algo de verdad.
         const fechaResultadoApi = datosApi.lastResultDate || datosApi.lastMovementDate || "";
-        if (fechaResultadoApi) fechasSai.set(bioIds[i], fechaResultadoApi);
+        if (fechaResultadoApi) fechasSai.set(idsAConsultar[i], fechaResultadoApi);
       } else {
-        Logger.log("⚠️ Sin respuesta API para " + bioIds[i]);
+        Logger.log("⚠️ Sin respuesta API para " + idsAConsultar[i]);
       }
       Utilities.sleep(1000);
     }
@@ -1229,6 +1244,12 @@ function _calcularLimiteLiberacionDesaplazamiento(ahora) {
   return new Date(hoy00.getTime() + 12 * 60 * 60 * 1000);
 }
 
+// Mismo respaldo que MAX_CANDIDATOS_POR_CORTE/TIEMPO_MAXIMO_CONSULTAS_CORTE_MS: sin tope,
+// un backlog grande de consultas SAI (1s de pausa c/u) puede superar el límite de ejecución
+// de Apps Script y la corrida se corta sin haber escrito nada.
+const MAX_CANDIDATOS_PRIMER_CONTACTO = 500;
+const TIEMPO_MAXIMO_PRIMER_CONTACTO_MS = 20 * 60 * 1000;
+
 // Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
 // cumplieron la ventana de 4h desde fecha_resultado y siguen pendientes en SAI.
 function _enviarPrimerContactoBiometria() {
@@ -1267,12 +1288,19 @@ function _enviarPrimerContactoBiometria() {
     return;
   }
 
-  Logger.log(candidatos.length + " candidatos a primer contacto a verificar.");
+  var totalCandidatosPC = candidatos.length;
+  var candidatosAConsultar = candidatos.slice(0, MAX_CANDIDATOS_PRIMER_CONTACTO);
+  Logger.log(totalCandidatosPC + " candidatos a primer contacto en total; verificando hasta " + candidatosAConsultar.length + " en esta corrida (los demás quedan para la próxima).");
 
   var resultados = [];
-  for (var p = 0; p < candidatos.length; p++) {
-    var datosApi = _consultarSaiIndividual(candidatos[p].consecutivo);
-    resultados.push({ item: candidatos[p], datosApi: datosApi });
+  var inicioMsPC = Date.now();
+  for (var p = 0; p < candidatosAConsultar.length; p++) {
+    if (Date.now() - inicioMsPC > TIEMPO_MAXIMO_PRIMER_CONTACTO_MS) {
+      Logger.log("⏱️ Tope de tiempo alcanzado en primer contacto, se dejan " + (candidatosAConsultar.length - p) + " para la próxima corrida.");
+      break;
+    }
+    var datosApi = _consultarSaiIndividual(candidatosAConsultar[p].consecutivo);
+    resultados.push({ item: candidatosAConsultar[p], datosApi: datosApi });
     Utilities.sleep(1000);
   }
 
