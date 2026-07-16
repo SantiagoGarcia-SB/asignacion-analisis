@@ -3479,23 +3479,35 @@ function _renderDetalleModal(tipo, filtroTipo) {
     } else {
         // Póliza es siempre corta (máx. 6 dígitos); Analista puede traer nombres largos —
         // la misma columna no debería reservar el mismo ancho para ambos casos.
-        var col1Pct = col2Label === 'Analista' ? 18 : 24;
-        var col2Pct = col2Label === 'Analista' ? 52 : 18;
-        var col3Pct = 100 - col1Pct - col2Pct;
+        var col1Pct = col2Label === 'Analista' ? 18 : 22;
+        var col2Pct = col2Label === 'Analista' ? 52 : 16;
+        var colAccionPct = tipo === 'sinAsignar' ? 20 : 0;
+        var col3Pct = 100 - col1Pct - col2Pct - colAccionPct;
 
         html += '<div style="max-height:300px;overflow-y:auto;">';
         html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">';
-        html += '<colgroup><col style="width:' + col1Pct + '%;"><col style="width:' + col2Pct + '%;"><col style="width:' + col3Pct + '%;"></colgroup>';
+        html += '<colgroup><col style="width:' + col1Pct + '%;"><col style="width:' + col2Pct + '%;"><col style="width:' + col3Pct + '%;">';
+        if (tipo === 'sinAsignar') html += '<col style="width:' + colAccionPct + '%;">';
+        html += '</colgroup>';
         html += '<thead><tr style="position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;">';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Solicitud</th>';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">' + col2Label + '</th>';
         html += '<th style="padding:10px 14px;text-align:center;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Tipo</th>';
+        if (tipo === 'sinAsignar') html += '<th style="padding:10px 14px;text-align:center;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Acción</th>';
         html += '</tr></thead><tbody>';
         filteredItems.forEach(function(item) {
+            var idEsc = String(item.id).replace(/'/g, "\\'");
+            var tipoEsc = String(item.tipo || 'digital').replace(/'/g, "\\'");
             html += '<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.1s;" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">';
             html += '<td style="padding:10px 14px;font-weight:700;color:#1e293b;">' + item.id + '</td>';
             html += '<td style="padding:10px 14px;color:var(--gris);word-break:break-word;">' + item.col2 + (item.extra ? ' <span style="color:#15803d;font-weight:600;font-size:0.72rem;">· ' + item.extra + '</span>' : '') + '</td>';
             html += '<td style="padding:10px 14px;text-align:center;">' + getBadgeTipo(item.tipo) + '</td>';
+            if (tipo === 'sinAsignar') {
+                html += '<td style="padding:8px 10px;text-align:center;">';
+                html += '<button class="btn btn-sm" onclick="abrirAsignacionManual(\'' + idEsc + '\', \'' + tipoEsc + '\')" title="Asignar manualmente a un analista" style="background:#253150;color:white;border:none;border-radius:6px;padding:4px 10px;font-size:0.7rem;font-weight:700;cursor:pointer;">';
+                html += '<i class="bi bi-person-plus-fill me-1"></i>Asignar</button>';
+                html += '</td>';
+            }
             html += '</tr>';
         });
         html += '</tbody></table></div>';
@@ -3704,6 +3716,78 @@ function confirmarDesasignar(idSolicitud) {
             Swal.fire('Error', mensajeErrorAmigable(e), 'error');
         }).desasignarSolicitud(idSolicitud);
     });
+}
+
+function abrirAsignacionManual(idSolicitud, tipo) {
+    var usuarios = window._listaUsuariosReasignar || [];
+
+    function mostrarModalAsignacion(listaUsuarios) {
+        var opciones = listaUsuarios
+            .filter(function(u) { return u.estado === 'ACTIVO' || u.estado === 'DISPONIBLE'; })
+            .map(function(u) {
+                var cargaInfo = u.cargaActual !== undefined ? ' — Carga: ' + u.cargaActual : '';
+                return '<option value="' + u.correo + '">' + u.nombreComercial + ' (' + u.especialidad + cargaInfo + ')</option>';
+            }).join('');
+        if (!opciones) opciones = '<option value="">No hay analistas activos</option>';
+
+        Swal.fire({
+            title: '<i class="bi bi-person-plus-fill me-2"></i>Asignación Manual',
+            html: '<div style="text-align:left;font-size:0.88rem;">' +
+                '<div class="mb-3 p-3 rounded-3" style="background:#f1f5f9;border:1px solid #e2e8f0;">' +
+                '<div class="fw-bold" style="color:#253150;">Solicitud: <span style="color:#BD0F14;">' + idSolicitud + '</span></div>' +
+                '<div class="text-muted small">Estado: <strong>En cola (sin asignar)</strong></div>' +
+                '<div class="text-muted small">Tipo: <strong>' + tipo + '</strong></div>' +
+                '</div>' +
+                '<div class="p-2 rounded-3 mb-3" style="background:#fef3c7;border:1px solid #f59e0b;font-size:0.78rem;color:#92400e;">' +
+                '<i class="bi bi-exclamation-triangle-fill me-1"></i> Asignación de contingencia — este caso se tomará de la cola y se asignará directamente al analista seleccionado, sin pasar por el motor automático.</div>' +
+                '<label class="form-label fw-bold small">Analista destino</label>' +
+                '<select id="swal-select-analista-manual" class="form-select">' + opciones + '</select>' +
+                '</div>',
+            showCancelButton: true,
+            confirmButtonText: '<i class="bi bi-check-lg me-1"></i>Asignar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#253150',
+            cancelButtonColor: '#706F6F',
+            customClass: { popup: 'swal2-lg' },
+            preConfirm: function() {
+                var sel = document.getElementById('swal-select-analista-manual').value;
+                if (!sel) { Swal.showValidationMessage('Selecciona un analista'); return false; }
+                return sel;
+            }
+        }).then(function(result) {
+            if (!result.isConfirmed) return;
+            var correoDestino = result.value;
+            Swal.fire({ title: 'Asignando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+            google.script.run
+                .withSuccessHandler(function(res) {
+                    if (res.success) {
+                        Swal.fire({ icon: 'success', title: 'Asignado', text: res.message, confirmButtonColor: '#253150', timer: 2500, timerProgressBar: true });
+                        refrescarDashboard();
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Error', text: res.message, confirmButtonColor: '#BD0F14' });
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: mensajeErrorAmigable(err), confirmButtonColor: '#BD0F14' });
+                })
+                .admin_asignarManualDesdeCola(idSolicitud, correoDestino);
+        });
+    }
+
+    if (usuarios.length > 0) {
+        mostrarModalAsignacion(usuarios);
+    } else {
+        Swal.fire({ title: 'Cargando analistas...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+        google.script.run
+            .withSuccessHandler(function(lista) {
+                window._listaUsuariosReasignar = lista;
+                mostrarModalAsignacion(lista);
+            })
+            .withFailureHandler(function(err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar analistas. ' + mensajeErrorAmigable(err) });
+            })
+            .admin_obtenerUsuariosGestion();
+    }
 }
 
 function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
@@ -4321,11 +4405,12 @@ function cambiarModoCupos(modo) {
         $('#btn-modo-general').addClass('active');
         $('#btn-modo-individual').removeClass('active');
     } else {
-        $('#cupos-modo-general').hide();
-        $('#cupos-modo-individual').show();
-        $('#btn-modo-general').removeClass('active');
-        $('#btn-modo-individual').addClass('active');
-        cargarTablaCuposPersonalizados();
+        // Deshabilitado temporalmente (2026-07-16): un cupo individual sin fecha de
+        // vencimiento quedó activo tras una asignación especial que debía ser temporal,
+        // bloqueando la autoasignación de un analista. Reactivar solo junto con soporte
+        // de expiración automática en admin_setCuposIndividual.
+        Swal.fire({ icon: 'info', title: 'Próximamente', text: 'Los cupos por analista están temporalmente deshabilitados mientras se agrega vencimiento automático.', confirmButtonColor: '#253150' });
+        return;
     }
 }
 

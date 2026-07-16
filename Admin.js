@@ -745,6 +745,171 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
 }
 
 /**
+ * Asigna manualmente un caso de la cola (sin asignar) a un analista específico.
+ * Uso de contingencia: cuando el motor automático no está operando o se necesita
+ * dirigir un caso puntual a un analista en particular.
+ *
+ * Replica la misma mecánica de _asignarCasoPrincipal / _asignarCasoReestudios:
+ * mueve la fila a Historico_Gestiones y actualiza contadores.
+ *
+ * @param {string} idSolicitud - ID de la solicitud a asignar.
+ * @param {string} correoAnalista - Email del analista destino.
+ * @returns {Object} { success, message }
+ */
+function admin_asignarManualDesdeCola(idSolicitud, correoAnalista) {
+  try {
+    verificarPermisoAdmin();
+    if (!idSolicitud || !correoAnalista) {
+      return { success: false, message: "Se requiere ID de solicitud y correo del analista." };
+    }
+
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
+      const correoNorm = String(correoAnalista).toLowerCase().trim();
+      const idBuscado = String(idSolicitud).trim();
+      const ahora = new Date();
+      const adminEmail = Session.getActiveUser().getEmail();
+
+      // Obtener nombre del analista destino
+      const ssMain = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const hojaUser = ssMain.getSheetByName("Usuarios");
+      const dataUser = hojaUser.getDataRange().getValues();
+      const usuario = dataUser.find(function(f) { return String(f[2]).toLowerCase().trim() === correoNorm; });
+      if (!usuario) return { success: false, message: "Analista no encontrado en la base de usuarios." };
+      const nombreAnalista = String(usuario[1]).trim();
+
+      // 1. Buscar en hoja principal de solicitudes (sin asignar)
+      const hojaSol = ssMain.getSheetByName(SHEET_NAME_SOLICITUDES);
+      const lastRowSol = hojaSol.getLastRow();
+      if (lastRowSol > 1) {
+        const matchSol = hojaSol.getRange(2, 1, lastRowSol - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext();
+        if (matchSol) {
+          const fila = matchSol.getRow();
+          const numCols = Math.max(59, hojaSol.getLastColumn());
+          const rowData = hojaSol.getRange(fila, 1, 1, numCols).getValues()[0];
+          const asignadoActual = String(rowData[27] || "").trim();
+
+          if (asignadoActual !== "") {
+            return { success: false, message: "La solicitud " + idBuscado + " ya está asignada a " + asignadoActual + ". Usa Reasignar." };
+          }
+
+          // Clasificar tipo del caso
+          var tipoVisual = 'digital';
+          try {
+            var tiposConfig = _getTiposSolicitud().filter(function(t) { return t.activo; });
+            var camposSol = { estadoGeneral: String(rowData[16] || ""), clase: String(rowData[20] || "") };
+            tipoVisual = _clasificarPorReglas(camposSol, tiposConfig) || 'digital';
+          } catch (eClasif) { tipoVisual = 'digital'; }
+
+          // Escribir asignación en la fila
+          hojaSol.getRange(fila, 27, 1, 5).setValues([[ahora, correoNorm, "", "", nombreAnalista]]);
+          hojaSol.getRange(fila, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+          hojaSol.getRange(fila, 59).clearContent(); // Limpiar marca REASIGNADA si existía
+
+          // Construir fila para Historico_Gestiones (misma lógica que _asignarCasoPrincipal)
+          var s = rowData.slice();
+          s[26] = ahora;
+          s[27] = correoNorm;
+          s[28] = "";
+          s[29] = "";
+          s[30] = nombreAnalista;
+
+          var histRow = [
+            s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
+            s[16],s[17],s[18],s[19],s[20],s[21],
+            s[23],s[24],
+            s[26],s[27],s[28],
+            s[30],s[31],s[32],s[33],
+            s[35],s[36],
+            '',0,0,0,
+            'ADMIN:' + adminEmail + '|' + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm"),'',
+            s[37],s[38],s[39],s[40],s[41],s[42],s[43],
+            s[44],s[45],s[46],s[47],s[48],s[49],s[50],
+            s[51],s[52],s[53],s[54],s[55],s[56],s[57],
+            tipoVisual
+          ];
+
+          var hojaHist = ssMain.getSheetByName("Historico_Gestiones");
+          if (!hojaHist) hojaHist = ssMain.insertSheet("Historico_Gestiones");
+          var nuevaFila = hojaHist.getLastRow() + 1;
+          hojaHist.getRange(nuevaFila, 1, 1, histRow.length).setValues([histRow]);
+          hojaHist.getRange(nuevaFila, 35, 1, 3).setNumberFormat("0.00");
+          hojaSol.deleteRow(fila);
+
+          // Actualizar contadores
+          _registrarAsignacionContador(correoNorm, tipoVisual, idBuscado);
+
+          SpreadsheetApp.flush();
+          return { success: true, message: "Solicitud " + idBuscado + " asignada manualmente a " + nombreAnalista + "." };
+        }
+      }
+
+      // 2. Buscar en hoja de reestudios (sin asignar)
+      var ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      var hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      if (hojaReest) {
+        var lastRowR = hojaReest.getLastRow();
+        if (lastRowR > 1) {
+          var matchR = hojaReest.getRange(2, 2, lastRowR - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext();
+          if (matchR) {
+            var filaR = matchR.getRow();
+            var numColsR = Math.max(18, hojaReest.getLastColumn());
+            var rowDataR = hojaReest.getRange(filaR, 1, 1, numColsR).getValues()[0];
+            var asignadoR = String(rowDataR[6] || "").trim();
+
+            if (asignadoR !== "") {
+              return { success: false, message: "La solicitud " + idBuscado + " ya está asignada a " + asignadoR + ". Usa Reasignar." };
+            }
+
+            // Derivar tipo
+            var origenR = String(rowDataR[3]).toUpperCase().trim();
+            var tipoPNormR = String(rowDataR[5]).toUpperCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            var tipoR = 'reestudio';
+            if (tipoPNormR.indexOf("BIOMETRIA FALLIDA") !== -1) tipoR = 'biometriaFallida';
+            else if (origenR === "CORREO" && tipoPNormR === "NUEVA") tipoR = 'nuevaUar';
+            else if (origenR === "CORREO" && tipoPNormR === "ADICIONAL") tipoR = 'deudorUar';
+            else if (origenR === "CORREO" && tipoPNormR === "ASEGURADA") tipoR = 'nuevaUar';
+            else if (tipoPNormR === "REESTUDIO") tipoR = 'reestudio';
+
+            // Escribir asignación (cols G, H, I)
+            hojaReest.getRange(filaR, 7, 1, 3).setValues([[correoNorm, nombreAnalista, ahora]]);
+            hojaReest.getRange(filaR, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
+
+            // Mover a Historico_Gestiones de reestudios
+            var filaCompleta = rowDataR.slice(0, 18);
+            filaCompleta[6] = correoNorm;
+            filaCompleta[7] = nombreAnalista;
+            filaCompleta[8] = ahora;
+            filaCompleta.push(tipoR);  // col 19 (S): tipo guardado
+            filaCompleta.push('ADMIN:' + adminEmail + '|' + Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm")); // col 20 (T)
+            filaCompleta.push(String(rowDataR[13] || '').trim()); // col 21 (U): nota radicador
+
+            var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
+            if (!hojaHistR) hojaHistR = ssReestudios.insertSheet("Historico_Gestiones");
+            var nuevaFilaR = hojaHistR.getLastRow() + 1;
+            hojaHistR.getRange(nuevaFilaR, 1, 1, filaCompleta.length).setValues([filaCompleta]);
+            hojaReest.deleteRow(filaR);
+
+            // Actualizar contadores
+            _registrarAsignacionContador(correoNorm, tipoR, idBuscado);
+
+            SpreadsheetApp.flush();
+            return { success: true, message: "Solicitud " + idBuscado + " (reestudio) asignada manualmente a " + nombreAnalista + "." };
+          }
+        }
+      }
+
+      return { success: false, message: "Solicitud " + idBuscado + " no encontrada en la cola." };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+/**
  * Busca una solicitud por ID en las bases de datos para auditar en modal.
  */
 function admin_buscarSolicitud(idSolicitud) {
