@@ -99,30 +99,14 @@ function obtenerDatosDashboard() {
   }
   res.listaActivos.sort(function(a, b) { return a.nombre.localeCompare(b.nombre); });
   
-  // ── Sin Asignar desde hoja activa de solicitudes ──
-  for (let i = 1; i < dataSol.length; i++) {
-    const asignado = String(dataSol[i][27] || "").trim();
-    const fechaFin = String(dataSol[i][28] || "").trim();
-    const solicitudId = String(dataSol[i][0] || "").trim();
-    const poliza = String(dataSol[i][1] || "");
-    if (solicitudId === "") continue;
-
-    var tipoVisual = 'digital';
-    try {
-      var camposSol = { estadoGeneral: String(dataSol[i][16] || ""), clase: String(dataSol[i][20] || "") };
-      tipoVisual = _clasificarPorReglas(camposSol, tiposActivos) || 'digital';
-    } catch (eClasif) { tipoVisual = 'digital'; }
-
-    if (asignado === "" && fechaFin === "") {
-      res.sinAsignar++;
-      if (res.desglose.sinAsignar[tipoVisual] !== undefined) res.desglose.sinAsignar[tipoVisual]++;
-      if (res.listaSinAsignar.length < 100) {
-        res.listaSinAsignar.push({ id: solicitudId, poliza: poliza, tipo: tipoVisual });
-      }
-    }
-  }
-
   // ── Sin Asignar desde hoja activa de reestudios ──
+  // Se procesa ANTES que la hoja principal de solicitudes porque ambas comparten el
+  // mismo cupo de 100 registros en res.listaSinAsignar: los tipos que solo se detectan
+  // aquí (nuevaUar, deudorUar, reestudio) son de bajo volumen, mientras que la hoja
+  // principal (digital/inducción/desaplazamiento) suele superar los 100 pendientes ella
+  // sola. Si la principal corriera primero, agotaría el cupo antes de que reestudios
+  // pudiera aportar un solo registro, dejando el listado de esos tipos vacío aunque el
+  // desglose (que no tiene cupo) sí mostrara el total correcto.
   try {
     const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
     const hojaReest = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
@@ -160,6 +144,29 @@ function obtenerDatosDashboard() {
     }
   } catch (e) {
     Logger.log("Aviso: No se pudo leer hoja activa de reestudios: " + e.message);
+  }
+
+  // ── Sin Asignar desde hoja activa de solicitudes ──
+  for (let i = 1; i < dataSol.length; i++) {
+    const asignado = String(dataSol[i][27] || "").trim();
+    const fechaFin = String(dataSol[i][28] || "").trim();
+    const solicitudId = String(dataSol[i][0] || "").trim();
+    const poliza = String(dataSol[i][1] || "");
+    if (solicitudId === "") continue;
+
+    var tipoVisual = 'digital';
+    try {
+      var camposSol = { estadoGeneral: String(dataSol[i][16] || ""), clase: String(dataSol[i][20] || "") };
+      tipoVisual = _clasificarPorReglas(camposSol, tiposActivos) || 'digital';
+    } catch (eClasif) { tipoVisual = 'digital'; }
+
+    if (asignado === "" && fechaFin === "") {
+      res.sinAsignar++;
+      if (res.desglose.sinAsignar[tipoVisual] !== undefined) res.desglose.sinAsignar[tipoVisual]++;
+      if (res.listaSinAsignar.length < 100) {
+        res.listaSinAsignar.push({ id: solicitudId, poliza: poliza, tipo: tipoVisual });
+      }
+    }
   }
 
   // ── En Gestión + Gestionadas Hoy, en una sola lectura de Historico_Gestiones principal ──
