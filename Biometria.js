@@ -93,6 +93,8 @@ function limpiarBiometriasResueltas() {
     const fechasSai = new Map();
     const inicioMsLimpieza = Date.now();
     let dejadosPorTiempoLimpieza = 0;
+    let conRespuestaLimpieza = 0;
+    let sinRespuestaLimpieza = 0;
     for (let i = 0; i < idsAConsultar.length; i++) {
       if (Date.now() - inicioMsLimpieza > TIEMPO_MAXIMO_LIMPIAR_BIOMETRIAS_MS) {
         dejadosPorTiempoLimpieza = idsAConsultar.length - i;
@@ -101,6 +103,7 @@ function limpiarBiometriasResueltas() {
       }
       const datosApi = _consultarSaiIndividual(idsAConsultar[i]);
       if (datosApi) {
+        conRespuestaLimpieza++;
         estadosSai.set(idsAConsultar[i], String(datosApi.studyStatus || "").toUpperCase().trim());
         // Mismo campo que _homologarDatosApi() usa para fechaResultado (lastResultDate con
         // fallback a lastMovementDate) — si aquí se comparara contra un campo distinto al que
@@ -110,10 +113,14 @@ function limpiarBiometriasResueltas() {
         const fechaResultadoApi = datosApi.lastResultDate || datosApi.lastMovementDate || "";
         if (fechaResultadoApi) fechasSai.set(idsAConsultar[i], fechaResultadoApi);
       } else {
+        sinRespuestaLimpieza++;
         Logger.log("⚠️ Sin respuesta API para " + idsAConsultar[i]);
       }
       Utilities.sleep(1000);
     }
+    Logger.log("📊 Consulta SAI completada: " + conRespuestaLimpieza + " con respuesta, " + sinRespuestaLimpieza + " sin respuesta"
+      + (dejadosPorTiempoLimpieza > 0 ? ", " + dejadosPorTiempoLimpieza + " dejados por tope de tiempo" : "")
+      + (totalBioIds > idsAConsultar.length ? " (quedan " + (totalBioIds - idsAConsultar.length) + " más allá del tope de " + MAX_CANDIDATOS_LIMPIAR_BIOMETRIAS + ")" : "") + ".");
 
     const ESTADOS_CONSERVAR = new Set(["APROBADO_PENDIENTE_BIOMETRIA", "EN_ESTUDIO"]);
     const idsAEliminar = new Set();
@@ -1315,12 +1322,14 @@ function _enviarPrimerContactoBiometria() {
     var filasParaWA = [];
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
     var huboCambios = false;
+    var resueltasSolasPC = 0, enviadosWaPC = 0, sinRespuestaPC = 0;
 
     for (var r = 0; r < resultados.length; r++) {
       var item = resultados[r].item;
       var datosApi = resultados[r].datosApi;
 
       if (!datosApi) {
+        sinRespuestaPC++;
         Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
         continue;
       }
@@ -1332,6 +1341,7 @@ function _enviarPrimerContactoBiometria() {
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
         item.datosFila[75] = "RESUELTA";
         item.datosFila[76] = ahora;
+        resueltasSolasPC++;
         Logger.log("✅ " + item.consecutivo + " se resolvió solo (" + statusActual + ") → cerrado, sin llamada.");
         continue;
       }
@@ -1340,6 +1350,7 @@ function _enviarPrimerContactoBiometria() {
       filasParaWA.push(item.fila);
       item.datosFila[75] = "WA_ENVIADO";
       item.datosFila[76] = ahora;
+      enviadosWaPC++;
       Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
     }
 
@@ -1354,6 +1365,9 @@ function _enviarPrimerContactoBiometria() {
       SpreadsheetApp.flush();
     }
     lock.releaseLock();
+
+    Logger.log("📊 Primer contacto completado: " + enviadosWaPC + " WA enviados, " + resueltasSolasPC + " resueltas solas, " + sinRespuestaPC + " sin respuesta SAI"
+      + (totalCandidatosPC > candidatosAConsultar.length ? " (quedan " + (totalCandidatosPC - candidatosAConsultar.length) + " más allá del tope de " + MAX_CANDIDATOS_PRIMER_CONTACTO + ")" : "") + ".");
 
     if (rowsParaWA.length > 0) {
       enviarBroadcastInfobipConFilas(rowsParaWA, hojaBio, filasParaWA);

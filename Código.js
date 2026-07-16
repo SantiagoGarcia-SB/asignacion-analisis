@@ -475,6 +475,8 @@ function _getScoreMapCacheado() {
         if (pol) { mapaScore.set(pol, categoria); mapaInmobiliaria.set(pol, inmobiliaria); }
         if (polNorm) { mapaScore.set(polNorm, categoria); mapaInmobiliaria.set(polNorm, inmobiliaria); }
       }
+    } else {
+      Logger.log('_getScoreMapCacheado: hoja "score" no encontrada — categoriaScore/inmobiliaria quedarán vacíos para todos los casos.');
     }
   } catch (e) {
     Logger.log('_getScoreMapCacheado: ' + e.message);
@@ -1200,9 +1202,15 @@ function revisarEnEsperaCodeudor() {
   if (totalPendientesCodeudor > limiteFilasCodeudor) {
     Logger.log(`📋 ${totalPendientesCodeudor} solicitudes en pendiente_codeudor; verificando hasta ${limiteFilasCodeudor} en esta corrida (las demás quedan para la próxima).`);
   }
+  let dejadasPorTiempoCodeudor = 0;
+  let expiradasCodeudor = 0;
+  let httpErrorCodeudor = 0;
+  let excepcionesCodeudor = 0;
+  let siguenRequeridoCodeudor = 0;
   for (let i = 0; i < limiteFilasCodeudor; i++) {
     if (Date.now() - inicioMsCodeudor > TIEMPO_MAXIMO_CODEUDOR_MS) {
-      Logger.log(`⏱️ Tope de tiempo alcanzado en revisarEnEsperaCodeudor, se dejan ${limiteFilasCodeudor - i} para la próxima corrida.`);
+      dejadasPorTiempoCodeudor = limiteFilasCodeudor - i;
+      Logger.log(`⏱️ Tope de tiempo alcanzado en revisarEnEsperaCodeudor, se dejan ${dejadasPorTiempoCodeudor} para la próxima corrida.`);
       break;
     }
     const solicitud = String(datos[i][0]).trim();
@@ -1211,6 +1219,7 @@ function revisarEnEsperaCodeudor() {
     const fechaRadicacion = new Date(datos[i][1]);
     if (!isNaN(fechaRadicacion.getTime()) && (ahora - fechaRadicacion) > TRES_MESES_MS) {
       filasAEliminar.push(i);
+      expiradasCodeudor++;
       Logger.log(`🧹 Solicitud ${solicitud} expiró en pendiente_codeudor (>3 meses de radicación).`);
       continue;
     }
@@ -1223,6 +1232,7 @@ function revisarEnEsperaCodeudor() {
       });
 
       if (response.getResponseCode() !== 200) {
+        httpErrorCodeudor++;
         Logger.log(`⚠️ HTTP ${response.getResponseCode()} verificando solicitud ${solicitud} en pendiente_codeudor.`);
         continue;
       }
@@ -1232,6 +1242,7 @@ function revisarEnEsperaCodeudor() {
 
       if (estado === "CODEUDORES_REQUERIDOS") {
         actualizacionesFecha.push({ fila: i + 2, valor: Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss") });
+        siguenRequeridoCodeudor++;
         continue;
       }
 
@@ -1274,9 +1285,16 @@ function revisarEnEsperaCodeudor() {
       filasAEliminar.push(i);
 
     } catch (e) {
+      excepcionesCodeudor++;
       Logger.log(`❌ Error verificando solicitud ${solicitud} en pendiente_codeudor: ${e.message}`);
     }
   }
+
+  Logger.log(`📊 revisarEnEsperaCodeudor completado: ${expiradasCodeudor} expiradas, ${siguenRequeridoCodeudor} siguen requiriendo codeudor, `
+    + `${reactivadas.length} para reactivar en Solicitudes, ${reactivadasBiometria.length} para reactivar en biometría, `
+    + `${httpErrorCodeudor} con error HTTP, ${excepcionesCodeudor} con excepción`
+    + (dejadasPorTiempoCodeudor > 0 ? `, ${dejadasPorTiempoCodeudor} dejadas por tope de tiempo` : '')
+    + (totalPendientesCodeudor > limiteFilasCodeudor ? ` (quedan ${totalPendientesCodeudor - limiteFilasCodeudor} más allá del tope de ${MAX_CANDIDATOS_CODEUDOR})` : '') + '.');
 
   // === FASE 2: aplicar los cambios a la hoja. Ya no hay llamadas HTTP de por medio,
   // así que el candado dura milisegundos en vez de minutos. ===
