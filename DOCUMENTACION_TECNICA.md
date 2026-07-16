@@ -836,9 +836,12 @@ El sistema usa **SweetAlert2** para notificar al usuario en tiempo real:
 | K | 10 | estadoGestion | Gestión del analista |
 | L | 11 | motivoAplazamiento | Gestión del analista |
 | M | 12 | motivoNegacion | Gestión del analista |
-| N | 13 | observaciones | Gestión del analista |
+| N | 13 | observaciones | Ingesta automática (nota del radicador, sobre todo en CORREO) al entrar; sobrescrita por el comentario de cierre del analista al gestionar |
 | O | 14 | tiempoTotalResolucion (minutos, radicación → cierre) | Cálculo al guardar |
 | P | 15 | tiempoGestion (minutos, asignación → cierre) | Cálculo al guardar |
+| S | 18 | tipo (bucket de cupo, p.ej. `nuevaUar`/`reestudio`) | Motor de asignación — solo presente en `Historico_Gestiones`, `ORIGEN` no la tiene |
+| T | 19 | marca de reasignación admin (`ADMIN:email\|fecha`) | `admin_reasignarSolicitud()` (Admin.js) — solo en `Historico_Gestiones`, nunca en `ORIGEN`. **No reutilizar esta columna.** |
+| U | 20 | observacionesRadicador | Snapshot inmutable de la col N tomado antes de que la gestión del analista la sobrescriba — preserva la nota original del radicador. Ver `_asignarCasoReestudios` (MotorAsignacion.js) y `guardarGestionReestudio` (Reestudios.js) |
 
 ### Instrucciones de Despliegue
 

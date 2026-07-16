@@ -697,6 +697,9 @@ function _archivarColaBiometriaVencida() {
   var vent = _calcularUmbralArchivoColaBiometria(ahora);
 
   // Fase 1 — sin lock: lectura y decisión sobre los datos vigentes en este momento.
+  // limpiarBiometriasResueltas() ya corrió justo antes en el mismo ciclo y refrescó
+  // fechaResultado (col S) contra SAI, así que la fecha aquí refleja el último movimiento
+  // real en SAI. Si SAI no ha movido el caso desde antes del umbral, se archiva.
   var datos = hoja.getRange(2, 1, lastRow - 1, hoja.getLastColumn()).getValues();
   var idsCandidatos = new Set();
 
@@ -710,10 +713,8 @@ function _archivarColaBiometriaVencida() {
     var solicitud = String(row[0]).trim();
     if (!solicitud) continue;
 
-    // Usar fechaResultado de SAI (col S, índice 18) como criterio de antigüedad —
-    // es la fecha actualizada por SAI que operación usa como referencia real.
-    // limpiarBiometriasResueltas() ya la refresca contra SAI en el mismo ciclo,
-    // justo antes de esta función. Fallback a fechaRadicacion solo si no hay fecha.
+    // Usar fechaResultado de SAI (col S, índice 18) — ya refrescada por
+    // limpiarBiometriasResueltas() en este mismo ciclo. Fallback a fechaRadicacion.
     var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
     if (!fecha) {
       Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado ni fechaRadicacion parseable — no se archiva.");
@@ -953,6 +954,16 @@ function cicloLimpiezaBiometriaEscalada() {
   Logger.log("=== INICIO cicloLimpiezaBiometriaEscalada ===");
   limpiarBiometriasResueltas();
   Logger.log("=== FIN cicloLimpiezaBiometriaEscalada ===");
+}
+
+// MANUAL — correr desde el editor cuando se necesita forzar la escalación sin que el
+// archivado use el umbral de CORTE_12PM (que archivaría lo de ayer tarde antes de que
+// operación lo trabaje). Solo limpia resueltas + escala pendientes, SIN archivar nada.
+function forzarEscalacionSinArchivar() {
+  Logger.log("=== INICIO forzarEscalacionSinArchivar (MANUAL) ===");
+  limpiarBiometriasResueltas();
+  _procesarCortePendientes();
+  Logger.log("=== FIN forzarEscalacionSinArchivar ===");
 }
 
 function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
@@ -1249,7 +1260,8 @@ function _enviarPrimerContactoBiometria() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 77).getValues();
+  var numColsBio = Math.max(hojaBio.getLastColumn(), COL_FECHA_ACTUALIZACION_FASE);
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, numColsBio).getValues();
 
   var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
@@ -1325,7 +1337,15 @@ function _enviarPrimerContactoBiometria() {
     // más tiempo del necesario, bloqueando a otros procesos que esperan el mismo candado
     // global (p.ej. guardarGestionBiometria()).
     if (huboCambios) {
-      hojaBio.getRange(2, 1, datos.length, 77).setValues(datos);
+      var numColsEscritura = datos[0].length;
+      // Si al mutar datos se extendió una fila (p.ej. col 77 no existía al leer pero
+      // se asignó en memoria), normalizar TODAS las filas a la misma longitud para que
+      // setValues no falle por inconsistencia. Además, expandir el rango de escritura
+      // al ancho real de los datos.
+      for (var f = 0; f < datos.length; f++) {
+        while (datos[f].length < numColsEscritura) datos[f].push("");
+      }
+      hojaBio.getRange(2, 1, datos.length, numColsEscritura).setValues(datos);
       SpreadsheetApp.flush();
     }
     lock.releaseLock();

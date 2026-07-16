@@ -764,6 +764,7 @@ function test_V1_DerivarTipoReestudio() {
   _assert('Biometría fallida', 'biometriaFallida', _derivarTipoReestudio('CUALQUIERA', 'BIOMETRIA FALLIDA'));
   _assert('Correo + Nueva → nuevaUar', 'nuevaUar', _derivarTipoReestudio('CORREO', 'NUEVA'));
   _assert('Correo + Adicional → deudorUar', 'deudorUar', _derivarTipoReestudio('CORREO', 'ADICIONAL'));
+  _assert('Correo + Asegurada → nuevaUar', 'nuevaUar', _derivarTipoReestudio('CORREO', 'ASEGURADA'));
   _assert('Reestudio', 'reestudio', _derivarTipoReestudio('VICTORIA', 'REESTUDIO'));
   _assert('Sin match → null', null, _derivarTipoReestudio('X', 'Y'));
 }
@@ -934,7 +935,7 @@ function _construirFilaReestudioSintetica(opts) {
   row[0] = opts.fecha;
   row[1] = opts.poliza;
   row[3] = opts.origen;
-  row[4] = opts.tipoP;
+  row[5] = opts.tipoP;
   row[6] = '';
   row[10] = '';
   return row;

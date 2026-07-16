@@ -493,7 +493,7 @@ function _recalcularContadoresInterno() {
       var tipoR = String(rowR[18] || '').trim();
       if (!tipoR) {
         var origenR = String(rowR[3]).toUpperCase().trim();
-        var tipoPNormR = String(rowR[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var tipoPNormR = String(rowR[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
         tipoR = _derivarTipoReestudio(origenR, tipoPNormR) || 'reestudio';
       }
       var tieneFinR = rowR[9] instanceof Date || String(rowR[9]).trim() !== "";
@@ -2453,10 +2453,10 @@ function _getHojaTiposSolicitud() {
     ["desaplazamiento", "Desaplazamiento", "bi-fingerprint", "#8b0a0e", '{"campo":"estadoGeneral","condicion":"equals","valor":"APROBADO_PENDIENTE_BIOMETRIA"}', "TRUE"],
     ["induccion", "Inducción", "bi-mortarboard", "#0d6efd", '{"campo":"clase","condicion":"equals","valor":"INDUCCION"}', "TRUE"],
     ["digital", "Digital", "bi-laptop", "#253150", '{"campo":"estadoGeneral","condicion":"equals","valor":"EN_ESTUDIO"}', "TRUE"],
-    ["biometriaFallida", "Biometría Fallida", "bi-exclamation-triangle", "#dc3545", '{"campo":"tipoProceso","condicion":"includes","valor":"Biometria Fallida"}', "TRUE"],
-    ["nuevaUar", "Nueva UAR", "bi-envelope-plus", "#6f42c1", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"tipoProceso","condicion2":"equals","valor2":"NUEVA"}', "TRUE"],
-    ["deudorUar", "Deudor UAR", "bi-person-plus", "#fd7e14", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"tipoProceso","condicion2":"equals","valor2":"ADICIONAL"}', "TRUE"],
-    ["reestudio", "Reestudios", "bi-arrow-repeat", "#198754", '{"campo":"tipoProceso","condicion":"equals","valor":"Reestudio"}', "TRUE"]
+    ["biometriaFallida", "Biometría Fallida", "bi-exclamation-triangle", "#dc3545", '{"campo":"claseDeSolicitud","condicion":"includes","valor":"Biometria Fallida"}', "TRUE"],
+    ["nuevaUar", "Nueva UAR", "bi-envelope-plus", "#6f42c1", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"claseDeSolicitud","condicion2":"equals","valor2":"Nueva"}', "TRUE"],
+    ["deudorUar", "Deudor UAR", "bi-person-plus", "#fd7e14", '{"campo":"origen","condicion":"equals","valor":"CORREO","campo2":"claseDeSolicitud","condicion2":"equals","valor2":"Adicional"}', "TRUE"],
+    ["reestudio", "Reestudios", "bi-arrow-repeat", "#198754", '{"campo":"claseDeSolicitud","condicion":"equals","valor":"Reestudio"}', "TRUE"]
   ];
 
   if (!hoja) {

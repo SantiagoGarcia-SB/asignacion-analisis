@@ -672,6 +672,14 @@ function cargarDatos() {
         google.script.run
           .withSuccessHandler(function(res) {
             if (res.success && res.nueva) {
+              // Si el servidor devolvió las filas asignadas, renderizar inmediatamente
+              // sin esperar un segundo viaje completo a cargarPanelAnalista().
+              if (res.filasTabla && res.filasTabla.length > 0) {
+                var headers = datosGlobales && datosGlobales.length > 0 ? datosGlobales[0] : [];
+                var tablaDirecta = [headers].concat(res.filasTabla);
+                renderizarTabla(tablaDirecta);
+                if (typeof animarNumero === "function") animarNumero("countTotal", res.filasTabla.length);
+              }
               Swal.fire({
                 icon: 'info',
                 title: 'Nueva Solicitud',
@@ -682,10 +690,12 @@ function cargarDatos() {
                 timer: 5000,
                 timerProgressBar: true
               });
-              setTimeout(() => {
+              // Refresco de fondo (no bloqueante): sincroniza cupos y contadores
+              // sin hacer esperar al usuario para ver su caso asignado.
+              setTimeout(function() {
                 yaSeIntentoAsignar = false;
                 cargarDatos();
-              }, 3000);
+              }, 8000);
             } else {
               yaSeIntentoAsignar = false;
               _iniciarPollingTablaVacia();
@@ -791,6 +801,7 @@ function _normalizarFilasReestudios(filas) {
     fila[16] = '__REESTUDIO__';
     fila[17] = o.fechaRadicacion || '';
     fila[20] = o.tipoProceso || o.claseSolicitud || o.clase || '';
+    fila[24] = o.observaciones || '';
     fila[26] = o.fechaAsignacion || '';
     fila.push('');
     return fila;
@@ -1826,7 +1837,11 @@ function poblarModalRst(fila) {
   setVal('rst_solicitud_id', solicitudId);
   setVal('rst_poliza', '');
   setVal('rst_estado_q', '');
-  setVal('rst_observaciones', '');
+  // Precargado con la nota del radicador (si la hay) para que el analista la vea
+  // y pueda ampliarla; al guardar, este mismo campo se convierte en el comentario
+  // de cierre (la nota original queda preservada aparte, ver notaRadicadorOriginal
+  // en guardarGestionReestudio).
+  setVal('rst_observaciones', fila[24] || '');
 
   var linkDrive = fila[2] || '';
   var driveLink = document.getElementById('rst_linkDrive');

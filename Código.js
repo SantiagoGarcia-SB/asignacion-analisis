@@ -265,6 +265,9 @@ function _derivarTipoReestudio(origenNorm, tipoPNorm) {
   if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) return 'biometriaFallida';
   if (origenNorm === "CORREO" && tipoPNorm === "NUEVA") return 'nuevaUar';
   if (origenNorm === "CORREO" && tipoPNorm === "ADICIONAL") return 'deudorUar';
+  // "Asegurada" se cuenta como nuevaUar (misma cola/cupo), sin perder el rastro: el texto
+  // original queda intacto en claseDeSolicitud, solo el bucket de cupo es nuevaUar.
+  if (origenNorm === "CORREO" && tipoPNorm === "ASEGURADA") return 'nuevaUar';
   if (tipoPNorm === "REESTUDIO") return 'reestudio';
   return null;
 }
@@ -670,6 +673,7 @@ function getTableData() {
           filaAdaptada[16] = "__REESTUDIO__";                  // marcador en estadoGeneral (col 16)
           filaAdaptada[17] = String(dataReest[i][0]).trim();   // fechaRadicacion
           filaAdaptada[20] = tipoProc || claseR;               // tipo proceso real
+          filaAdaptada[24] = String(dataReest[i][13] || "").trim(); // observaciones (nota del radicador, col N de ORIGEN)
           filaAdaptada[26] = fechaAsigR;                       // fechaAsignacion
           filaAdaptada[27] = asignado;                         // email asignado
           filaAdaptada[28] = "";                               // fechaFin (vacía = pendiente)
@@ -720,6 +724,7 @@ function getTableData() {
         filaAdaptada[16] = "__REESTUDIO__";
         filaAdaptada[17] = String(dataHistReest[0]).trim();
         filaAdaptada[20] = tipoProcHR || claseHR;
+        filaAdaptada[24] = String(dataHistReest[13] || "").trim(); // observaciones (nota del radicador, col N)
         filaAdaptada[26] = fechaAsigHR;
         filaAdaptada[27] = asignadoHR;
         filaAdaptada[28] = "";
@@ -733,24 +738,25 @@ function getTableData() {
   }
 
   // Detectar reasignaciones recientes por admin (últimos 30 min)
-  // Solo tiene sentido buscar si el analista tiene algo asignado ahora mismo;
-  // se ubica con TextFinder en vez de leer las hojas completas.
+  // Busca SOLO entre los casos abiertos del analista (idsAbiertos) en vez de
+  // hacer findAll() en toda la columna de emails (que puede traer cientos de
+  // matches para analistas con historial largo). Mucho más rápido.
   var reasignaciones = [];
   try {
     var ahora = new Date();
     var hace30 = new Date(ahora.getTime() - 30 * 60 * 1000);
-    if (_obtenerCargaPendienteAnalista(userEmail) > 0) {
-      // Principal: col 38 (idx 37)
+    if (idsAbiertos.length > 0) {
+      // Principal: col 38 (idx 37) — marca de reasignación admin
       var hojaHistCheck = ss.getSheetByName("Historico_Gestiones");
       var lastRowCheck = hojaHistCheck ? hojaHistCheck.getLastRow() : 0;
       if (hojaHistCheck && lastRowCheck > 1) {
         var lastCol = Math.max(38, hojaHistCheck.getLastColumn());
-        var colAsigCheck = hojaHistCheck.getRange(2, 26, lastRowCheck - 1, 1);
-        var matchesCheck = colAsigCheck.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesCheck.forEach(function(m) {
-          var filaCheck = hojaHistCheck.getRange(m.getRow(), 1, 1, lastCol).getDisplayValues()[0];
+        for (var ic = 0; ic < idsAbiertos.length; ic++) {
+          var matchCheck = hojaHistCheck.getRange(2, 1, lastRowCheck - 1, 1).createTextFinder(idsAbiertos[ic]).matchEntireCell(true).findNext();
+          if (!matchCheck) continue;
+          var filaCheck = hojaHistCheck.getRange(matchCheck.getRow(), 1, 1, lastCol).getDisplayValues()[0];
           var marca = String(filaCheck[37] || "").trim();
-          if (!marca.startsWith("ADMIN:")) return;
+          if (!marca.startsWith("ADMIN:")) continue;
           var partes = marca.split("|");
           if (partes.length >= 2) {
             var fechaMarca = new Date(partes[1].trim());
@@ -758,19 +764,19 @@ function getTableData() {
               reasignaciones.push({ solicitud: String(filaCheck[0]).trim(), admin: partes[0].replace("ADMIN:","") });
             }
           }
-        });
+        }
       }
-      // Reestudios: col 15 (idx 14)
+      // Reestudios: col 20 (idx 19) — marca de reasignación admin
       var ssReestCheck = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
       var hojaHistRCheck = ssReestCheck.getSheetByName("Historico_Gestiones");
       var lastRowRCheck = hojaHistRCheck ? hojaHistRCheck.getLastRow() : 0;
       if (hojaHistRCheck && lastRowRCheck > 1) {
-        var colAsigRCheck = hojaHistRCheck.getRange(2, 7, lastRowRCheck - 1, 1);
-        var matchesRCheck = colAsigRCheck.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesRCheck.forEach(function(m) {
-          var filaRCheck = hojaHistRCheck.getRange(m.getRow(), 1, 1, 20).getDisplayValues()[0];
+        for (var irc = 0; irc < idsAbiertos.length; irc++) {
+          var matchRCheck = hojaHistRCheck.getRange(2, 2, lastRowRCheck - 1, 1).createTextFinder(idsAbiertos[irc]).matchEntireCell(true).findNext();
+          if (!matchRCheck) continue;
+          var filaRCheck = hojaHistRCheck.getRange(matchRCheck.getRow(), 1, 1, 20).getDisplayValues()[0];
           var marcaR = String(filaRCheck[19] || "").trim();
-          if (!marcaR.startsWith("ADMIN:")) return;
+          if (!marcaR.startsWith("ADMIN:")) continue;
           var partesR = marcaR.split("|");
           if (partesR.length >= 2) {
             var fechaMarcaR = new Date(partesR[1].trim());
@@ -778,7 +784,7 @@ function getTableData() {
               reasignaciones.push({ solicitud: String(filaRCheck[1]).trim(), admin: partesR[0].replace("ADMIN:","") });
             }
           }
-        });
+        }
       }
     }
   } catch(eR) { Logger.log("Detección reasignación: " + eR.message); }
@@ -1043,6 +1049,9 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
             // Si la solicitud ya existía en la cola "solicitud" con otro estado (p.ej.
             // EN_ESTUDIO), debe eliminarse de ahí para que siga el flujo correcto de
             // biometría (WA → escalación → llamada). Sin esto queda duplicada.
+            // NOTA: eliminarSolicitudesFinalizadas() protege las filas que YA tienen
+            // APROBADO_PENDIENTE_BIOMETRIA en la hoja (escaladas por _procesarCortePendientes),
+            // así que este add() solo surte efecto para filas con otro estado previo.
             const solIdBio = String(item.consecutive || "").trim();
             if (solIdBio) idsFinalizadas.add(solIdBio);
             return;
@@ -1164,7 +1173,19 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     // desalineando REASIGNADA entre solicitudes.
     const numCols = hoja.getLastColumn();
     const datos = hoja.getRange(2, 1, lastRow - 1, numCols).getValues();
-    const filasFinales = datos.filter(row => !idsAEliminar.has(String(row[0]).trim()));
+    const filasFinales = datos.filter(row => {
+      const solId = String(row[0]).trim();
+      if (!idsAEliminar.has(solId)) return true; // no está en la lista de borrado, se queda
+      // Proteger solicitudes que ya están en cola de asignación con estado
+      // APROBADO_PENDIENTE_BIOMETRIA: fueron escaladas por _procesarCortePendientes() para
+      // que un analista las llame. El sync de SAI las ve con ese mismo estado y las marca
+      // como "finalizada" (porque para el sync NO deben ir a la cola normal "solicitud" con
+      // otro estado), pero si ya están ahí con APROBADO_PENDIENTE_BIOMETRIA es porque el
+      // flujo de biometría las puso — no se deben borrar.
+      var estadoEnHoja = String(row[16]).toUpperCase().trim();
+      if (estadoEnHoja === "APROBADO_PENDIENTE_BIOMETRIA") return true; // protegida, se queda
+      return false; // otro estado → sí se elimina
+    });
     const eliminadas = datos.length - filasFinales.length;
 
     // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes, cientos de
@@ -1831,7 +1852,7 @@ function guardarCambiosInternos(data) {
       hojaHistoricoR.getRange(targetRowReest, 15, 1, 3).setNumberFormat("0.00");
 
       var origenNormR = String(filaReest[3]).toUpperCase().trim();
-      var tipoPNormR = String(filaReest[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      var tipoPNormR = String(filaReest[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
       var tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
       _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR, data.solicitudId);
 
@@ -1974,31 +1995,36 @@ function obtenerFilaCasoPendiente(solicitudId, tipoHoja) {
 function obtenerCasosPendientesAnalista() {
   const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
   const ESTADOS_PEND = ['PENDIENTE VALIDACIÓN', 'PENDIENTE EVIDENTE'];
-  const props = PropertiesService.getScriptProperties();
-  const TARGET_SS_ID = props.getProperty('TARGET_SOLICITUDES_SS_ID') || TARGET_SOLICITUDES_SS_ID;
-  const REEST_SS_ID  = props.getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
   const resultado = [];
 
-  // Digital: Historico_Gestiones principal
+  // Usa el índice de casos abiertos para buscar SOLO los IDs puntuales del analista
+  // en vez de leer toda la hoja Historico_Gestiones (que puede tener miles de filas).
+  // Mismo patrón optimizado que getTableData() bloque 1.
+  const idsAbiertos = _obtenerCasosAbiertosAnalista(userEmail);
+  if (!idsAbiertos || idsAbiertos.length === 0) return resultado;
+
+  // Digital: Historico_Gestiones principal — buscar solo por IDs puntuales
   try {
-    const hoja = SpreadsheetApp.openById(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
-    if (hoja && hoja.getLastRow() > 1) {
+    const hoja = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID).getSheetByName('Historico_Gestiones');
+    const lastRow = hoja ? hoja.getLastRow() : 0;
+    if (hoja && lastRow > 1) {
       const ncols = Math.max(60, hoja.getLastColumn());
-      const data  = hoja.getRange(2, 1, hoja.getLastRow() - 1, ncols).getDisplayValues();
-      for (let i = 0; i < data.length; i++) {
-        const h       = data[i];
-        const email   = String(h[25]).toLowerCase().trim();  // col 26 = email analista
-        const estadoQ = String(h[16]).trim().toUpperCase(); // col 17 = estado_q
+      for (var i = 0; i < idsAbiertos.length; i++) {
+        var match = hoja.getRange(2, 1, lastRow - 1, 1).createTextFinder(idsAbiertos[i]).matchEntireCell(true).findNext();
+        if (!match) continue;
+        var h = hoja.getRange(match.getRow(), 1, 1, ncols).getDisplayValues()[0];
+        var email   = String(h[25]).toLowerCase().trim();
+        var estadoQ = String(h[16]).trim().toUpperCase();
         if (email !== userEmail) continue;
         if (!ESTADOS_PEND.includes(estadoQ)) continue;
         // Mapeo histToSol para que poblarModalDig reciba la fila en formato correcto
-        const s = new Array(58).fill('');
-        for (let j = 0; j <= 21; j++) s[j] = h[j];
+        var s = new Array(58).fill('');
+        for (var j = 0; j <= 21; j++) s[j] = h[j];
         s[23] = h[22]; s[24] = h[23];
         s[26] = h[24]; s[27] = h[25]; s[28] = h[26];
         s[30] = h[27]; s[31] = h[28]; s[32] = h[29]; s[33] = h[30];
         s[35] = h[31]; s[36] = h[32];
-        for (let j = 0; j < 21; j++) s[37 + j] = h[39 + j] !== undefined ? h[39 + j] : '';
+        for (var k = 0; k < 21; k++) s[37 + k] = h[39 + k] !== undefined ? h[39 + k] : '';
         s.push('');
         resultado.push({
           solicitudId:        String(h[0]).trim(),
@@ -2014,21 +2040,23 @@ function obtenerCasosPendientesAnalista() {
     }
   } catch(e) { Logger.log('obtenerCasosPendientes digital: ' + e.message); }
 
-  // Reestudio: Historico_Gestiones de la hoja de reestudios
+  // Reestudio: Historico_Gestiones — buscar solo por IDs puntuales (col B = col 2)
   try {
-    const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
-    if (hojaR && hojaR.getLastRow() > 1) {
-      const data = hojaR.getRange(2, 1, hojaR.getLastRow() - 1, 18).getDisplayValues();
-      for (let i = 0; i < data.length; i++) {
-        const fila    = data[i];
-        const email   = String(fila[6]).toLowerCase().trim();  // col 7
-        const estadoQ = String(fila[10]).trim().toUpperCase(); // col 11
-        if (email !== userEmail) continue;
-        if (!ESTADOS_PEND.includes(estadoQ)) continue;
-        const tipoProc = String(fila[4]).trim();
-        const claseR   = String(fila[5]).trim();
-        const fechaAsi = String(fila[8]).trim();
-        const filaAd   = new Array(37).fill('');
+    const hojaR = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS).getSheetByName('Historico_Gestiones');
+    const lastRowR = hojaR ? hojaR.getLastRow() : 0;
+    if (hojaR && lastRowR > 1) {
+      for (var ir = 0; ir < idsAbiertos.length; ir++) {
+        var matchR = hojaR.getRange(2, 2, lastRowR - 1, 1).createTextFinder(idsAbiertos[ir]).matchEntireCell(true).findNext();
+        if (!matchR) continue;
+        var fila = hojaR.getRange(matchR.getRow(), 1, 1, 18).getDisplayValues()[0];
+        var emailR   = String(fila[6]).toLowerCase().trim();
+        var estadoQR = String(fila[10]).trim().toUpperCase();
+        if (emailR !== userEmail) continue;
+        if (!ESTADOS_PEND.includes(estadoQR)) continue;
+        var tipoProc = String(fila[4]).trim();
+        var claseR   = String(fila[5]).trim();
+        var fechaAsi = String(fila[8]).trim();
+        var filaAd   = new Array(37).fill('');
         filaAd[0]  = String(fila[1]).trim();
         filaAd[2]  = String(fila[2]).trim();
         filaAd[3]  = String(fila[3]).trim();
@@ -2048,7 +2076,7 @@ function obtenerCasosPendientesAnalista() {
           nombreInquilino:    '',
           canon:              '',
           clase:              tipoProc || claseR,
-          estadoQ:            estadoQ,
+          estadoQ:            estadoQR,
           fechaGestion:       String(fila[9]).trim(),
           tipoHoja:           'REESTUDIO',
           filaCompleta:       filaAd
@@ -2438,11 +2466,12 @@ function verificarMisCupos(equipo) {
             const fechaFin = dataReest[i][9];
             if (!esHoy(fechaAsig) && !esHoy(fechaFin)) continue;
             const origenR = String(dataReest[i][3]).toUpperCase().trim();
-            const tipoPNorm = String(dataReest[i][4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+            const tipoPNorm = String(dataReest[i][5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
             let tipo = null;
             if (tipoPNorm.includes("BIOMETRIA FALLIDA")) tipo = 'biometriaFallida';
             else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
             else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+            else if (origenR === "CORREO" && tipoPNorm === "ASEGURADA") tipo = 'nuevaUar';
             else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
             if (tipo) conteoHoy[tipo]++;
           }

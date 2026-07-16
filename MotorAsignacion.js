@@ -154,11 +154,15 @@ function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
     if (asignado !== userEmail) continue;
 
     var origenR = String(row[3]).toUpperCase().trim();
-    var tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var tipoPNorm = String(row[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
     var tipo = null;
     if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipo = 'biometriaFallida';
     else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
     else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+    // "Asegurada" entra a la misma cola/cupo que Nueva UAR (decisión de negocio), sin perder
+    // el rastro: el texto original "Asegurada" queda intacto en claseDeSolicitud tanto en
+    // ORIGEN como en la fila copiada a Historico_Gestiones — solo el bucket de cupo es nuevaUar.
+    else if (origenR === "CORREO" && tipoPNorm === "ASEGURADA") tipo = 'nuevaUar';
     else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
     if (!tipo) continue;
@@ -281,12 +285,13 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
     if (String(row[1]).trim() === "") continue;
 
     var origenR = String(row[3]).toUpperCase().trim();
-    var tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var tipoPNorm = String(row[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
     var tipo = null;
     if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipo = 'biometriaFallida';
     else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
     else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+    else if (origenR === "CORREO" && tipoPNorm === "ASEGURADA") tipo = 'nuevaUar';
     else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
     if (!tipo) continue;
@@ -524,7 +529,12 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
   filaCompleta[6] = userEmail;
   filaCompleta[7] = nombreUsuario;
   filaCompleta[8] = fechaHora;
-  filaCompleta.push(lead.tipo);
+  filaCompleta.push(lead.tipo);           // col 19 (S): tipo guardado
+  filaCompleta.push('');                  // col 20 (T): reservada para marca "ADMIN:email|fecha" de admin_reasignarSolicitud — no tocar aquí
+  // Col 21 (U): snapshot inmutable de la nota del radicador (col N/observaciones tal
+  // como llegó de ingesta), tomado ANTES de que guardarGestionReestudio sobrescriba
+  // esa misma col N con el comentario de cierre del analista.
+  filaCompleta.push(String(lead.rowData[13] || '').trim());
   var nuevaFila = hojaHistR.getLastRow() + 1;
   hojaHistR.getRange(nuevaFila, 1, 1, filaCompleta.length).setValues([filaCompleta]);
   reestudiosSheet.deleteRow(lead.rowIndex);
@@ -628,11 +638,12 @@ function RequestLeadUnificado(equipoIdOverride) {
         var asignadoR = String(rowR[6]).trim().toLowerCase();
         if (asignadoR !== userEmail) continue;
         var origenR = String(rowR[3]).toUpperCase().trim();
-        var tipoPNorm = String(rowR[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        var tipoPNorm = String(rowR[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
         var tipoR = null;
         if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipoR = 'biometriaFallida';
         else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipoR = 'nuevaUar';
         else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipoR = 'deudorUar';
+        else if (origenR === "CORREO" && tipoPNorm === "ASEGURADA") tipoR = 'nuevaUar';
         else if (tipoPNorm === "REESTUDIO") tipoR = 'reestudio';
         if (!tipoR) continue;
         if (_cumpleHoyUnif(rowR[8], ctx) || _cumpleHoyUnif(rowR[9], ctx)) conteoHoyTotal[tipoR]++;
@@ -740,7 +751,50 @@ function RequestLeadUnificado(equipoIdOverride) {
       msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
     }
 
-    return { success: true, nueva: true, message: msgAsignacion };
+    // Construir filas en formato tabla para que el frontend pueda renderizar
+    // inmediatamente sin un segundo viaje al servidor (evita esperar 3s + cargarPanelAnalista).
+    var filasTabla = [];
+    var fechaAsigStr = Utilities.formatDate(fechaHora, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
+    seleccionados.forEach(function(lead) {
+      if (lead.base === 'PRINCIPAL') {
+        // Formato solicitud: lead.rowData ya tiene las cols originales (antes de asignar)
+        var s = lead.rowData.slice();
+        s[26] = fechaAsigStr;
+        s[27] = userEmail;
+        s[28] = "";
+        s[30] = nombreUsuario;
+        // Agregar CategoriaScore e Inmobiliaria (vacíos por ahora — se puede enriquecer si es necesario)
+        s.push('');
+        s.push('');
+        filasTabla.push(s);
+      } else {
+        // Formato reestudio adaptado (misma estructura que getTableData bloque reestudios)
+        var rd = lead.rowData;
+        var tipoP = String(rd[4] || '').trim();
+        var claseR = String(rd[5] || '').trim();
+        var numCols = 58;
+        var filaAd = new Array(numCols).fill('');
+        filaAd[0] = String(rd[1] || '').trim();
+        filaAd[1] = String(rd[3] || '').trim();
+        filaAd[2] = String(rd[2] || '').trim();
+        filaAd[3] = String(rd[3] || '').trim();
+        filaAd[4] = tipoP;
+        filaAd[5] = claseR;
+        filaAd[8] = fechaAsigStr;
+        filaAd[16] = "__REESTUDIO__";
+        filaAd[17] = String(rd[0] || '').trim();
+        filaAd[20] = tipoP || claseR;
+        filaAd[24] = String(rd[13] || '').trim(); // observaciones (nota del radicador, col N de ORIGEN)
+        filaAd[26] = fechaAsigStr;
+        filaAd[27] = userEmail;
+        filaAd[28] = "";
+        filaAd[30] = nombreUsuario;
+        filaAd.push('');
+        filasTabla.push(filaAd);
+      }
+    });
+
+    return { success: true, nueva: true, message: msgAsignacion, filasTabla: filasTabla };
 
   } catch (err) {
     Logger.log("❌ Error crítico en RequestLeadUnificado: " + err.message);

@@ -71,7 +71,8 @@ function getReestudiosData() {
           tipoProceso: String(fila[4]).trim(),
           claseSolicitud: String(fila[5]).trim(),
           fechaAsignacion: fechaAsignacion,
-          fechaRadicacion: String(fila[0]).trim()
+          fechaRadicacion: String(fila[0]).trim(),
+          observaciones: String(fila[13] || '').trim()
         });
       }
     }
@@ -103,7 +104,8 @@ function getReestudiosData() {
             tipoProceso: String(fila[4]).trim(),
             claseSolicitud: String(fila[5]).trim(),
             fechaAsignacion: fechaAsignacionH,
-            fechaRadicacion: String(fila[0]).trim()
+            fechaRadicacion: String(fila[0]).trim(),
+            observaciones: String(fila[13] || '').trim()
           });
         }
       }
@@ -325,6 +327,9 @@ function guardarGestionReestudio(datos) {
     const fechaRadicacion = filaBase[0];
     const fechaAsignacion = filaBase[8];
     const emailAnalista   = String(filaBase[6] || '').toLowerCase().trim();
+    // Nota original del radicador (col N), leída ANTES de que la escritura de abajo
+    // reutilice esa misma columna para el comentario de cierre del analista.
+    const notaRadicadorOriginal = String(filaBase[13] || '').trim();
 
     const tRadCola = _parseFechaGAS(datos.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
     const tiempos = calcularTiemposCaso(
@@ -348,6 +353,10 @@ function guardarGestionReestudio(datos) {
     ]]);
     hojaActiva.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
     hojaActiva.getRange(targetRow, 15, 1, 3).setNumberFormat("0.00");
+    // Col 21 (U): preserva la nota original del radicador de forma permanente,
+    // separada de la col N que acabamos de sobrescribir con la del analista.
+    // (Col 20/T está reservada para la marca "ADMIN:email|fecha" de admin_reasignarSolicitud — no usar.)
+    hojaActiva.getRange(targetRow, 21).setValue(notaRadicadorOriginal);
 
     // Solo la ruta HISTORICO está cubierta por los contadores incrementales: los
     // casos legados que aún viven en ORIGEN nunca se sumaron ahí (siguen contados
@@ -355,7 +364,7 @@ function guardarGestionReestudio(datos) {
     // que descontar para ellos.
     if (fuenteRuta === 'HISTORICO') {
       var origenNormReest = String(filaBase[3]).toUpperCase().trim();
-      var tipoPNormReest = String(filaBase[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+      var tipoPNormReest = String(filaBase[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
       var tipoCierreReest = _derivarTipoReestudio(origenNormReest, tipoPNormReest) || 'reestudio';
       _registrarCierreContador(emailAnalista, tipoCierreReest, fechaAsignacion, String(datos.solicitud || datos.solicitudId || '').trim());
     }
@@ -363,8 +372,9 @@ function guardarGestionReestudio(datos) {
     SpreadsheetApp.flush();
 
     if (fuenteRuta === 'ORIGEN') {
-      // Caso legado en ORIGEN: mover a Historico y eliminar del activo
-      const filaFinal = hojaOrigen.getRange(targetRow, 1, 1, 18).getValues()[0];
+      // Caso legado en ORIGEN: mover a Historico y eliminar del activo.
+      // 21 columnas (no 18) para arrastrar también la col 21 recién escrita arriba.
+      const filaFinal = hojaOrigen.getRange(targetRow, 1, 1, 21).getValues()[0];
       if (!hojaHistorico) hojaHistorico = ssReestudios.insertSheet("Historico_Gestiones");
       hojaHistorico.appendRow(filaFinal);
       hojaOrigen.deleteRow(targetRow);
@@ -376,6 +386,52 @@ function guardarGestionReestudio(datos) {
     return { success: false, message: "Error al guardar: " + error.toString() };
   } finally {
     if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+/**
+ * Manual, ejecutar UNA VEZ desde el editor de Apps Script: rotula la col 21 (U)
+ * en ORIGEN e Historico_Gestiones de ssReestudios como "observacionesRadicador".
+ * Puramente cosmético (encabezado de fila 1) — no toca ninguna fila de datos.
+ * Idempotente: si el encabezado ya está puesto, no hace nada.
+ *
+ * OJO: la col 20 (T) NO es libre — Historico_Gestiones ya la usa para la marca
+ * "ADMIN:email|fecha" de admin_reasignarSolicitud (Admin.js). Por eso la nota
+ * del radicador vive en la col 21, un espacio más allá.
+ */
+function admin_prepararColumnaObservacionesRadicador() {
+  const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+  ['ORIGEN', 'Historico_Gestiones'].forEach(function(nombreHoja) {
+    const hoja = ssReestudios.getSheetByName(nombreHoja);
+    if (!hoja) { Logger.log('No se encontró la hoja ' + nombreHoja); return; }
+    const celda = hoja.getRange(1, 21);
+    if (String(celda.getValue() || '').trim() === '') {
+      celda.setValue('observacionesRadicador');
+      Logger.log('Encabezado puesto en ' + nombreHoja + '!U1');
+    } else {
+      Logger.log(nombreHoja + '!U1 ya tiene contenido: "' + celda.getValue() + '" — no se modificó.');
+    }
+  });
+}
+
+/**
+ * Manual, ejecutar UNA VEZ: corrige el error de una versión anterior de
+ * admin_prepararColumnaObservacionesRadicador() que puso por error el
+ * encabezado "observacionesRadicador" en la col 20 (T) de ORIGEN — esa
+ * columna es la reservada para la marca de reasignación de admin (ver arriba)
+ * y NO debe tener ese encabezado. Solo borra la col T si su contenido es
+ * exactamente "observacionesRadicador" (no toca nada más, no toca datos).
+ */
+function admin_corregirHeaderColumnaObservacionesRadicador() {
+  const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+  const hoja = ssReestudios.getSheetByName('ORIGEN');
+  if (!hoja) { Logger.log('No se encontró la hoja ORIGEN'); return; }
+  const celdaT = hoja.getRange(1, 20);
+  if (String(celdaT.getValue() || '').trim() === 'observacionesRadicador') {
+    celdaT.setValue('');
+    Logger.log('Header incorrecto removido de ORIGEN!T1.');
+  } else {
+    Logger.log('ORIGEN!T1 no tiene el header incorrecto ("' + celdaT.getValue() + '") — no se tocó.');
   }
 }
 
