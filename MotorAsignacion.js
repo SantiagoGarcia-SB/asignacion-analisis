@@ -546,14 +546,14 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
 // ============================================================
 
 function RequestLeadUnificado(equipoIdOverride) {
-  var lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(25000);
-  } catch (e) {
-    return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
-  }
+  // ════════════════════════════════════════════════════════════════════════════
+  // FASE 1: LECTURA Y DECISIÓN (sin lock)
+  // Principio GAS: minimizar tiempo dentro del lock. Las lecturas pesadas
+  // (openById, getValues de hojas grandes, getProperties) se hacen ANTES de
+  // adquirir el candado. Solo la escritura final (mover fila, borrar, flush)
+  // necesita el lock para evitar race conditions.
+  // ════════════════════════════════════════════════════════════════════════════
 
-  try {
     var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
     var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
     var dataUsuarios = _getDataUsuarios();
@@ -708,9 +708,45 @@ function RequestLeadUnificado(equipoIdOverride) {
     pendientes.forEach(function(p){ _tiposPend[p.tipo] = (_tiposPend[p.tipo]||0)+1; });
     Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionados: " + seleccionados.length + " | Orden tipos: " + JSON.stringify(_tiposConPendientes));
 
+    // ════════════════════════════════════════════════════════════════════════════
+    // FASE 2: ESCRITURA (con lock)
+    // Solo las operaciones de mutación necesitan el candado. Si otro proceso lo
+    // tiene, esperamos máximo 10s (antes 25s) — ya hicimos todo el trabajo pesado.
+    // ════════════════════════════════════════════════════════════════════════════
+
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(10000);
+    } catch (e) {
+      return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
+    }
+
+    try {
+    // Verificar que los casos seleccionados siguen disponibles (otro analista pudo
+    // tomarlos entre la lectura y la adquisición del lock).
+    var seleccionadosValidos = [];
+    for (var sv = 0; sv < seleccionados.length; sv++) {
+      var leadCheck = seleccionados[sv];
+      try {
+        if (leadCheck.base === 'PRINCIPAL') {
+          var asigCheck = String(refPrincipal.hoja.getRange(leadCheck.rowIndex, 28).getValue() || '').trim();
+          if (asigCheck === '') seleccionadosValidos.push(leadCheck);
+        } else {
+          var asigCheckR = String(refReestudios.hoja.getRange(leadCheck.rowIndex, 7).getValue() || '').trim();
+          if (asigCheckR === '') seleccionadosValidos.push(leadCheck);
+        }
+      } catch (eCheck) {
+        Logger.log("Fila " + leadCheck.rowIndex + " ya no accesible: " + eCheck.message);
+      }
+    }
+
+    if (seleccionadosValidos.length === 0) {
+      return { success: false, message: "Los casos disponibles fueron tomados por otro analista. Intenta de nuevo." };
+    }
+
     // === ASIGNAR (de mayor a menor rowIndex por hoja, para no invalidar filas al borrar) ===
-    var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
-    var reestudios = seleccionados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+    var principales = seleccionadosValidos.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+    var reestudios = seleccionadosValidos.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
     // Resolver hojas de histórico una sola vez (evita N llamadas a getSheetByName dentro del loop)
     var hojaHistPrincipal = ss.getSheetByName("Historico_Gestiones");
@@ -740,13 +776,24 @@ function RequestLeadUnificado(equipoIdOverride) {
       _actualizarFaseBiometriaPendiente(idsBioAsignadas, "ASIGNADA");
     }
 
+    } catch (err) {
+      Logger.log("❌ Error crítico en RequestLeadUnificado (fase escritura): " + err.message);
+      return { success: false, message: "Error interno: " + err.message };
+    } finally {
+      lock.releaseLock();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // FASE 3: RESPUESTA (sin lock — ya fue liberado)
+    // ════════════════════════════════════════════════════════════════════════════
+
     var _resumenTipos = {};
-    seleccionados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
+    seleccionadosValidos.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
     var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');
 
-    var msgAsignacion = seleccionados.length === 1
-      ? "Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionados[0].tipo] || seleccionados[0].tipo.toUpperCase()) + "."
-      : "Asignados: " + seleccionados.length + " casos (" + _detalleTipos + ").";
+    var msgAsignacion = seleccionadosValidos.length === 1
+      ? "Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionadosValidos[0].tipo] || seleccionadosValidos[0].tipo.toUpperCase()) + "."
+      : "Asignados: " + seleccionadosValidos.length + " casos (" + _detalleTipos + ").";
     if (cuposLlenosHoy.length > 0) {
       msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
     }
@@ -755,7 +802,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     // inmediatamente sin un segundo viaje al servidor (evita esperar 3s + cargarPanelAnalista).
     var filasTabla = [];
     var fechaAsigStr = Utilities.formatDate(fechaHora, TIMEZONE, "dd/MM/yyyy HH:mm:ss");
-    seleccionados.forEach(function(lead) {
+    seleccionadosValidos.forEach(function(lead) {
       if (lead.base === 'PRINCIPAL') {
         // Formato solicitud: lead.rowData ya tiene las cols originales (antes de asignar)
         var s = lead.rowData.slice();
@@ -795,11 +842,4 @@ function RequestLeadUnificado(equipoIdOverride) {
     });
 
     return { success: true, nueva: true, message: msgAsignacion, filasTabla: filasTabla };
-
-  } catch (err) {
-    Logger.log("❌ Error crítico en RequestLeadUnificado: " + err.message);
-    return { success: false, message: "Error interno: " + err.message };
-  } finally {
-    lock.releaseLock();
-  }
 }

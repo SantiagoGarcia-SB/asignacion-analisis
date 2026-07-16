@@ -135,9 +135,9 @@ function limpiarBiometriasResueltas() {
 
     const lock = LockService.getScriptLock();
     try {
-      lock.waitLock(30000);
+      lock.waitLock(5000);
     } catch (e) {
-      Logger.log("❌ Lock no disponible para limpiar biometrías: " + e.message);
+      Logger.log("❌ Lock no disponible para limpiar biometrías (no se bloquea la asignación): " + e.message);
       return;
     }
 
@@ -384,7 +384,7 @@ function autoAsignarBiometria() {
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(25000);
+    lock.waitLock(10000);
   } catch (e) {
     return { success: false, message: "El sistema está ocupado. Intenta de nuevo." };
   }
@@ -736,8 +736,8 @@ function _archivarColaBiometriaVencida() {
   // Fase 2 — con lock, solo para actuar: re-leer y re-filtrar por si algún analista tomó
   // el caso entre la fase 1 y este punto (mismo patrón que limpiarBiometriasResueltas()).
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para archivar cola de biometría: " + e.message);
+  try { lock.waitLock(5000); } catch (e) {
+    Logger.log("❌ Lock no disponible para archivar cola de biometría (no se bloquea la asignación): " + e.message);
     return;
   }
 
@@ -1292,8 +1292,8 @@ function _enviarPrimerContactoBiometria() {
   }
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para primer contacto de biometría: " + e.message);
+  try { lock.waitLock(5000); } catch (e) {
+    Logger.log("❌ Lock no disponible para primer contacto de biometría (se reintenta en próximo ciclo): " + e.message);
     return;
   }
 
@@ -1417,8 +1417,8 @@ function forzarPrimerContactoBiometriaManual() {
   }
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para forzar primer contacto: " + e.message);
+  try { lock.waitLock(5000); } catch (e) {
+    Logger.log("❌ Lock no disponible para forzar primer contacto (se reintenta en próximo ciclo): " + e.message);
     return;
   }
 
@@ -1526,8 +1526,8 @@ function _procesarCortePendientes() {
   function _volcarBloque() {
     if (actualizaciones.length === 0) return;
     var lock = LockService.getScriptLock();
-    try { lock.waitLock(30000); } catch (e) {
-      Logger.log("❌ Lock no disponible para volcar bloque del corte: " + e.message);
+    try { lock.waitLock(5000); } catch (e) {
+      Logger.log("❌ Lock no disponible para volcar bloque del corte (se reintenta en próximo ciclo): " + e.message);
       return;
     }
     try {
@@ -1669,8 +1669,8 @@ function corregirBiometriasMalEnrutadas() {
 
   if (idsAMover.size > 0) {
     var lock = LockService.getScriptLock();
-    try { lock.waitLock(30000); } catch (e) {
-      Logger.log("❌ Lock no disponible para mover biometrías mal enrutadas: " + e.message);
+    try { lock.waitLock(5000); } catch (e) {
+      Logger.log("❌ Lock no disponible para mover biometrías mal enrutadas (se reintenta manual): " + e.message);
       return;
     }
     var filasBorradas = 0;
@@ -1888,7 +1888,7 @@ function corregirBiometriasDuplicadasEnCola() {
   Logger.log(idsABorrar.size + " duplicados encontrados: " + detalle.join(", "));
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(60000); } catch (e) {
+  try { lock.waitLock(5000); } catch (e) {
     Logger.log("❌ Lock no disponible para limpiar duplicados: " + e.message + " — vuelve a correrla en un momento con menos actividad.");
     return;
   }
@@ -2019,8 +2019,8 @@ function backfillFechaActualizacionFase() {
   }
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para backfill: " + e.message);
+  try { lock.waitLock(5000); } catch (e) {
+    Logger.log("❌ Lock no disponible para backfill (se reintenta luego): " + e.message);
     return;
   }
 
@@ -2067,8 +2067,8 @@ function _guardarLoteBiometriaPendiente(listaObjetos) {
   if (!listaObjetos || listaObjetos.length === 0) return;
 
   var lock = LockService.getScriptLock();
-  try { lock.waitLock(30000); } catch (e) {
-    Logger.log("❌ Lock no disponible para guardar biometrías: " + e.message);
+  try { lock.waitLock(5000); } catch (e) {
+    Logger.log("❌ Lock no disponible para guardar biometrías (se reintenta en próximo ciclo): " + e.message);
     return;
   }
 
@@ -2385,7 +2385,7 @@ function _verificarAprobacionesPendientesEnSAI(config) {
 
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000);
+    lock.waitLock(5000);
   } catch (e) {
     return { success: false, message: "No se pudo adquirir el lock. Intenta más tarde." };
   }

@@ -1152,9 +1152,9 @@ function sincronizarHistoricoSAI() {
 function eliminarSolicitudesFinalizadas(idsAEliminar) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000);
+    lock.waitLock(5000);
   } catch (e) {
-    Logger.log("❌ Lock no disponible para limpiar finalizadas: " + e.message);
+    Logger.log("❌ Lock no disponible para limpiar finalizadas (se reintenta en próximo ciclo): " + e.message);
     return;
   }
 
@@ -1213,9 +1213,9 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
 function moverAListaEsperaCodeudor(lista) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000);
+    lock.waitLock(5000);
   } catch (e) {
-    Logger.log("❌ Lock no disponible para escribir en pendiente_codeudor: " + e.message);
+    Logger.log("❌ Lock no disponible para escribir en pendiente_codeudor (se reintenta en próximo ciclo): " + e.message);
     return;
   }
 
@@ -1352,9 +1352,9 @@ function revisarEnEsperaCodeudor() {
   if (actualizacionesFecha.length > 0 || filasAEliminar.length > 0) {
     const lock = LockService.getScriptLock();
     try {
-      lock.waitLock(30000);
+      lock.waitLock(5000);
     } catch (e) {
-      Logger.log("❌ Lock no disponible para actualizar pendiente_codeudor: " + e.message);
+      Logger.log("❌ Lock no disponible para actualizar pendiente_codeudor (se reintenta en próximo ciclo): " + e.message);
       return;
     }
     try {
@@ -1571,7 +1571,7 @@ function procesarYGuardarLote(listaObjetos) {
 
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000); 
+    lock.waitLock(5000); 
   } catch (e) {
     Logger.log("❌ Error de concurrencia: Otro proceso está escribiendo. Abortando para no dañar datos.");
     throw new Error("Lock no disponible: " + e.message);
@@ -1707,86 +1707,138 @@ function guardarCambiosInternos(data) {
     motivo_aplazamiento = ""; motivo_negacion = "";
   }
 
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-  } catch(e) {
-    return { success: false, message: "El sistema está muy ocupado guardando gestiones. Por favor, dale a 'Guardar' nuevamente en unos segundos." };
-  }
+  // ── FASE 1: LECTURA (sin lock) ──
+  // Buscar la fila y calcular tiempos ANTES de tomar el lock — así el lock
+  // solo se retiene para las escrituras (~1-2s en vez de ~5-6s).
 
   let disparaAsignacion = false;
   let usuarioActual = (Session.getActiveUser().getEmail() || "Email No Detectado").toLowerCase();
   let mensajeAdicional = "";
 
-  try {
-    const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  const ahora = new Date();
+  const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
 
-    const ahora = new Date();
-    const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
-    
-    const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
-    disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
+  const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
+  disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
 
-    // 1. Buscar en Historico_Gestiones
-    // Antes leía las 27 primeras columnas de toda la hoja para ubicar el ID.
-    // Ahora usa TextFinder acotado a la columna del ID (A) — mucho más rápido
-    // en una hoja que solo crece.
-    const hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
-    let targetRow = -1;
+  // Determinar ruta (principal vs reestudio) y ubicar fila objetivo
+  let ruta = null; // 'A' = principal, 'B' = reestudio
+  let targetRow = -1;
+  let hojaHistorico = null;
+  let filaBase = null;
+  let tiempos = null;
+  let fechaAsignacion = null;
+  let emailAnalista = null;
+  let valorClaseActual = null;
+  let fechaDiligenciada = null;
 
-    // Los reestudios viven en ssReestudios, no en el warehouse — saltar RUTA A
-    if (data.tipoSolicitudActual !== 'reestudio' && hojaHistorico && hojaHistorico.getLastRow() > 1) {
-      const lastRowH = hojaHistorico.getLastRow();
-      const colIdHist = hojaHistorico.getRange(2, 1, lastRowH - 1, 1);
-      const matchesIdHist = colIdHist.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
-      for (let i = 0; i < matchesIdHist.length; i++) {
-        const rowIdHist = matchesIdHist[i].getRow();
-        const fechaFin = String(hojaHistorico.getRange(rowIdHist, 27).getDisplayValue()).trim();
+  // Reestudio vars
+  let ssReestudios = null;
+  let hojaHistoricoR = null;
+  let targetRowReest = -1;
+  let filaReest = null;
+  let tiemposR = null;
+  let fechaAsiR = null;
+  let emailAnalistaR = null;
+  let origenNormR = null;
+  let tipoPNormR = null;
+  let tipoCierreR = null;
+
+  // Buscar en Historico_Gestiones principal
+  hojaHistorico = ssOrigen.getSheetByName("Historico_Gestiones");
+  if (data.tipoSolicitudActual !== 'reestudio' && hojaHistorico && hojaHistorico.getLastRow() > 1) {
+    const lastRowH = hojaHistorico.getLastRow();
+    const colIdHist = hojaHistorico.getRange(2, 1, lastRowH - 1, 1);
+    const matchesIdHist = colIdHist.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
+    for (let i = 0; i < matchesIdHist.length; i++) {
+      const rowIdHist = matchesIdHist[i].getRow();
+      const fechaFin = String(hojaHistorico.getRange(rowIdHist, 27).getDisplayValue()).trim();
+      if (fechaFin === '') {
+        targetRow = rowIdHist;
+        break;
+      }
+    }
+  }
+
+  if (targetRow !== -1) {
+    ruta = 'A';
+    filaBase = hojaHistorico.getRange(targetRow, 1, 1, 37).getValues()[0];
+    fechaAsignacion = filaBase[24];
+    emailAnalista = String(filaBase[25] || usuarioActual).toLowerCase().trim();
+    valorClaseActual = filaBase[20];
+
+    if (data.tipoSolicitudActual === 'desaplazamiento') valorClaseActual = 'BIOMETRIA';
+    else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
+    else if (data.tipoSolicitudActual === 'nuevaUar') valorClaseActual = 'NUEVA_UAR';
+    else if (data.tipoSolicitudActual === 'deudorUar') valorClaseActual = 'DEUDOR_UAR';
+    else if (data.tipoSolicitudActual === 'biometriaFallida') valorClaseActual = 'BIOMETRIA_FALLIDA';
+
+    const tAsiParsed = _parseFechaGAS(fechaAsignacion);
+    let tRadCola;
+    if (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion') {
+      tRadCola = tAsiParsed;
+    } else {
+      tRadCola = _parseFechaGAS(data.fecha_radicacion_sai);
+    }
+
+    Logger.log('[guardarCambios] tipo=' + data.tipoSolicitudActual + ' | fechaAsig raw=' + fechaAsignacion + ' | parsed=' + tAsiParsed + ' | tRadCola=' + tRadCola + ' | email=' + emailAnalista);
+    tiempos = calcularTiemposCaso(tRadCola, tAsiParsed, ahora, emailAnalista, ssOrigen);
+    Logger.log('[guardarCambios] tiempos=' + JSON.stringify(tiempos));
+
+    fechaDiligenciada = (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion')
+      ? (tAsiParsed || '')
+      : (data.fecha_radicacion_sai || '');
+
+  } else {
+    // Buscar en reestudios
+    ssReestudios = SpreadsheetApp.openById(
+      PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
+    );
+    hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
+
+    if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {
+      const lastRowHR = hojaHistoricoR.getLastRow();
+      const colIdHR = hojaHistoricoR.getRange(2, 2, lastRowHR - 1, 1);
+      const matchesIdHR = colIdHR.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
+      for (let i = 0; i < matchesIdHR.length; i++) {
+        const rowIdHR = matchesIdHR[i].getRow();
+        const fechaFin = String(hojaHistoricoR.getRange(rowIdHR, 10).getDisplayValue()).trim();
         if (fechaFin === '') {
-          targetRow = rowIdHist;
+          targetRowReest = rowIdHR;
           break;
         }
       }
     }
 
-    if (targetRow !== -1) {
-      // 🟢 RUTA A: SOLICITUD DE LA BASE PRINCIPAL (Historico_Gestiones)
-      const filaBase        = hojaHistorico.getRange(targetRow, 1, 1, 37).getValues()[0];
-      const fechaAsignacion = filaBase[24]; // col 25
-      const emailAnalista   = String(filaBase[25] || usuarioActual).toLowerCase().trim(); // col 26
-      let valorClaseActual  = filaBase[20]; // col 21
+    if (targetRowReest === -1) {
+      return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
+    }
 
-      if (data.tipoSolicitudActual === 'desaplazamiento') valorClaseActual = 'BIOMETRIA';
-      else if (data.tipoSolicitudActual === 'induccion') valorClaseActual = 'INDUCCION';
-      else if (data.tipoSolicitudActual === 'nuevaUar') valorClaseActual = 'NUEVA_UAR';
-      else if (data.tipoSolicitudActual === 'deudorUar') valorClaseActual = 'DEUDOR_UAR';
-      else if (data.tipoSolicitudActual === 'biometriaFallida') valorClaseActual = 'BIOMETRIA_FALLIDA';
+    ruta = 'B';
+    filaReest = hojaHistoricoR.getRange(targetRowReest, 1, 1, 18).getValues()[0];
+    const fechaRadR = filaReest[0];
+    fechaAsiR = filaReest[8];
+    emailAnalistaR = String(filaReest[6] || usuarioActual).toLowerCase().trim();
 
-      const tAsiParsed = _parseFechaGAS(fechaAsignacion);
+    const tRadColaR = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadR);
+    tiemposR = calcularTiemposCaso(tRadColaR, _parseFechaGAS(fechaAsiR), ahora, emailAnalistaR, ssOrigen);
 
-      let tRadCola;
-      if (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion') {
-        tRadCola = tAsiParsed;
-      } else {
-        tRadCola = _parseFechaGAS(data.fecha_radicacion_sai);
-      }
+    origenNormR = String(filaReest[3]).toUpperCase().trim();
+    tipoPNormR = String(filaReest[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
+  }
 
-      Logger.log('[guardarCambios] tipo=' + data.tipoSolicitudActual + ' | fechaAsig raw=' + fechaAsignacion + ' | parsed=' + tAsiParsed + ' | tRadCola=' + tRadCola + ' | email=' + emailAnalista);
-      // Pasar ssOrigen para evitar openById redundante dentro de calcularTiemposCaso
-      const tiempos = calcularTiemposCaso(
-        tRadCola,
-        tAsiParsed,
-        ahora,
-        emailAnalista,
-        ssOrigen
-      );
-      Logger.log('[guardarCambios] tiempos=' + JSON.stringify(tiempos));
+  // ── FASE 2: ESCRITURA (con lock) ──
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch(e) {
+    return { success: false, message: "El sistema está muy ocupado guardando gestiones. Por favor, dale a 'Guardar' nuevamente en unos segundos." };
+  }
 
-      // Consolidar escrituras en bloques batch (best practice GAS: no intercalar reads/writes)
-      const fechaDiligenciada = (data.tipoSolicitudActual === 'desaplazamiento' || data.tipoSolicitudActual === 'induccion')
-        ? (tAsiParsed || '')
-        : (data.fecha_radicacion_sai || '');
-
+  try {
+    if (ruta === 'A') {
       hojaHistorico.getRange(targetRow, 17).setValue(estado_q);
       hojaHistorico.getRange(targetRow, 21).setValue(valorClaseActual);
       hojaHistorico.getRange(targetRow, 23, 1, 2).setValues([[data.biometria || '', data.comentarios_gestion || '']]);
@@ -1796,52 +1848,8 @@ function guardarCambiosInternos(data) {
       hojaHistorico.getRange(targetRow, 34, 1, 4).setValues([[fechaDiligenciada, tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
       if (fechaDiligenciada instanceof Date) hojaHistorico.getRange(targetRow, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
       hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
-
       _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion, data.solicitudId);
-
-      SpreadsheetApp.flush();
-
     } else {
-      // 🔵 RUTA B: REESTUDIO — abrir ssReestudios solo cuando se necesita (ahorra ~1s en 80% de casos)
-      const ssReestudios = SpreadsheetApp.openById(
-        PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
-      );
-      const hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
-      let targetRowReest = -1;
-
-      if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {
-        const lastRowHR = hojaHistoricoR.getLastRow();
-        const colIdHR = hojaHistoricoR.getRange(2, 2, lastRowHR - 1, 1);
-        const matchesIdHR = colIdHR.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
-        for (let i = 0; i < matchesIdHR.length; i++) {
-          const rowIdHR = matchesIdHR[i].getRow();
-          const fechaFin = String(hojaHistoricoR.getRange(rowIdHR, 10).getDisplayValue()).trim();
-          if (fechaFin === '') {
-            targetRowReest = rowIdHR;
-            break;
-          }
-        }
-      }
-
-      if (targetRowReest === -1) {
-        return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
-      }
-
-      const filaReest      = hojaHistoricoR.getRange(targetRowReest, 1, 1, 18).getValues()[0];
-      const fechaRadR      = filaReest[0];
-      const fechaAsiR      = filaReest[8];
-      const emailAnalistaR = String(filaReest[6] || usuarioActual).toLowerCase().trim();
-
-      const tRadColaR = _parseFechaGAS(data.fecha_radicacion_sai) || _parseFechaGAS(fechaRadR);
-      // Pasar ssOrigen para evitar openById redundante
-      const tiemposR = calcularTiemposCaso(
-        tRadColaR,
-        _parseFechaGAS(fechaAsiR),
-        ahora,
-        emailAnalistaR,
-        ssOrigen
-      );
-
       hojaHistoricoR.getRange(targetRowReest, 10, 1, 9).setValues([[
         ahora, estado_q, motivo_aplazamiento, motivo_negacion,
         data.comentarios_gestion || '',
@@ -1850,14 +1858,10 @@ function guardarCambiosInternos(data) {
       ]]);
       hojaHistoricoR.getRange(targetRowReest, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
       hojaHistoricoR.getRange(targetRowReest, 15, 1, 3).setNumberFormat("0.00");
-
-      var origenNormR = String(filaReest[3]).toUpperCase().trim();
-      var tipoPNormR = String(filaReest[5]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-      var tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
       _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR, data.solicitudId);
-
-      SpreadsheetApp.flush();
     }
+
+    SpreadsheetApp.flush();
 
     if (estado_q.includes("APLAZ")) {
       mensajeAdicional = " (La solicitud queda cerrada para tu gestión y guardada en el sistema).";
@@ -2513,7 +2517,7 @@ function verificarMisCupos(equipo) {
 function actualizarEstadoPropio(nuevoEstado) {
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(25000);
+    lock.waitLock(10000);
   } catch (e) {
     return { success: false, message: "Servidor ocupado, reintenta." };
   }

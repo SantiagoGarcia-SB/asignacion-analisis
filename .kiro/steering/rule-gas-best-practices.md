@@ -67,7 +67,60 @@ Usar `.slice()` para crear copias antes de modificar datos en memoria que podrí
 
 Nunca llamar `flush()` dentro de loops. Acumularlo todo y confirmar una sola vez al terminar.
 
+### 9. Minimizar tiempo dentro del `LockService`
+
+> **Nota:** Esta regla es una convención interna del proyecto, derivada del principio general de concurrencia (sección crítica mínima) y del principio oficial de GAS "agrupa reads primero, writes después". Google no documenta patrones avanzados de lock — su ejemplo usa `waitLock(30000)` sin guía adicional.
+
+`ScriptLock` es un mutex global: mientras una ejecución lo retiene, **todas las demás** (otros usuarios, triggers de tiempo, polling automático) quedan bloqueadas esperando. El lock debe proteger solo la sección crítica de escritura, no las lecturas previas.
+
+**Patrón obligatorio: Leer afuera → Escribir adentro.**
+
+```javascript
+// ❌ Malo — todo dentro del lock (15-40s retenido)
+var lock = LockService.getScriptLock();
+lock.waitLock(25000);
+try {
+  var ss = SpreadsheetApp.openById(ID);        // ~500ms
+  var data = hoja.getDataRange().getValues();   // ~2-5s
+  var resultado = procesarEnMemoria(data);      // ~100ms
+  hoja.getRange(...).setValues(resultado);      // ~500ms
+  SpreadsheetApp.flush();                       // ~500ms
+} finally {
+  lock.releaseLock();
+}
+
+// ✅ Bueno — lecturas afuera, solo escritura con lock (~1-2s retenido)
+var ss = SpreadsheetApp.openById(ID);
+var data = hoja.getDataRange().getValues();
+var resultado = procesarEnMemoria(data);
+
+var lock = LockService.getScriptLock();
+lock.waitLock(10000);
+try {
+  // Opcional: verificar que los datos siguen vigentes (optimistic locking)
+  hoja.getRange(...).setValues(resultado);
+  SpreadsheetApp.flush();
+} finally {
+  lock.releaseLock();
+}
+```
+
+**Reglas derivadas:**
+- `waitLock` para funciones interactivas (usuario esperando): máximo **10 segundos**.
+- `waitLock` para triggers/background (pueden reintentar en el próximo ciclo): máximo **5 segundos**. Si no lo obtienen, **skip graceful** — nunca bloquear la asignación.
+- Si se lee data antes del lock y se escribe después, validar dentro del lock que la fila sigue disponible (patrón *optimistic locking*: re-leer solo la celda clave, no toda la hoja).
+- Nunca llamar a APIs externas (`UrlFetchApp`, `Utilities.sleep`) dentro del lock.
+
+### 10. Prioridad del lock: interacciones de usuario > triggers de mantenimiento
+
+> **Nota:** Convención interna. Los valores de timeout (5s/10s) son decisiones de diseño de este proyecto basadas en la experiencia operativa — no vienen de documentación de Google.
+
+Si una función de background (limpieza, archivado, escalación) no puede obtener el lock en 5 segundos, debe **ceder** y reintentar en su próximo ciclo programado. Un analista esperando un caso tiene prioridad sobre un trigger que puede correr 5 minutos después sin consecuencias.
+
 ## Referencia
 
 - [Best Practices — Google Apps Script](https://developers.google.com/apps-script/guides/support/best-practices)
 - Principio clave: *"Minimize calls to other services. Anything within Apps Script is faster than network roundtrips."*
+- [LockService Reference — Google](https://developers.google.com/apps-script/reference/lock/lock-service)
+- [Tips on Reliable & Scalable GAS — Sourabh Choraria (Google Developer Expert)](https://medium.com/google-developer-experts/tips-on-building-a-reliable-secure-scalable-architecture-using-google-apps-script-615afd4d4066)
+- Reglas 9–10: Convenciones internas del equipo, basadas en principios estándar de concurrencia (sección crítica mínima) y experiencia operativa con 20+ analistas concurrentes.
