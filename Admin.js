@@ -733,6 +733,139 @@ function admin_reasignarSolicitud(idSolicitud, correoNuevo, tipo) {
   }
 }
 
+// ============================================================
+// ASIGNACIÓN MANUAL DE UN CASO "SIN ASIGNAR" (tarjeta del dashboard)
+// ============================================================
+
+// Qué equipo(s) puede recibir cada tipo, mismo criterio que los defaults hardcoded
+// de resolverEquipoDesdeEspecialidad (Código.js). 'digital'/'induccion' listan ambos
+// DIGITAL y CANONES_ALTOS a propósito: la separación real entre los dos la hace el
+// filtro de canon dentro de RequestLeadUnificado (MotorAsignacion.js), que aquí no
+// se replica — el admin ve ambos equipos como candidatos y decide con el caso a la
+// vista (esto es una asignación manual deliberada, no el motor automático).
+const TIPO_A_EQUIPOS_ASIGNACION_MANUAL = {
+  digital: ['DIGITAL', 'CANONES_ALTOS'],
+  induccion: ['DIGITAL', 'CANONES_ALTOS'],
+  desaplazamiento: ['DESAPLAZAMIENTO'],
+  biometriaFallida: ['DESAPLAZAMIENTO'],
+  reestudio: ['REESTUDIOS'],
+  nuevaUar: ['UAR'],
+  deudorUar: ['UAR']
+};
+
+// Analistas ACTIVOS cuyo equipo (resuelto desde su especialidad) maneja el tipo dado —
+// para poblar el selector de "Asignar manualmente" en la tarjeta Sin Asignar.
+function admin_listarAnalistasParaTipoManual(tipo) {
+  verificarPermisoAdmin();
+  var equiposValidos = TIPO_A_EQUIPOS_ASIGNACION_MANUAL[tipo] || [];
+  var datos = _getDataUsuarios();
+  var resultado = [];
+  for (var i = 1; i < datos.length; i++) {
+    var row = datos[i];
+    var estado = String(row[5] || '').trim().toUpperCase();
+    if (estado !== 'ACTIVO') continue;
+    var equipo = resolverEquipoDesdeEspecialidad(row[4]);
+    if (equiposValidos.indexOf(equipo.id) === -1) continue;
+    resultado.push({ correo: String(row[2]).trim(), nombre: String(row[1]).trim(), equipo: equipo.nombre });
+  }
+  return resultado;
+}
+
+// Asigna manualmente una solicitud SIN ASIGNAR (aún en "solicitud" o en "ORIGEN" de
+// reestudios) a un analista elegido por el admin. Se salta la selección algorítmica
+// del motor (VIP, score, orden FIFO) pero respeta las mismas reglas de capacidad que
+// RequestLeadUnificado — cupo diario del tipo + capacidad total pendiente — para que
+// un caso asignado a mano no deje al analista con más carga de la que le corresponde.
+// Reutiliza _asignarCasoPrincipal/_asignarCasoReestudios (MotorAsignacion.js): mismo
+// camino de escritura y de registro de contadores que usa el motor automático, solo
+// que la fila y el analista los elige el admin en vez del algoritmo.
+function admin_asignarManualmente(solicitudId, tipo, correoAnalista) {
+  try {
+    verificarPermisoAdmin();
+
+    var email = String(correoAnalista || '').toLowerCase().trim();
+    var idBuscado = String(solicitudId || '').trim();
+    if (!email || !idBuscado || !tipo) {
+      return { success: false, message: "Faltan datos para asignar." };
+    }
+
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(20000);
+    } catch (eLock) {
+      return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
+    }
+
+    try {
+      var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      var dataUsuarios = _getDataUsuarios();
+      var usuarioInfo = dataUsuarios.find(function(u) { return String(u[2]).trim().toLowerCase() === email; });
+      if (!usuarioInfo) return { success: false, message: "Analista no encontrado." };
+
+      var nombreAnalista = usuarioInfo[1];
+      var estadoUsuario = String(usuarioInfo[5] || '').trim().toUpperCase();
+      var capTotal = parseInt(usuarioInfo[6]) || 0;
+      if (estadoUsuario !== "ACTIVO") return { success: false, message: nombreAnalista + " no está Activo." };
+
+      var equipo = resolverEquipoDesdeEspecialidad(usuarioInfo[4]);
+      var cuotas = obtenerCuposEfectivos(email, equipo.id, dataUsuarios);
+
+      var ctx = _buildFechaHoyFormats();
+      var ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      var cPrincipal = _contarDesdeHojaPrincipal(email, ss, ctx);
+      var cReestudios = _contarDesdeHojaReestudios(email, ssReestudios, ctx);
+
+      var conteoHoyTotal = {};
+      for (var k in cPrincipal.conteoHoy) conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + cPrincipal.conteoHoy[k];
+      for (var k2 in cReestudios.conteoHoy) conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2];
+      var conteoHoyContador = _obtenerConteoHoyAnalista(email);
+      for (var k3 in conteoHoyContador) conteoHoyTotal[k3] = (conteoHoyTotal[k3] || 0) + conteoHoyContador[k3];
+
+      if ((cuotas[tipo] || 0) > 0 && conteoHoyTotal[tipo] >= cuotas[tipo]) {
+        return { success: false, message: nombreAnalista + " ya completó su cupo diario de " + (ETIQUETAS_TIPO[tipo] || tipo) + " (" + conteoHoyTotal[tipo] + "/" + cuotas[tipo] + ")." };
+      }
+
+      var capPendienteReal = cPrincipal.cargaPendiente + cReestudios.cargaPendiente + _obtenerCargaPendienteAnalista(email);
+      if (capTotal - capPendienteReal < 1) {
+        return { success: false, message: nombreAnalista + " no tiene capacidad disponible ahora mismo. Termina casos pendientes primero." };
+      }
+
+      var fechaHora = new Date();
+
+      // 1) Buscar en "solicitud" (digital/desaplazamiento/inducción)
+      var sheetPrincipal = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+      var matchPrincipal = sheetPrincipal && sheetPrincipal.getLastRow() > 1
+        ? sheetPrincipal.getRange(2, 1, sheetPrincipal.getLastRow() - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext()
+        : null;
+
+      if (matchPrincipal) {
+        _asignarCasoPrincipal({ rowIndex: matchPrincipal.getRow(), tipo: tipo }, email, nombreAnalista, fechaHora, sheetPrincipal, ss);
+        SpreadsheetApp.flush();
+        return { success: true, message: "Solicitud " + idBuscado + " asignada a " + nombreAnalista + "." };
+      }
+
+      // 2) Buscar en "ORIGEN" de reestudios
+      var hojaOrigen = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
+      var matchOrigen = hojaOrigen && hojaOrigen.getLastRow() > 1
+        ? hojaOrigen.getRange(2, 2, hojaOrigen.getLastRow() - 1, 1).createTextFinder(idBuscado).matchEntireCell(true).findNext()
+        : null;
+
+      if (matchOrigen) {
+        _asignarCasoReestudios({ rowIndex: matchOrigen.getRow(), tipo: tipo }, email, nombreAnalista, fechaHora, hojaOrigen, ssReestudios);
+        SpreadsheetApp.flush();
+        return { success: true, message: "Solicitud " + idBuscado + " asignada a " + nombreAnalista + "." };
+      }
+
+      return { success: false, message: "No se encontró la solicitud " + idBuscado + " sin asignar. Puede que ya se haya asignado o gestionado." };
+
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
 /**
  * Busca una solicitud por ID en las bases de datos para auditar en modal.
  */

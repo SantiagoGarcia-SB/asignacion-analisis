@@ -3556,23 +3556,29 @@ function _renderDetalleModal(tipo, filtroTipo) {
     } else {
         // Póliza es siempre corta (máx. 6 dígitos); Analista puede traer nombres largos —
         // la misma columna no debería reservar el mismo ancho para ambos casos.
+        var mostrarAsignar = tipo === 'sinAsignar';
         var col1Pct = col2Label === 'Analista' ? 18 : 24;
         var col2Pct = col2Label === 'Analista' ? 52 : 18;
-        var col3Pct = 100 - col1Pct - col2Pct;
+        var col4Pct = mostrarAsignar ? 18 : 0;
+        var col3Pct = 100 - col1Pct - col2Pct - col4Pct;
 
         html += '<div style="max-height:300px;overflow-y:auto;">';
         html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;">';
-        html += '<colgroup><col style="width:' + col1Pct + '%;"><col style="width:' + col2Pct + '%;"><col style="width:' + col3Pct + '%;"></colgroup>';
+        html += '<colgroup><col style="width:' + col1Pct + '%;"><col style="width:' + col2Pct + '%;"><col style="width:' + col3Pct + '%;">' + (mostrarAsignar ? '<col style="width:' + col4Pct + '%;">' : '') + '</colgroup>';
         html += '<thead><tr style="position:sticky;top:0;background:#f8fafc;border-bottom:2px solid #e2e8f0;">';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Solicitud</th>';
         html += '<th style="padding:10px 14px;text-align:left;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">' + col2Label + '</th>';
         html += '<th style="padding:10px 14px;text-align:center;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Tipo</th>';
+        if (mostrarAsignar) html += '<th style="padding:10px 14px;text-align:center;font-size:0.67rem;color:var(--gris-light);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Acciones</th>';
         html += '</tr></thead><tbody>';
         filteredItems.forEach(function(item) {
             html += '<tr style="border-bottom:1px solid #f1f5f9;transition:background 0.1s;" onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">';
             html += '<td style="padding:10px 14px;font-weight:700;color:#1e293b;">' + item.id + '</td>';
             html += '<td style="padding:10px 14px;color:var(--gris);word-break:break-word;">' + item.col2 + (item.extra ? ' <span style="color:#15803d;font-weight:600;font-size:0.72rem;">· ' + item.extra + '</span>' : '') + '</td>';
             html += '<td style="padding:10px 14px;text-align:center;">' + getBadgeTipo(item.tipo) + '</td>';
+            if (mostrarAsignar) {
+                html += '<td style="padding:8px 14px;text-align:center;"><button onclick="abrirAsignacionManual(\'' + item.id + '\',\'' + item.tipo + '\')" style="background:#eef2ff;color:#253150;border:1px solid #c7d2fe;padding:5px 12px;border-radius:8px;font-size:0.72rem;font-weight:700;cursor:pointer;white-space:nowrap;"><i class="bi bi-person-plus me-1"></i>Asignar</button></td>';
+            }
             html += '</tr>';
         });
         html += '</tbody></table></div>';
@@ -3851,6 +3857,68 @@ function abrirReasignacion(idSolicitud, nombreAsesorActual, tipo) {
             })
             .admin_obtenerUsuariosGestion();
     }
+}
+
+// ==============================================================
+// ASIGNACIÓN MANUAL de un caso "Sin Asignar" (desde el modal de detalle)
+// ==============================================================
+function abrirAsignacionManual(idSolicitud, tipo) {
+    Swal.fire({ title: 'Cargando analistas...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+
+    google.script.run
+        .withSuccessHandler(function(analistas) {
+            var opciones = (analistas || [])
+                .map(function(a) { return '<option value="' + a.correo + '">' + a.nombre + ' (' + a.equipo + ')</option>'; })
+                .join('');
+            if (!opciones) opciones = '<option value="">No hay analistas activos para este tipo de caso</option>';
+
+            Swal.fire({
+                title: '<i class="bi bi-person-plus me-2"></i>Asignar manualmente',
+                html: '<div style="text-align:left;font-size:0.88rem;">' +
+                    '<div class="mb-3 p-3 rounded-3" style="background:#f1f5f9;border:1px solid #e2e8f0;">' +
+                    '<div class="fw-bold" style="color:#253150;">Solicitud: <span style="color:#BD0F14;">' + idSolicitud + '</span></div>' +
+                    '<div class="text-muted small mt-1">Tipo: ' + getBadgeTipo(tipo) + '</div>' +
+                    '</div>' +
+                    '<label class="form-label fw-bold small">Analista</label>' +
+                    '<select id="swal-select-analista-manual" class="form-select">' + opciones + '</select>' +
+                    '<p style="font-size:0.75rem;color:var(--gris);margin-top:10px;">Se respeta el cupo diario y la capacidad del analista — si ya está al tope, la asignación se rechaza.</p>' +
+                    '</div>',
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-check-lg me-1"></i>Asignar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#253150',
+                cancelButtonColor: '#706F6F',
+                customClass: { popup: 'swal2-lg' },
+                preConfirm: function() {
+                    var sel = document.getElementById('swal-select-analista-manual').value;
+                    if (!sel) { Swal.showValidationMessage('Selecciona un analista'); return false; }
+                    return sel;
+                }
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+                var correoElegido = result.value;
+
+                Swal.fire({ title: 'Asignando...', allowOutsideClick: false, didOpen: function() { Swal.showLoading(); } });
+
+                google.script.run
+                    .withSuccessHandler(function(res) {
+                        if (res && res.success) {
+                            Swal.fire({ icon: 'success', title: 'Asignado', text: res.message, confirmButtonColor: '#253150', timer: 2500, timerProgressBar: true });
+                            refrescarDashboard();
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'No se pudo asignar', text: (res && res.message) || 'Error desconocido', confirmButtonColor: '#BD0F14' });
+                        }
+                    })
+                    .withFailureHandler(function(err) {
+                        Swal.fire({ icon: 'error', title: 'Error de conexión', text: mensajeErrorAmigable(err), confirmButtonColor: '#BD0F14' });
+                    })
+                    .admin_asignarManualmente(idSolicitud, tipo, correoElegido);
+            });
+        })
+        .withFailureHandler(function(err) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo cargar analistas. ' + mensajeErrorAmigable(err) });
+        })
+        .admin_listarAnalistasParaTipoManual(tipo);
 }
 
 function ejecutarPanicGlobal() {
