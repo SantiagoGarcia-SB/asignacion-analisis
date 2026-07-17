@@ -81,22 +81,24 @@ function getReestudiosData() {
     // sabemos por el contador de carga pendiente si este analista tiene algo
     // abierto, solo buscamos cuando corresponde, y con TextFinder acotado a la
     // columna de analista asignado en vez de traer todas las columnas a memoria.
+    let errorHistR = null;
     try {
       const hojaHistR = ssReestudios.getSheetByName('Historico_Gestiones');
       const lastRowH = hojaHistR ? hojaHistR.getLastRow() : 0;
       if (hojaHistR && lastRowH > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-        const colAsignado = hojaHistR.getRange(2, 7, lastRowH - 1, 1);
-        const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matches.forEach(function(m) {
-          const row = m.getRow();
-          const fila = hojaHistR.getRange(row, 1, 1, 14).getDisplayValues()[0];
+        const filasR = _filasFiltradasPorAnalista(
+          hojaHistR, 7, 10,
+          function(fechaFin) { return fechaFin.trim() === ''; },
+          userEmail, 14
+        );
+        filasR.forEach(function(r) {
+          const fila = r.valores;
           const fechaAsignacion = String(fila[8]).trim();
-          const fechaFin = String(fila[9]).trim();
-          if (fechaAsignacion === '' || fechaFin !== '') return;
+          if (fechaAsignacion === '') return;
 
           listaPendientes.push({
             fuente: 'REESTUDIO',
-            filaReal: row,
+            filaReal: r.fila,
             solicitud: String(fila[1]).trim(),
             linkDrive: String(fila[2]).trim(),
             origen: String(fila[3]).trim(),
@@ -109,6 +111,7 @@ function getReestudiosData() {
       }
     } catch (eHistR) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones reestudios: ' + eHistR.toString());
+      errorHistR = 'No se pudieron cargar tus casos pendientes de reestudios.';
     }
 
     // --- Lookup score/inmobiliaria para casos DIGITAL ---
@@ -184,21 +187,23 @@ function getReestudiosData() {
     // Mismo cambio que arriba: se salta la lectura completa si el contador de
     // carga pendiente dice que este analista no tiene nada abierto, y si sí
     // tiene, ubica la fila con TextFinder en vez de recorrer toda la hoja.
+    let errorHistPrincipal = null;
     try {
       const ssPrincipal = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
       const hojaHistPrincipal = ssPrincipal.getSheetByName('Historico_Gestiones');
       const lastRowHP = hojaHistPrincipal ? hojaHistPrincipal.getLastRow() : 0;
       if (hojaHistPrincipal && lastRowHP > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
         const colsHP = Math.max(61, hojaHistPrincipal.getLastColumn());
-        const colAsignadoHP = hojaHistPrincipal.getRange(2, 26, lastRowHP - 1, 1);
-        const matchesHP = colAsignadoHP.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesHP.forEach(function(m) {
-          const rowHP = m.getRow();
-          const fila = hojaHistPrincipal.getRange(rowHP, 1, 1, colsHP).getDisplayValues()[0];
+        const filasHP = _filasFiltradasPorAnalista(
+          hojaHistPrincipal, 26, 27,
+          function(fechaFin) { return fechaFin.trim() === ''; },
+          userEmail, colsHP
+        );
+        filasHP.forEach(function(r) {
+          const fila = r.valores;
           const fechaAsig = String(fila[24]).trim();
-          const fechaFin  = String(fila[26]).trim();
 
-          if (fechaAsig === '' || fechaFin !== '') return;
+          if (fechaAsig === '') return;
 
           var polHP = String(fila[1]).trim();
           var polHPNorm = polHP.replace(/\D/g, '').replace(/^0+/, '');
@@ -236,12 +241,15 @@ function getReestudiosData() {
       }
     } catch (eHistPrincipal) {
       Logger.log('getReestudiosData - Error leyendo Historico_Gestiones principal: ' + eHistPrincipal.toString());
+      errorHistPrincipal = 'No se pudieron cargar tus casos pendientes digitales.';
     }
 
+    const errorParcial = [errorHistR, errorHistPrincipal].filter(Boolean).join(' ');
     return {
       success: true,
       solicitudes: listaPendientes,
-      stats: { hoy: conteoHoy, pendientes: listaPendientes.length }
+      stats: { hoy: conteoHoy, pendientes: listaPendientes.length },
+      error: errorParcial || undefined
     };
 
   } catch (error) {

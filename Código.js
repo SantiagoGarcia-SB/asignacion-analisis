@@ -230,6 +230,40 @@ function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal) {
   }
 }
 
+// Ubica en una hoja tipo Historico_Gestiones (crece sin límite, nunca se archiva)
+// las filas de un analista que cumplen un filtro, sin traer la fila completa de
+// cada coincidencia histórica que TextFinder encuentra por email. Primero
+// descarta con una sola lectura en bloque de una columna de control (fechaFin,
+// estado, marca de reasignación...) sobre el rango de coincidencias; solo trae
+// la fila completa de las que sí cumplen (normalmente 0-2, nunca todo el
+// historial del analista). Reemplaza "TextFinder + un getRange por cada match",
+// que escalaba con el total de casos del analista en vez de con su carga
+// realmente abierta — con analistas de cientos/miles de casos, esa cadena de
+// lecturas individuales podía tardar tanto que Apps Script la cortaba a mitad
+// de camino, dejando la pantalla del analista vacía sin avisar del error.
+// Devuelve [{fila: <número de fila real en la hoja>, valores: <fila completa>}].
+function _filasFiltradasPorAnalista(hoja, colEmail, colFiltro, predicadoFiltro, userEmail, numColsCompletas) {
+  const lastRow = hoja.getLastRow();
+  if (lastRow < 2) return [];
+  const colAsignado = hoja.getRange(2, colEmail, lastRow - 1, 1);
+  const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
+  if (matches.length === 0) return [];
+
+  const filas = matches.map(function(m) { return m.getRow(); });
+  const filaMin = Math.min.apply(null, filas);
+  const filaMax = Math.max.apply(null, filas);
+  const bloqueFiltro = hoja.getRange(filaMin, colFiltro, filaMax - filaMin + 1, 1).getDisplayValues();
+
+  const filasQueCoinciden = filas.filter(function(fila) {
+    return predicadoFiltro(String(bloqueFiltro[fila - filaMin][0]));
+  });
+  if (filasQueCoinciden.length === 0) return [];
+
+  return filasQueCoinciden.map(function(fila) {
+    return { fila: fila, valores: hoja.getRange(fila, 1, 1, numColsCompletas).getDisplayValues()[0] };
+  });
+}
+
 function _derivarTipoReestudio(origenNorm, tipoPNorm) {
   if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) return 'biometriaFallida';
   if (origenNorm === "CORREO" && tipoPNorm === "NUEVA") return 'nuevaUar';
@@ -376,7 +410,8 @@ function getUnifiedTableData() {
       stats: dataRest.stats || { hoy: 0, pendientes: 0 },
       equipoId: equipo.id,
       equipoNombre: equipo.nombre,
-      tipoVista: 'REESTUDIOS'
+      tipoVista: 'REESTUDIOS',
+      error: dataRest.error || (dataRest.success === false ? dataRest.message : undefined)
     };
   }
 
@@ -388,7 +423,8 @@ function getUnifiedTableData() {
     reasignaciones: data.reasignaciones || [],
     equipoId: equipo.id,
     equipoNombre: equipo.nombre,
-    tipoVista: 'DIGITAL'
+    tipoVista: 'DIGITAL',
+    error: data.error
   };
 }
 
@@ -517,6 +553,7 @@ function getTableData() {
   
   let gestionadasHoy = 0;
   let gestionadasTotal = 0;
+  const erroresCarga = [];
 
   // Casos del analista: leer de Historico_Gestiones (nuevos) + solicitud (legados sin migrar)
   const misFilasPendientes = [];
@@ -567,12 +604,34 @@ function getTableData() {
       const colsHist = Math.max(numCols, 60);
       const colAsignadoHist = hojaHist.getRange(2, 26, lastRowHist - 1, 1);
       const matchesHist = colAsignadoHist.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      const filasHist = matchesHist.map(function(m) {
-        return hojaHist.getRange(m.getRow(), 1, 1, colsHist).getDisplayValues()[0];
-      });
-      agregarDesdeRegistros(filasHist, 'HISTORICO');
+      if (matchesHist.length > 0) {
+        const filasMatch = matchesHist.map(function(m) { return m.getRow(); });
+        const filaMin = Math.min.apply(null, filasMatch);
+        const filaMax = Math.max.apply(null, filasMatch);
+        // Una sola lectura en bloque de fechaFin para todas las coincidencias: sirve
+        // tanto para el conteo de gestionadas (hoy/total) como para descartar las
+        // cerradas sin traer la fila completa (60 cols) de cada una.
+        const fechaFinBloque = hojaHist.getRange(filaMin, 27, filaMax - filaMin + 1, 1).getDisplayValues();
+        const filasAbiertas = [];
+        filasMatch.forEach(function(fila) {
+          const fechaFin = String(fechaFinBloque[fila - filaMin][0]).trim();
+          if (fechaFin !== '') {
+            gestionadasTotal++;
+            if (fechaFin.includes(hoyStr)) gestionadasHoy++;
+          } else {
+            filasAbiertas.push(fila);
+          }
+        });
+        const filasHist = filasAbiertas.map(function(fila) {
+          return hojaHist.getRange(fila, 1, 1, colsHist).getDisplayValues()[0];
+        });
+        agregarDesdeRegistros(filasHist, 'HISTORICO');
+      }
     }
-  } catch(e) { Logger.log("getTableData Historico: " + e.message); }
+  } catch(e) {
+    Logger.log("getTableData Historico: " + e.message);
+    erroresCarga.push("No se pudieron cargar tus casos pendientes del histórico principal.");
+  }
 
   // 2. solicitud — casos legados aún no migrados
   agregarDesdeRegistros(registros, 'SOLICITUD');
@@ -634,43 +693,56 @@ function getTableData() {
     if (hojaHistReest && lastRowHistReest > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
       const colAsignadoHR = hojaHistReest.getRange(2, 7, lastRowHistReest - 1, 1);
       const matchesHR = colAsignadoHR.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      matchesHR.forEach(function(m) {
-        const rowHR = m.getRow();
-        const dataHistReest = hojaHistReest.getRange(rowHR, 1, 1, 18).getDisplayValues()[0];
-        const asignado = String(dataHistReest[6]).trim().toLowerCase();
-        const fechaFinR = String(dataHistReest[9]).trim();
-        const fechaAsigR = String(dataHistReest[8]).trim();
+      if (matchesHR.length > 0) {
+        const filasMatchHR = matchesHR.map(function(m) { return m.getRow(); });
+        const filaMinHR = Math.min.apply(null, filasMatchHR);
+        const filaMaxHR = Math.max.apply(null, filasMatchHR);
+        // Misma idea que el bloque de Historico principal: una sola lectura en bloque
+        // de fechaFin (col 10) sirve para contar gestionadas y para descartar cerradas
+        // sin traer la fila completa de cada coincidencia histórica.
+        const fechaFinBloqueHR = hojaHistReest.getRange(filaMinHR, 10, filaMaxHR - filaMinHR + 1, 1).getDisplayValues();
+        const filasAbiertasHR = [];
+        filasMatchHR.forEach(function(fila) {
+          const fechaFinR = String(fechaFinBloqueHR[fila - filaMinHR][0]).trim();
+          if (fechaFinR !== '') {
+            gestionadasTotal++;
+            if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
+          } else {
+            filasAbiertasHR.push(fila);
+          }
+        });
+        filasAbiertasHR.forEach(function(fila) {
+          const dataHistReest = hojaHistReest.getRange(fila, 1, 1, 18).getDisplayValues()[0];
+          const asignado = String(dataHistReest[6]).trim().toLowerCase();
+          const fechaAsigR = String(dataHistReest[8]).trim();
 
-        if (fechaFinR !== "") {
-          if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
-          gestionadasTotal++;
-          return;
-        }
-        if (fechaAsigR === "") return;
+          if (fechaAsigR === "") return;
 
-        const tipoProc = String(dataHistReest[4]).trim();
-        const claseR = String(dataHistReest[5]).trim();
-        let filaAdaptada = new Array(numCols).fill("");
-        filaAdaptada[0] = String(dataHistReest[1]).trim();
-        filaAdaptada[1] = String(dataHistReest[3]).trim();
-        filaAdaptada[2] = String(dataHistReest[2]).trim();
-        filaAdaptada[3] = String(dataHistReest[3]).trim();
-        filaAdaptada[4] = tipoProc;
-        filaAdaptada[5] = claseR;
-        filaAdaptada[8] = fechaAsigR;
-        filaAdaptada[16] = "__REESTUDIO__";
-        filaAdaptada[17] = String(dataHistReest[0]).trim();
-        filaAdaptada[20] = tipoProc || claseR;
-        filaAdaptada[26] = fechaAsigR;
-        filaAdaptada[27] = asignado;
-        filaAdaptada[28] = "";
-        filaAdaptada[30] = String(dataHistReest[7]).trim();
-        filaAdaptada.push("");
-        misFilasPendientes.push(filaAdaptada);
-      });
+          const tipoProc = String(dataHistReest[4]).trim();
+          const claseR = String(dataHistReest[5]).trim();
+          let filaAdaptada = new Array(numCols).fill("");
+          filaAdaptada[0] = String(dataHistReest[1]).trim();
+          filaAdaptada[1] = String(dataHistReest[3]).trim();
+          filaAdaptada[2] = String(dataHistReest[2]).trim();
+          filaAdaptada[3] = String(dataHistReest[3]).trim();
+          filaAdaptada[4] = tipoProc;
+          filaAdaptada[5] = claseR;
+          filaAdaptada[8] = fechaAsigR;
+          filaAdaptada[16] = "__REESTUDIO__";
+          filaAdaptada[17] = String(dataHistReest[0]).trim();
+          filaAdaptada[20] = tipoProc || claseR;
+          filaAdaptada[26] = fechaAsigR;
+          filaAdaptada[27] = asignado;
+          filaAdaptada[28] = "";
+          filaAdaptada[30] = String(dataHistReest[7]).trim();
+          filaAdaptada.push("");
+          misFilasPendientes.push(filaAdaptada);
+        });
+      }
     }
   } catch(e) {
     Logger.log("Error incluyendo reestudios historico en getTableData: " + e.message);
+    erroresCarga.push("No se pudieron cargar tus casos pendientes de reestudios.");
   }
 
   // Detectar reasignaciones recientes por admin (últimos 30 min)
@@ -681,17 +753,20 @@ function getTableData() {
     var ahora = new Date();
     var hace30 = new Date(ahora.getTime() - 30 * 60 * 1000);
     if (_obtenerCargaPendienteAnalista(userEmail) > 0) {
-      // Principal: col 38 (idx 37)
+      // Principal: col 38 (idx 37) — pre-filtrado por la marca "ADMIN:" en bloque,
+      // en vez de traer la fila completa de cada coincidencia histórica del analista.
       var hojaHistCheck = ss.getSheetByName("Historico_Gestiones");
       var lastRowCheck = hojaHistCheck ? hojaHistCheck.getLastRow() : 0;
       if (hojaHistCheck && lastRowCheck > 1) {
         var lastCol = Math.max(38, hojaHistCheck.getLastColumn());
-        var colAsigCheck = hojaHistCheck.getRange(2, 26, lastRowCheck - 1, 1);
-        var matchesCheck = colAsigCheck.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesCheck.forEach(function(m) {
-          var filaCheck = hojaHistCheck.getRange(m.getRow(), 1, 1, lastCol).getDisplayValues()[0];
+        var candidatasCheck = _filasFiltradasPorAnalista(
+          hojaHistCheck, 26, 38,
+          function(marca) { return marca.trim().startsWith("ADMIN:"); },
+          userEmail, lastCol
+        );
+        candidatasCheck.forEach(function(c) {
+          var filaCheck = c.valores;
           var marca = String(filaCheck[37] || "").trim();
-          if (!marca.startsWith("ADMIN:")) return;
           var partes = marca.split("|");
           if (partes.length >= 2) {
             var fechaMarca = new Date(partes[1].trim());
@@ -701,17 +776,19 @@ function getTableData() {
           }
         });
       }
-      // Reestudios: col 15 (idx 14)
+      // Reestudios: col 20 (idx 19)
       var ssReestCheck = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
       var hojaHistRCheck = ssReestCheck.getSheetByName("Historico_Gestiones");
       var lastRowRCheck = hojaHistRCheck ? hojaHistRCheck.getLastRow() : 0;
       if (hojaHistRCheck && lastRowRCheck > 1) {
-        var colAsigRCheck = hojaHistRCheck.getRange(2, 7, lastRowRCheck - 1, 1);
-        var matchesRCheck = colAsigRCheck.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-        matchesRCheck.forEach(function(m) {
-          var filaRCheck = hojaHistRCheck.getRange(m.getRow(), 1, 1, 20).getDisplayValues()[0];
+        var candidatasRCheck = _filasFiltradasPorAnalista(
+          hojaHistRCheck, 7, 20,
+          function(marcaR) { return marcaR.trim().startsWith("ADMIN:"); },
+          userEmail, 20
+        );
+        candidatasRCheck.forEach(function(c) {
+          var filaRCheck = c.valores;
           var marcaR = String(filaRCheck[19] || "").trim();
-          if (!marcaR.startsWith("ADMIN:")) return;
           var partesR = marcaR.split("|");
           if (partesR.length >= 2) {
             var fechaMarcaR = new Date(partesR[1].trim());
@@ -730,7 +807,8 @@ function getTableData() {
       hoy: gestionadasHoy,
       total: gestionadasTotal
     },
-    reasignaciones: reasignaciones
+    reasignaciones: reasignaciones,
+    error: erroresCarga.length ? erroresCarga.join(' ') : undefined
   };
 }
 
@@ -1959,12 +2037,14 @@ function obtenerCasosPendientesAnalista() {
     const lastRowHoja = hoja ? hoja.getLastRow() : 0;
     if (hoja && lastRowHoja > 1) {
       const ncols = Math.max(60, hoja.getLastColumn());
-      const colAsignado = hoja.getRange(2, 26, lastRowHoja - 1, 1);
-      const matches = colAsignado.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      for (let m = 0; m < matches.length; m++) {
-        const h = hoja.getRange(matches[m].getRow(), 1, 1, ncols).getDisplayValues()[0];
+      const filasCandidatas = _filasFiltradasPorAnalista(
+        hoja, 26, 17,
+        function(estadoQ) { return ESTADOS_PEND.includes(estadoQ.trim().toUpperCase()); },
+        userEmail, ncols
+      );
+      for (let m = 0; m < filasCandidatas.length; m++) {
+        const h = filasCandidatas[m].valores;
         const estadoQ = String(h[16]).trim().toUpperCase(); // col 17 = estado_q
-        if (!ESTADOS_PEND.includes(estadoQ)) continue;
         // Mapeo histToSol para que poblarModalDig reciba la fila en formato correcto
         const s = new Array(58).fill('');
         for (let j = 0; j <= 21; j++) s[j] = h[j];
@@ -1994,12 +2074,14 @@ function obtenerCasosPendientesAnalista() {
     const hojaR = SpreadsheetApp.openById(REEST_SS_ID).getSheetByName('Historico_Gestiones');
     const lastRowR = hojaR ? hojaR.getLastRow() : 0;
     if (hojaR && lastRowR > 1) {
-      const colAsignadoR = hojaR.getRange(2, 7, lastRowR - 1, 1);
-      const matchesR = colAsignadoR.createTextFinder(userEmail).matchEntireCell(true).matchCase(false).findAll();
-      for (let m = 0; m < matchesR.length; m++) {
-        const fila    = hojaR.getRange(matchesR[m].getRow(), 1, 1, 18).getDisplayValues()[0];
+      const filasCandidatasR = _filasFiltradasPorAnalista(
+        hojaR, 7, 11,
+        function(estadoQ) { return ESTADOS_PEND.includes(estadoQ.trim().toUpperCase()); },
+        userEmail, 18
+      );
+      for (let m = 0; m < filasCandidatasR.length; m++) {
+        const fila    = filasCandidatasR[m].valores;
         const estadoQ = String(fila[10]).trim().toUpperCase(); // col 11
-        if (!ESTADOS_PEND.includes(estadoQ)) continue;
         const tipoProc = String(fila[4]).trim();
         const claseR   = String(fila[5]).trim();
         const fechaAsi = String(fila[8]).trim();
