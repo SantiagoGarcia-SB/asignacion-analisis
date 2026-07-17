@@ -879,6 +879,45 @@ function admin_setOrdenDesaplazamiento(nuevoOrden) {
   }
 }
 
+// Plantilla de WhatsApp (Infobip) usada para el primer contacto de biometría
+// pendiente (enviarBroadcastInfobipConFilas, Biometria.js): nombre de la
+// plantilla + URL de la imagen de encabezado que se envía con ella. El texto/
+// redacción del mensaje vive en Meta/Infobip y requiere aprobación externa —
+// esto solo decide a CUÁL plantilla, ya aprobada, apunta el envío y con qué
+// imagen. Sirve para cuando se crea/aprueba una plantilla nueva (con otro
+// nombre y/u otra imagen); si solo cambia la redacción de una plantilla ya
+// existente (mismo nombre, misma imagen), no hace falta tocar nada aquí.
+// headerImageUrl vacío es válido: enviarBroadcastInfobipConFilas solo agrega
+// el header de imagen si la propiedad no está vacía.
+function admin_getConfigInfobip() {
+  verificarPermisoAdmin();
+  var props = PropertiesService.getScriptProperties();
+  return {
+    templateName: props.getProperty('INFOBIP_TEMPLATE_NAME') || '',
+    headerImageUrl: props.getProperty('INFOBIP_HEADER_IMAGE_URL') || ''
+  };
+}
+
+function admin_setConfigInfobip(templateName, headerImageUrl) {
+  try {
+    verificarPermisoAdmin();
+    var nombre = String(templateName || '').trim();
+    if (!nombre) {
+      return { success: false, message: "El nombre de la plantilla no puede estar vacío." };
+    }
+    var imagenUrl = String(headerImageUrl || '').trim();
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('INFOBIP_TEMPLATE_NAME', nombre);
+    props.setProperty('INFOBIP_HEADER_IMAGE_URL', imagenUrl);
+    return {
+      success: true,
+      message: "Plantilla de WhatsApp actualizada a: " + nombre + (imagenUrl ? " (con imagen de encabezado)" : " (sin imagen de encabezado)")
+    };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
 function _getTiposParaCupos() {
   var tipos = _getTiposSolicitud();
   return tipos.filter(function(t) { return t.activo; }).map(function(t) { return { id: t.id, label: t.label }; });

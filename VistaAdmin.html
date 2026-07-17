@@ -1039,6 +1039,10 @@ html { scroll-behavior: smooth; }
         <i class="bi bi-question-circle"></i>
     </button>
     <div class="toolbar-divider"></div>
+    <button class="btn-outline-brand" onclick="abrirConfigPlantillaWhatsApp()" title="Configurar a qué plantilla de WhatsApp (Infobip) apunta el sistema">
+        <i class="bi bi-whatsapp"></i> Plantilla WhatsApp
+    </button>
+    <div class="toolbar-divider"></div>
     <button class="btn-outline-brand" onclick="abrirDesarchivarBiometrias()" title="Recuperar biometrías archivadas de vuelta a la cola de llamada. Los conteos y el análisis por período están en Métricas.">
         <i class="bi bi-arrow-counterclockwise"></i> Desarchivar Biometrías
     </button>
@@ -2602,6 +2606,79 @@ function cargarOrdenDesaplazamientoActual() {
             });
         }
     }).admin_getOrdenDesaplazamiento();
+}
+
+// ==============================================================
+// PLANTILLA DE WHATSAPP (INFOBIP) — nombre de la plantilla ya aprobada en
+// Meta/Infobip + URL de su imagen de encabezado (si lleva). El texto/
+// redacción del mensaje se cambia y aprueba allá, no aquí; esto solo decide
+// a cuál plantilla apunta el envío y con qué imagen. Mismo patrón que
+// abrirDesarchivarBiometrias(): botón → carga estado actual → modal editable.
+// ==============================================================
+function abrirConfigPlantillaWhatsApp() {
+    Swal.fire({
+        title: 'Cargando configuración...',
+        allowOutsideClick: false,
+        didOpen: function() { Swal.showLoading(); }
+    });
+
+    google.script.run
+        .withSuccessHandler(function(config) {
+            Swal.fire({
+                title: 'Plantilla de WhatsApp',
+                html:
+                    '<div style="text-align:left;">' +
+                    '<label class="form-label fw-bold" style="font-size:0.85rem;">Nombre de la plantilla (Infobip/Meta)</label>' +
+                    '<input id="swal-plantilla-nombre" class="swal2-input" style="margin:0 0 12px;" placeholder="nombre_plantilla_infobip">' +
+                    '<label class="form-label fw-bold" style="font-size:0.85rem;">URL imagen de encabezado (opcional)</label>' +
+                    '<input id="swal-plantilla-imagen" class="swal2-input" style="margin:0;" placeholder="https://...">' +
+                    '<p style="font-size:0.78rem;color:var(--gris);margin-top:10px;">Debe existir y estar aprobada en Infobip/Meta con ese nombre exacto — si no, los envíos fallarán. El texto del mensaje se edita y aprueba allá, no aquí.</p>' +
+                    '</div>',
+                didOpen: function() {
+                    document.getElementById('swal-plantilla-nombre').value = config.templateName || '';
+                    document.getElementById('swal-plantilla-imagen').value = config.headerImageUrl || '';
+                },
+                confirmButtonColor: '#253150',
+                cancelButtonColor: '#706F6F',
+                showCancelButton: true,
+                confirmButtonText: 'Guardar',
+                focusConfirm: false,
+                preConfirm: function() {
+                    var nombre = document.getElementById('swal-plantilla-nombre').value.trim();
+                    var imagen = document.getElementById('swal-plantilla-imagen').value.trim();
+                    if (!nombre) {
+                        Swal.showValidationMessage('Ingresa el nombre exacto de la plantilla.');
+                        return false;
+                    }
+                    return { nombre: nombre, imagen: imagen };
+                }
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+
+                Swal.fire({
+                    title: 'Actualizando...',
+                    allowOutsideClick: false,
+                    didOpen: function() { Swal.showLoading(); }
+                });
+
+                google.script.run
+                    .withSuccessHandler(function(res) {
+                        if (res && res.success) {
+                            Swal.fire('¡Plantilla actualizada!', res.message, 'success');
+                        } else {
+                            Swal.fire('Error', (res && res.message) || 'Error desconocido', 'error');
+                        }
+                    })
+                    .withFailureHandler(function(err) {
+                        Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+                    })
+                    .admin_setConfigInfobip(result.value.nombre, result.value.imagen);
+            });
+        })
+        .withFailureHandler(function(err) {
+            Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+        })
+        .admin_getConfigInfobip();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
