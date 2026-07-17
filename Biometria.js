@@ -695,14 +695,16 @@ function _mapaFechaEscaladaBiometria() {
 }
 
 // Archiva a biometria_cola_archivada (mismo spreadsheet de pendiente_biometria) las
-// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuya antigüedad
-// en cola sea anterior al umbral del corte actual — es decir, que tuvieron un ciclo
-// completo de ~12h para ser llamadas y no se lograron asignar. La antigüedad se mide
-// desde que el caso realmente entró a la cola (fecha de escalada en pendiente_biometria,
-// ver _mapaFechaEscaladaBiometria), con fallback a fechaResultado/fechaRadicacion solo
-// si no hay match (no debería pasar en el flujo normal) — usar directamente fechaResultado
-// archivaba casos casi apenas escalaban cuando el WA previo se había demorado varios días
-// por Ley 2300/festivos, sin darles el ciclo completo de ~12h.
+// solicitudes APROBADO_PENDIENTE_BIOMETRIA sin asignar en "solicitud" cuya fechaResultado/
+// último movimiento de SAI sea anterior al umbral del corte actual. Se alinea a fechaResultado
+// (actualizada cada ciclo por limpiarBiometriasResueltas(), que corre justo antes en
+// cicloBiometriaPendiente()) a propósito: operación usa ese mismo dato de SAI para decidir
+// si todavía tiene sentido llamar un caso, así que el archivado automático tiene que usar el
+// mismo criterio — si no, el sistema podría seguir ofreciendo para asignación casos que
+// operación, mirando SAI directamente, ya no consideraría llamables. Fallback a
+// fechaRadicacion y, en último caso, a la fecha de escalada real (fecha_actualizacion_fase
+// en pendiente_biometria, ver _mapaFechaEscaladaBiometria) solo si no hay fecha de SAI
+// parseable en absoluto.
 // Es una bandeja de solo revisión manual: no hay reactivación automática (ver
 // admin_desarchivarBiometrias() para la recuperación manual).
 function _archivarColaBiometriaVencida() {
@@ -733,9 +735,9 @@ function _archivarColaBiometriaVencida() {
     var solicitud = String(row[0]).trim();
     if (!solicitud) continue;
 
-    var fecha = mapaEscalada.get(solicitud) || _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]);
+    var fecha = _parseFechaGAS(row[18]) || _parseFechaGAS(row[17]) || mapaEscalada.get(solicitud);
     if (!fecha) {
-      Logger.log("⚠️ Solicitud " + solicitud + " sin fecha de escalada ni fechaResultado/fechaRadicacion parseable — no se archiva.");
+      Logger.log("⚠️ Solicitud " + solicitud + " sin fechaResultado/fechaRadicacion ni fecha de escalada parseable — no se archiva.");
       continue;
     }
 
@@ -853,11 +855,11 @@ function diagnosticarArchivadoColaBiometria() {
     var solicitud = String(row[0]).trim();
     if (!solicitud) continue;
 
-    var fechaEscalada = mapaEscalada.get(solicitud);
-    var fuente = fechaEscalada ? "ESCALADA (real)" : null;
-    var fecha = fechaEscalada;
-    if (!fecha) { fecha = _parseFechaGAS(row[18]); if (fecha) fuente = "fechaResultado (fallback)"; }
+    var fuente = null;
+    var fecha = _parseFechaGAS(row[18]);
+    if (fecha) fuente = "fechaResultado (SAI)";
     if (!fecha) { fecha = _parseFechaGAS(row[17]); if (fecha) fuente = "fechaRadicacion (fallback)"; }
+    if (!fecha) { fecha = mapaEscalada.get(solicitud); if (fecha) fuente = "ESCALADA (fallback)"; }
 
     if (!fecha) {
       sinFecha.push(solicitud);
@@ -1274,7 +1276,12 @@ function _enviarPrimerContactoBiometria() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, 76).getValues();
+  // Rango debe cubrir hasta COL_FECHA_ACTUALIZACION_FASE (77): más abajo se escribe en
+  // datosFila[76] (índice 0-based de esa columna) — leer solo 76 columnas dejaba ese
+  // índice fuera del array, y al asignarlo JS lo estiraba a 77 elementos, descuadrando
+  // el setValues() de más abajo (rango de 76 columnas, datos con 77) y tumbando toda la
+  // corrida antes de llegar a enviar el WhatsApp.
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, COL_FECHA_ACTUALIZACION_FASE).getValues();
 
   var candidatos = [];
   for (var i = 0; i < datos.length; i++) {
@@ -1361,7 +1368,7 @@ function _enviarPrimerContactoBiometria() {
     // más tiempo del necesario, bloqueando a otros procesos que esperan el mismo candado
     // global (p.ej. guardarGestionBiometria()).
     if (huboCambios) {
-      hojaBio.getRange(2, 1, datos.length, 76).setValues(datos);
+      hojaBio.getRange(2, 1, datos.length, COL_FECHA_ACTUALIZACION_FASE).setValues(datos);
       SpreadsheetApp.flush();
     }
     lock.releaseLock();
