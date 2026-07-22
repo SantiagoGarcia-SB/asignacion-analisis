@@ -720,13 +720,21 @@ function test_T2_LockServiceEnFunciones() {
     desasignarSolicitud: desasignarSolicitud.toString(),
     desasignarSolicitudReestudio: desasignarSolicitudReestudio.toString(),
     admin_sincronizarEstado: admin_sincronizarEstado.toString(),
-    guardarCambiosInternos: guardarCambiosInternos.toString()
+    _cerrarConteoConLockCorto: _cerrarConteoConLockCorto.toString()
   };
   for (var fn in fuentes) {
     var src = fuentes[fn];
     _assert(fn + ' usa getScriptLock', true, src.indexOf('getScriptLock') !== -1);
     _assert(fn + ' NO usa getUserLock', true, src.indexOf('getUserLock') === -1);
   }
+
+  // guardarCambiosInternos (2026-07-21) ya NO toma ScriptLock para la escritura de
+  // la fila (era el cuello de botella con varios analistas guardando a la vez, ver
+  // CLAUDE.md) — solo delega en _cerrarConteoConLockCorto para el único tramo que
+  // sí comparte estado global (contadores de cupo/carga en PropertiesService).
+  var srcGuardar = guardarCambiosInternos.toString();
+  _assert('guardarCambiosInternos delega el conteo en _cerrarConteoConLockCorto', true, srcGuardar.indexOf('_cerrarConteoConLockCorto') !== -1);
+  _assert('guardarCambiosInternos ya NO toma ScriptLock directamente', true, srcGuardar.indexOf('getScriptLock') === -1);
 }
 
 // ============================================================

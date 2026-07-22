@@ -1734,13 +1734,6 @@ function guardarCambiosInternos(data) {
     motivo_aplazamiento = ""; motivo_negacion = "";
   }
 
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-  } catch(e) {
-    return { success: false, message: "El sistema está muy ocupado guardando gestiones. Por favor, dale a 'Guardar' nuevamente en unos segundos." };
-  }
-
   let disparaAsignacion = false;
   let usuarioActual = (Session.getActiveUser().getEmail() || "Email No Detectado").toLowerCase();
   let mensajeAdicional = "";
@@ -1754,9 +1747,11 @@ function guardarCambiosInternos(data) {
 
     const ahora = new Date();
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
-    
+
     const esEstadoCierre = estado_q.includes("APROB") || estado_q.includes("NEGAD") || estado_q.includes("RECHAZ");
     disparaAsignacion = esEstadoCierre || estado_q.includes("APLAZ");
+
+    const idBuscado = String(data.solicitudId).trim();
 
     // 1. Buscar en Historico_Gestiones
     // Antes leía las 27 primeras columnas de toda la hoja para ubicar el ID.
@@ -1769,7 +1764,7 @@ function guardarCambiosInternos(data) {
     if (data.tipoSolicitudActual !== 'reestudio' && hojaHistorico && hojaHistorico.getLastRow() > 1) {
       const lastRowH = hojaHistorico.getLastRow();
       const colIdHist = hojaHistorico.getRange(2, 1, lastRowH - 1, 1);
-      const matchesIdHist = colIdHist.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
+      const matchesIdHist = colIdHist.createTextFinder(idBuscado).matchEntireCell(true).findAll();
       for (let i = 0; i < matchesIdHist.length; i++) {
         const rowIdHist = matchesIdHist[i].getRow();
         const fechaFin = String(hojaHistorico.getRange(rowIdHist, 27).getDisplayValue()).trim();
@@ -1782,6 +1777,30 @@ function guardarCambiosInternos(data) {
 
     if (targetRow !== -1) {
       // 🟢 RUTA A: SOLICITUD DE LA BASE PRINCIPAL (Historico_Gestiones)
+      //
+      // NOTA DE CONCURRENCIA (2026-07-21): esta escritura ya NO usa ScriptLock.
+      // Antes se tomaba el candado global desde la búsqueda de la fila hasta el
+      // final del guardado, así que con varios analistas guardando a la vez cada
+      // uno hacía cola detrás de TODOS los demás (y detrás de RequestLeadUnificado,
+      // biometría, admin...), aunque cada uno estuviera editando una fila distinta.
+      // ScriptLock es del script completo, no de una fila ni de una hoja — no existe
+      // un candado "solo para esta fila". Cada solicitud vive en su propia fila y
+      // Sheets resuelve sin problema escrituras concurrentes a filas distintas, así
+      // que ya no hace falta serializar esto. Antes de escribir se revalida que la
+      // fila localizada arriba siga correspondiendo a este solicitudId (mismo patrón
+      // que ya usan _procesarCortePendientes/corregirBiometriasDuplicadasEnCola en
+      // Biometria.js): un admin puede haber desasignado/reasignado el caso y movido
+      // filas (deleteRow) justo entre la búsqueda de arriba y este punto.
+      const idEnFila = String(hojaHistorico.getRange(targetRow, 1).getDisplayValue()).trim();
+      if (idEnFila !== idBuscado) {
+        const reubicado = hojaHistorico.getRange(2, 1, hojaHistorico.getLastRow() - 1, 1)
+          .createTextFinder(idBuscado).matchEntireCell(true).findNext();
+        if (!reubicado) {
+          return { success: false, message: "La solicitud cambió de estado mientras guardabas. Actualiza la página e intenta de nuevo." };
+        }
+        targetRow = reubicado.getRow();
+      }
+
       const filaBase        = hojaHistorico.getRange(targetRow, 1, 1, 37).getValues()[0];
       const fechaAsignacion = filaBase[24]; // col 25
       const emailAnalista   = String(filaBase[25] || usuarioActual).toLowerCase().trim(); // col 26
@@ -1826,10 +1845,9 @@ function guardarCambiosInternos(data) {
       if (fechaDiligenciada instanceof Date) hojaHistorico.getRange(targetRow, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
       hojaHistorico.getRange(targetRow, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
       hojaHistorico.getRange(targetRow, 35, 1, 3).setNumberFormat("0.00");
-
-      _registrarCierreContador(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion);
-
       SpreadsheetApp.flush();
+
+      _cerrarConteoConLockCorto(emailAnalista, (data.tipoSolicitudActual || 'digital'), fechaAsignacion);
 
     } else {
       // 🔵 RUTA B: REESTUDIO — buscar en Historico_Gestiones de ssReestudios
@@ -1839,7 +1857,7 @@ function guardarCambiosInternos(data) {
       if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {
         const lastRowHR = hojaHistoricoR.getLastRow();
         const colIdHR = hojaHistoricoR.getRange(2, 2, lastRowHR - 1, 1);
-        const matchesIdHR = colIdHR.createTextFinder(String(data.solicitudId).trim()).matchEntireCell(true).findAll();
+        const matchesIdHR = colIdHR.createTextFinder(idBuscado).matchEntireCell(true).findAll();
         for (let i = 0; i < matchesIdHR.length; i++) {
           const rowIdHR = matchesIdHR[i].getRow();
           const fechaFin = String(hojaHistoricoR.getRange(rowIdHR, 10).getDisplayValue()).trim();
@@ -1852,6 +1870,17 @@ function guardarCambiosInternos(data) {
 
       if (targetRowReest === -1) {
         return { success: false, message: `Solicitud ${data.solicitudId} no encontrada en ninguna base central.` };
+      }
+
+      // Misma revalidación que en la Ruta A — ver nota de concurrencia arriba.
+      const idEnFilaR = String(hojaHistoricoR.getRange(targetRowReest, 2).getDisplayValue()).trim();
+      if (idEnFilaR !== idBuscado) {
+        const reubicadoR = hojaHistoricoR.getRange(2, 2, hojaHistoricoR.getLastRow() - 1, 1)
+          .createTextFinder(idBuscado).matchEntireCell(true).findNext();
+        if (!reubicadoR) {
+          return { success: false, message: "La solicitud cambió de estado mientras guardabas. Actualiza la página e intenta de nuevo." };
+        }
+        targetRowReest = reubicadoR.getRow();
       }
 
       const filaReest      = hojaHistoricoR.getRange(targetRowReest, 1, 1, 18).getValues()[0];
@@ -1879,9 +1908,9 @@ function guardarCambiosInternos(data) {
       var origenNormR = String(filaReest[3]).toUpperCase().trim();
       var tipoPNormR = String(filaReest[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
       var tipoCierreR = _derivarTipoReestudio(origenNormR, tipoPNormR) || 'reestudio';
-      _registrarCierreContador(emailAnalistaR, tipoCierreR, fechaAsiR);
-
       SpreadsheetApp.flush();
+
+      _cerrarConteoConLockCorto(emailAnalistaR, tipoCierreR, fechaAsiR);
     }
 
     if (estado_q.includes("APLAZ")) {
@@ -1890,10 +1919,6 @@ function guardarCambiosInternos(data) {
 
   } catch (e) {
     return { success: false, message: 'Error de servidor: ' + e.message };
-  } finally {
-    if (lock.hasLock()) {
-      lock.releaseLock();
-    }
   }
 
   return {
@@ -1902,6 +1927,31 @@ function guardarCambiosInternos(data) {
     usuario: usuarioActual,
     disparaAsignacion: disparaAsignacion
   };
+}
+
+// Única parte de guardarCambiosInternos() que toca estado realmente compartido
+// entre TODOS los analistas: los contadores de cupo diario / carga pendiente en
+// PropertiesService (lectura-modificación-escritura de un solo blob JSON, que sí
+// necesita serializarse o se pierden incrementos). Se aísla en su propio candado,
+// corto y exclusivo de esto, para que la escritura de la fila (ya hecha sin lock,
+// arriba) no arrastre a nadie en una cola global. Si el candado no se consigue, no
+// se hace fallar el guardado del analista — su gestión ya quedó escrita en la hoja
+// — solo se pierde el ajuste del contador, que trigger_recalcularContadores() (Admin.js)
+// corrige en el recálculo nocturno; el mismo colchón que ya existe para cuando un
+// admin borra filas directamente y descuadra estos contadores.
+function _cerrarConteoConLockCorto(email, tipo, fechaAsignacionOriginal) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    Logger.log("⚠️ No se pudo actualizar el contador de cupo de " + email + " (" + tipo + "): " + e.message + ". Queda para el recálculo nocturno.");
+    return;
+  }
+  try {
+    _registrarCierreContador(email, tipo, fechaAsignacionOriginal);
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // MIGRACIÓN ÚNICA — correr manualmente una sola vez desde el editor de Apps Script.

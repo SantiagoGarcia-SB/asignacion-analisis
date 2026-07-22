@@ -401,13 +401,6 @@ function autoAsignarBiometria() {
 }
 
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(25000);
-  } catch (e) {
-    return { success: false, message: "El sistema está ocupado. Intenta de nuevo." };
-  }
-
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
     const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
@@ -417,10 +410,12 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
     const lastRow = hojaHist.getLastRow();
     if (lastRow < 2) return { success: false, message: "No hay datos en Historico_Gestiones." };
 
+    const idBuscado = String(idSolicitud).trim();
+
     // Antes leía 34 columnas de toda la hoja para ubicar el ID. Ahora usa
     // TextFinder acotado a la columna del ID.
     const colIdBio = hojaHist.getRange(2, 1, lastRow - 1, 1);
-    const matchesIdBio = colIdBio.createTextFinder(String(idSolicitud).trim()).matchEntireCell(true).findAll();
+    const matchesIdBio = colIdBio.createTextFinder(idBuscado).matchEntireCell(true).findAll();
 
     for (let i = 0; i < matchesIdBio.length; i++) {
       const filaReal0 = matchesIdBio[i].getRow();
@@ -429,8 +424,28 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
       const emailH = String(fila[25]).trim().toLowerCase();
       const fechaFin = String(fila[26]).trim();
 
-      if (solId === String(idSolicitud).trim() && emailH === userEmail && fechaFin === '') {
-        const filaReal = filaReal0;
+      if (solId === idBuscado && emailH === userEmail && fechaFin === '') {
+        let filaReal = filaReal0;
+
+        // NOTA DE CONCURRENCIA (2026-07-22): esta escritura ya NO usa ScriptLock —
+        // mismo cambio que guardarCambiosInternos (Código.js) y por el mismo
+        // motivo: cada solicitud vive en su propia fila, Sheets resuelve sin
+        // problema escrituras concurrentes a filas distintas, y antes el candado
+        // global hacía que un analista guardando su biometría hiciera cola detrás
+        // de todos los demás guardados/asignaciones del sistema. Se revalida el ID
+        // justo antes de escribir por si un admin desasignó/reasignó el caso y
+        // corrió filas entre la búsqueda de arriba y este punto.
+        const idEnFila = String(hojaHist.getRange(filaReal, 1).getDisplayValue()).trim();
+        const fechaFinEnFila = String(hojaHist.getRange(filaReal, 27).getDisplayValue()).trim();
+        if (idEnFila !== idBuscado || fechaFinEnFila !== '') {
+          const reubicado = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1)
+            .createTextFinder(idBuscado).matchEntireCell(true).findNext();
+          if (!reubicado) {
+            return { success: false, message: "La solicitud cambió de estado mientras guardabas. Actualiza la página e intenta de nuevo." };
+          }
+          filaReal = reubicado.getRow();
+        }
+
         const ahora = new Date();
         const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", "dd/MM/yyyy");
         const resFinal = String(datosFormulario.resFinal || '').toUpperCase();
@@ -461,11 +476,9 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const tiempos = calcularTiemposCaso(tRadCola, fechaAsignacion, ahora, userEmail);
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
-
-        _registrarCierreContador(userEmail, 'desaplazamiento', fechaAsignacion);
-
         SpreadsheetApp.flush();
-        lock.releaseLock();
+
+        _cerrarConteoConLockCorto(userEmail, 'desaplazamiento', fechaAsignacion);
 
         return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
       }
@@ -473,8 +486,6 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
     return { success: false, message: "Solicitud " + idSolicitud + " no encontrada o ya gestionada." };
   } catch (error) {
     return { success: false, message: error.toString() };
-  } finally {
-    if (lock.hasLock()) lock.releaseLock();
   }
 }
 

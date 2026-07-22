@@ -269,13 +269,6 @@ function guardarGestionReestudio(datos) {
     return { success: false, message: "Identificador del caso no proporcionado." };
   }
 
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000);
-  } catch (e) {
-    return { success: false, message: "Sistema ocupado, reintenta en unos segundos." };
-  }
-
   try {
     const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
 
@@ -283,10 +276,10 @@ function guardarGestionReestudio(datos) {
     let hojaHistorico = ssReestudios.getSheetByName("Historico_Gestiones");
     let targetRow = -1;
     let fuenteRuta = '';
+    const targetId = String(datos.solicitud || datos.filaReal).trim();
 
     if (hojaHistorico && hojaHistorico.getLastRow() > 1) {
       const lastRowH = hojaHistorico.getLastRow();
-      const targetId = String(datos.solicitud || datos.filaReal).trim();
       // Antes esto leía columnas B-J de toda la hoja para buscar el ID. Ahora
       // usa la búsqueda nativa de Sheets (TextFinder) acotada a la columna del
       // ID, y solo lee la fila que realmente coincide.
@@ -309,18 +302,90 @@ function guardarGestionReestudio(datos) {
     const hojaActiva = fuenteRuta === 'HISTORICO' ? hojaHistorico : hojaOrigen;
     if (!hojaActiva) return { success: false, message: "No se encontró la hoja." };
 
-    // Verificar que no haya sido gestionada ya
-    const fechaFinExistente = String(hojaActiva.getRange(targetRow, 10).getDisplayValue()).trim();
+    // ============================================================
+    // RUTA ORIGEN (legado): sigue detrás de ScriptLock, igual que antes de este
+    // cambio (2026-07-22) — al final hace deleteRow(), que desplaza los índices
+    // de TODAS las filas siguientes de esa hoja, a diferencia de un setValue/
+    // setValues puntual (que no afecta a nadie más). Eso sí necesita serializarse
+    // contra cualquier otra ejecución que esté referenciando una fila de esta
+    // misma hoja por índice. Es tráfico legado y cada vez más escaso (los casos
+    // nuevos ya nacen directo en Historico_Gestiones), así que mantenerlo bajo
+    // lock no reintroduce el cuello de botella que sí tenía la ruta activa de
+    // abajo con muchos analistas guardando a la vez.
+    if (fuenteRuta === 'ORIGEN') {
+      const lock = LockService.getScriptLock();
+      try {
+        lock.waitLock(15000);
+      } catch (e) {
+        return { success: false, message: "Sistema ocupado, reintenta en unos segundos." };
+      }
+      try {
+        const fechaFinExistente = String(hojaActiva.getRange(targetRow, 10).getDisplayValue()).trim();
+        if (fechaFinExistente !== "") {
+          return { success: false, message: "Este caso ya fue gestionado." };
+        }
+
+        const ahora = new Date();
+        const filaBase        = hojaActiva.getRange(targetRow, 1, 1, 18).getValues()[0];
+        const fechaRadicacion = filaBase[0];
+        const fechaAsignacion = filaBase[8];
+        const emailAnalista   = String(filaBase[6] || '').toLowerCase().trim();
+        const tRadCola = _parseFechaGAS(datos.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
+        const tiempos = calcularTiemposCaso(tRadCola, _parseFechaGAS(fechaAsignacion), ahora, emailAnalista);
+
+        // Escribir gestión en columnas J(10) a R(18)
+        hojaActiva.getRange(targetRow, 10, 1, 9).setValues([[
+          ahora, datos.estadoGestion || "", datos.motivoAplazamiento || "", datos.motivoNegacion || "",
+          datos.observaciones || "", tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general,
+          datos.poliza || ""
+        ]]);
+        hojaActiva.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+        hojaActiva.getRange(targetRow, 15, 1, 3).setNumberFormat("0.00");
+        SpreadsheetApp.flush();
+
+        // Caso legado en ORIGEN: mover a Historico y eliminar del activo. No está
+        // cubierto por los contadores incrementales (los casos de ORIGEN nunca se
+        // sumaron ahí, siguen contados por el escaneo en vivo de
+        // _contarDesdeHojaReestudios), así que no hay nada que descontar aquí.
+        const filaFinal = hojaOrigen.getRange(targetRow, 1, 1, 18).getValues()[0];
+        if (!hojaHistorico) hojaHistorico = ssReestudios.insertSheet("Historico_Gestiones");
+        hojaHistorico.appendRow(filaFinal);
+        hojaOrigen.deleteRow(targetRow);
+        SpreadsheetApp.flush();
+
+        return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
+      } finally {
+        lock.releaseLock();
+      }
+    }
+
+    // ============================================================
+    // RUTA HISTORICO (activa/normal): sin ScriptLock — mismo cambio y mismo
+    // motivo que guardarCambiosInternos (Código.js) y guardarGestionBiometria
+    // (Biometria.js): cada solicitud vive en su propia fila, así que no hace
+    // falta serializar contra el resto del sistema para escribirla. Se revalida
+    // el ID justo antes de escribir por si un admin desasignó/reasignó el caso y
+    // corrió filas entre la búsqueda de arriba y este punto.
+    const fechaFinExistente = String(hojaHistorico.getRange(targetRow, 10).getDisplayValue()).trim();
     if (fechaFinExistente !== "") {
       return { success: false, message: "Este caso ya fue gestionado." };
     }
 
+    const idEnFila = String(hojaHistorico.getRange(targetRow, 2).getDisplayValue()).trim();
+    if (idEnFila !== targetId) {
+      const reubicado = hojaHistorico.getRange(2, 2, hojaHistorico.getLastRow() - 1, 1)
+        .createTextFinder(targetId).matchEntireCell(true).findNext();
+      if (!reubicado) {
+        return { success: false, message: "La solicitud cambió de estado mientras guardabas. Actualiza la página e intenta de nuevo." };
+      }
+      targetRow = reubicado.getRow();
+    }
+
     const ahora = new Date();
-    const filaBase        = hojaActiva.getRange(targetRow, 1, 1, 18).getValues()[0];
+    const filaBase        = hojaHistorico.getRange(targetRow, 1, 1, 18).getValues()[0];
     const fechaRadicacion = filaBase[0];
     const fechaAsignacion = filaBase[8];
     const emailAnalista   = String(filaBase[6] || '').toLowerCase().trim();
-
     const tRadCola = _parseFechaGAS(datos.fecha_radicacion_sai) || _parseFechaGAS(fechaRadicacion);
     const tiempos = calcularTiemposCaso(
       tRadCola,
@@ -329,8 +394,7 @@ function guardarGestionReestudio(datos) {
       emailAnalista
     );
 
-    // Escribir gestión en columnas J(10) a R(18)
-    hojaActiva.getRange(targetRow, 10, 1, 9).setValues([[
+    hojaHistorico.getRange(targetRow, 10, 1, 9).setValues([[
       ahora,
       datos.estadoGestion || "",
       datos.motivoAplazamiento || "",
@@ -341,36 +405,19 @@ function guardarGestionReestudio(datos) {
       tiempos.minutos_general,
       datos.poliza || ""
     ]]);
-    hojaActiva.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
-    hojaActiva.getRange(targetRow, 15, 1, 3).setNumberFormat("0.00");
-
-    // Solo la ruta HISTORICO está cubierta por los contadores incrementales: los
-    // casos legados que aún viven en ORIGEN nunca se sumaron ahí (siguen contados
-    // por el escaneo en vivo de _contarDesdeHojaReestudios), así que no hay nada
-    // que descontar para ellos.
-    if (fuenteRuta === 'HISTORICO') {
-      var origenNormReest = String(filaBase[3]).toUpperCase().trim();
-      var tipoPNormReest = String(filaBase[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
-      var tipoCierreReest = _derivarTipoReestudio(origenNormReest, tipoPNormReest) || 'reestudio';
-      _registrarCierreContador(emailAnalista, tipoCierreReest, fechaAsignacion);
-    }
-
+    hojaHistorico.getRange(targetRow, 10).setNumberFormat("dd/mm/yyyy HH:mm:ss");
+    hojaHistorico.getRange(targetRow, 15, 1, 3).setNumberFormat("0.00");
     SpreadsheetApp.flush();
 
-    if (fuenteRuta === 'ORIGEN') {
-      // Caso legado en ORIGEN: mover a Historico y eliminar del activo
-      const filaFinal = hojaOrigen.getRange(targetRow, 1, 1, 18).getValues()[0];
-      if (!hojaHistorico) hojaHistorico = ssReestudios.insertSheet("Historico_Gestiones");
-      hojaHistorico.appendRow(filaFinal);
-      hojaOrigen.deleteRow(targetRow);
-    }
+    var origenNormReest = String(filaBase[3]).toUpperCase().trim();
+    var tipoPNormReest = String(filaBase[4]).toUpperCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var tipoCierreReest = _derivarTipoReestudio(origenNormReest, tipoPNormReest) || 'reestudio';
+    _cerrarConteoConLockCorto(emailAnalista, tipoCierreReest, fechaAsignacion);
 
     return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
 
   } catch (error) {
     return { success: false, message: "Error al guardar: " + error.toString() };
-  } finally {
-    if (lock.hasLock()) lock.releaseLock();
   }
 }
 
