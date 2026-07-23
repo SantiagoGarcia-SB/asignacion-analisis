@@ -901,6 +901,78 @@ function diagnosticarArchivadoColaBiometria() {
   Logger.log("=== FIN DIAGNÓSTICO ===");
 }
 
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Red de
+// seguridad agregada 2026-07-22 tras el incidente de la solicitud 12269234 (y un lote de
+// 29 más): _volcarBloque() (ver _procesarCortePendientes) podía confirmar fase="ESCALADA"
+// en pendiente_biometria sin que el caso realmente hubiera llegado a "solicitud", y ningún
+// ciclo automático vuelve a mirar una fila ya en ESCALADA — así que un caso así queda
+// huérfano para siempre sin que nadie lo note, salvo que alguien lo busque a mano como
+// pasó esta vez. El fix de causa raíz (orden invertido en _volcarBloque, ESCALADA solo se
+// confirma si procesarYGuardarLote() tuvo éxito) debería prevenir casos nuevos, pero esta
+// función queda como chequeo independiente: para cada fila ESCALADA en pendiente_biometria,
+// confirma que el caso esté en alguno de los 2 lugares donde le corresponde estar según su
+// fase — "solicitud" (todavía en cola, sin analista) o Historico_Gestiones (ya asignado,
+// lo normal es que ahí también pase a fase ASIGNADA vía _actualizarFaseBiometriaPendiente,
+// pero este chequeo no depende de eso por si esa escritura también llegara a fallar). Si no
+// está en ninguno de los 2, es huérfana: se reporta pero no se modifica nada — la
+// recuperación es manual, mismo patrón que recuperarLoteHuerfanasBiometria().
+function diagnosticarHuerfanasBiometriaEscalada() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRowBio = hojaBio.getLastRow();
+  if (lastRowBio < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var ids = hojaBio.getRange(2, 1, lastRowBio - 1, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, lastRowBio - 1, 1).getValues();
+  var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRowBio - 1, 1).getValues();
+
+  var idsEscalada = [];
+  for (var i = 0; i < ids.length; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "ESCALADA") continue;
+    var id = String(ids[i][0]).trim();
+    if (!id) continue;
+    idsEscalada.push({ id: id, fecha: fechas[i][0] });
+  }
+
+  Logger.log("=== DIAGNÓSTICO huérfanas de biometría escalada (" + new Date() + ") ===");
+  Logger.log(idsEscalada.length + " filas en fase ESCALADA en pendiente_biometria.");
+
+  if (idsEscalada.length === 0) {
+    Logger.log("=== FIN DIAGNÓSTICO ===");
+    return { huerfanas: [] };
+  }
+
+  var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+  var setIdsSol = hojaSol ? getSetDeIds(hojaSol) : new Set();
+
+  var setIdsHist = new Set();
+  var hojaHist = ssSol.getSheetByName("Historico_Gestiones");
+  if (hojaHist && hojaHist.getLastRow() > 1) {
+    var idsHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1).getValues();
+    idsHist.forEach(function(r) { var v = String(r[0]).trim(); if (v) setIdsHist.add(v); });
+  }
+
+  var huerfanas = [];
+  idsEscalada.forEach(function(item) {
+    if (setIdsSol.has(item.id) || setIdsHist.has(item.id)) return;
+    huerfanas.push(item.id + " (fase_actualizada: " + item.fecha + ")");
+  });
+
+  if (huerfanas.length === 0) {
+    Logger.log("✅ Todas las filas ESCALADA están en 'solicitud' o Historico_Gestiones. Sin huérfanas.");
+  } else {
+    Logger.log("🔴 " + huerfanas.length + " huérfanas encontradas (ESCALADA pero ausentes de 'solicitud' y de Historico_Gestiones):");
+    huerfanas.forEach(function(l) { Logger.log("🔴 " + l); });
+    Logger.log("Recuperación manual: adaptar recuperarLoteHuerfanasBiometria() con estos IDs.");
+  }
+
+  Logger.log("=== FIN DIAGNÓSTICO ===");
+  return { huerfanas: huerfanas };
+}
+
 // DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Con los datos
 // reales de "solicitud" en este momento, muestra qué candidatos a desaplazamiento
 // quedarían LIBERADOS (se le pueden ofrecer a un analista ahora, vía RequestLeadUnificado
@@ -1562,13 +1634,45 @@ function _procesarCortePendientes() {
 
   function _volcarBloque() {
     if (actualizaciones.length === 0) return;
+
+    // procesarYGuardarLote() se llama PRIMERO, envuelto en try/catch, y ANTES de tocar
+    // pendiente_biometria: si falla (lock, red, dato inválido en el lote, lo que sea),
+    // ningún caso de este bloque debe marcarse ESCALADA — se dejan en WA_ENVIADO para que
+    // el próximo corte (8am/12pm) los reintente solo. Antes se confirmaba ESCALADA con
+    // flush ANTES de este paso, así que un fallo aquí dejaba el caso huérfano para
+    // siempre: nunca llegaba a "solicitud" pero tampoco se volvía a reintentar, porque
+    // ningún ciclo automático revisita una fila ya en fase ESCALADA (bug real, confirmado
+    // 2026-07-22 con un lote de 29 solicitudes — ver recuperarLoteHuerfanasBiometria()).
+    // procesarYGuardarLote() toma su propio lock, independiente del de pendiente_biometria
+    // más abajo, así que en ningún momento se sostienen dos locks del script a la vez.
+    var falloEscrituraSolicitud = false;
+    if (solicitudesParaAsignar.length > 0) {
+      try {
+        procesarYGuardarLote(solicitudesParaAsignar.slice());
+      } catch (e) {
+        falloEscrituraSolicitud = true;
+        Logger.log("❌ procesarYGuardarLote falló al volcar el bloque del corte: " + e.message
+          + " — los casos que iban a ESCALADA en este bloque se dejan en WA_ENVIADO para reintento en el próximo corte.");
+      }
+      solicitudesParaAsignar.length = 0;
+    }
+
+    // Si falló la escritura en "solicitud", no avanzar la fase de los casos que iban a
+    // ESCALADA (quedan en WA_ENVIADO). Los que iban a RESUELTA no dependen de esa
+    // escritura (no se envían a "solicitud"), así que esos sí se confirman igual.
+    var aEscribir = falloEscrituraSolicitud
+      ? actualizaciones.filter(function(u) { return u.fase !== "ESCALADA"; })
+      : actualizaciones;
+    actualizaciones = [];
+    if (aEscribir.length === 0) return;
+
     var lock = LockService.getScriptLock();
     try { lock.waitLock(30000); } catch (e) {
       Logger.log("❌ Lock no disponible para volcar bloque del corte: " + e.message);
       return;
     }
     try {
-      actualizaciones.forEach(function(u) {
+      aEscribir.forEach(function(u) {
         hojaBio.getRange(u.fila, 63).setValue(u.estadoSai); // nuevo_estado_sai
         hojaBio.getRange(u.fila, 76).setValue(u.fase);
         hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(u.fecha);
@@ -1577,13 +1681,6 @@ function _procesarCortePendientes() {
     } finally {
       if (lock.hasLock()) lock.releaseLock();
     }
-    // procesarYGuardarLote() toma su propio lock — se llama fuera del try/finally de
-    // arriba para no quedar sosteniendo dos locks del mismo script a la vez.
-    if (solicitudesParaAsignar.length > 0) {
-      procesarYGuardarLote(solicitudesParaAsignar.slice());
-      solicitudesParaAsignar.length = 0;
-    }
-    actualizaciones = [];
   }
 
   var inicioMs = Date.now();
@@ -1966,6 +2063,167 @@ function corregirBiometriasDuplicadasEnCola() {
   }
 
   Logger.log("=== FIN corregirBiometriasDuplicadasEnCola ===");
+}
+
+// CORRECCIÓN PUNTUAL — correr una sola vez (idempotente) para recuperar solicitudes que
+// quedaron en fase "ESCALADA" en pendiente_biometria pero nunca llegaron a "solicitud":
+// causa raíz confirmada 2026-07-22 con la solicitud 12269234 y un lote de 29 IDs del mismo
+// corte de las 12pm — _volcarBloque() (ver _procesarCortePendientes) confirma fase=ESCALADA
+// con flush ANTES de llamar a procesarYGuardarLote(), y esa llamada no tiene try/catch: si
+// falla, la fase ya quedó escrita pero la fila nunca se insertó en "solicitud", y ningún
+// ciclo automático vuelve a mirar una fila en fase ESCALADA (los cortes solo reintentan
+// WA_ENVIADO), así que el caso queda huérfano para siempre sin este repaso manual.
+// No toca pendiente_biometria en absoluto — solo reinserta en "solicitud" tras re-verificar
+// contra SAI. Seguro de re-correr: salta los IDs que ya estén en "solicitud", los que no
+// estén en fase ESCALADA, y los que SAI ya no reporte como pendientes de biometría.
+function recuperarLoteHuerfanasBiometria() {
+  var IDS = [
+    '12264799','12265720','12266233','12265050','12266600','12266613','12266660',
+    '12267989','12268139','12266791','12266907','12266653','12267087','12266089',
+    '12267401','12267211','12267332','12264769','12267594','12267711','12267426',
+    '12268006','12268544','12268131','12268737','12266835','12267320','12269069',
+    '12269234'
+  ];
+
+  var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
+  if (!hojaSol) { Logger.log("Hoja 'solicitud' no encontrada."); return; }
+  var setIdsSol = getSetDeIds(hojaSol);
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRowBio = hojaBio.getLastRow();
+  var fasePorId = new Map();
+  if (lastRowBio >= 2) {
+    var idsBio = hojaBio.getRange(2, 1, lastRowBio - 1, 1).getValues();
+    var fasesBio = hojaBio.getRange(2, 76, lastRowBio - 1, 1).getValues();
+    for (var i = 0; i < idsBio.length; i++) {
+      var idBio = String(idsBio[i][0]).trim();
+      if (idBio) fasePorId.set(idBio, String(fasesBio[i][0]).trim().toUpperCase());
+    }
+  }
+
+  var paraInsertar = [], recuperados = [], yaEnSolicitud = [], noEsEscalada = [], yaNoAplica = [], sinRespuesta = [];
+
+  IDS.forEach(function(id) {
+    if (setIdsSol.has(id)) { yaEnSolicitud.push(id); return; }
+
+    var fase = fasePorId.get(id);
+    if (fase !== "ESCALADA") {
+      noEsEscalada.push(id + " (fase: " + (fase || "no encontrada en pendiente_biometria") + ")");
+      return;
+    }
+
+    var datosApi = _consultarSaiIndividual(id);
+    Utilities.sleep(1000);
+    if (!datosApi) { sinRespuesta.push(id); return; }
+
+    var estado = String(datosApi.studyStatus || "").toUpperCase().trim();
+    if (estado !== "APROBADO_PENDIENTE_BIOMETRIA") {
+      yaNoAplica.push(id + " (SAI: " + estado + ")");
+      return;
+    }
+
+    paraInsertar.push(_homologarDatosApi(datosApi));
+    recuperados.push(id);
+  });
+
+  if (paraInsertar.length > 0) {
+    procesarYGuardarLote(paraInsertar);
+  }
+
+  Logger.log("✅ Recuperados e insertados en 'solicitud': " + recuperados.length + " → " + recuperados.join(", "));
+  if (yaEnSolicitud.length) Logger.log("ℹ️ Ya estaban en 'solicitud' (sin tocar): " + yaEnSolicitud.join(", "));
+  if (noEsEscalada.length) Logger.log("⚠️ No estaban en fase ESCALADA (revisar manualmente): " + noEsEscalada.join(", "));
+  if (yaNoAplica.length) Logger.log("ℹ️ SAI ya no las reporta pendientes de biometría: " + yaNoAplica.join(", "));
+  if (sinRespuesta.length) Logger.log("⚠️ Sin respuesta de SAI, reintentar más tarde: " + sinRespuesta.join(", "));
+
+  return { recuperados: recuperados, yaEnSolicitud: yaEnSolicitud, noEsEscalada: noEsEscalada, yaNoAplica: yaNoAplica, sinRespuesta: sinRespuesta };
+}
+
+// CORRECCIÓN PUNTUAL — correr una sola vez (idempotente), complemento de
+// recuperarLoteHuerfanasBiometria(): al correr esa función el 2026-07-22, los 29 IDs
+// resultaron todos "yaNoAplica" — SAI ya no los reporta APROBADO_PENDIENTE_BIOMETRIA
+// (se resolvieron solos durante las ~11-12h que estuvieron huérfanos, sin necesitar
+// llamada de ningún analista), así que no había nada que insertar en "solicitud". Pero
+// esa función no toca pendiente_biometria, así que estos 29 quedaron con fase="ESCALADA"
+// aunque ya están cerrados en SAI — esto los deja pareciendo "pendientes en cola" en
+// pendiente_biometria para cualquiera que la revise después. Esta función solo cierra
+// esa contabilidad: re-verifica cada uno contra SAI (por si algo cambió en los minutos
+// desde la corrida anterior) y, si sigue sin ser APROBADO_PENDIENTE_BIOMETRIA, pasa la
+// fase a "RESUELTA" (mismo valor que usa _procesarCortePendientes para este mismo caso)
+// guardando el estado real de SAI en nuevo_estado_sai (columna 63). Solo toca filas cuya
+// fase actual sea "ESCALADA" — si alguna ya cambió de fase por otro proceso, se deja como
+// está y se reporta aparte.
+function cerrarHuerfanasBiometriaResueltas() {
+  var IDS = [
+    '12264799','12265720','12266233','12265050','12266600','12266613','12266660',
+    '12267989','12268139','12266791','12266907','12266653','12267087','12266089',
+    '12267401','12267211','12267332','12264769','12267594','12267711','12267426',
+    '12268006','12268544','12268131','12268737','12266835','12267320','12269069',
+    '12269234'
+  ];
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRow = hojaBio.getLastRow();
+  if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+  var filaPorId = new Map();
+  for (var i = 0; i < ids.length; i++) {
+    var id = String(ids[i][0]).trim();
+    if (id) filaPorId.set(id, { fila: i + 2, fase: String(fases[i][0]).trim().toUpperCase() });
+  }
+
+  var actualizaciones = [], cerradas = [], todaviaPendiente = [], noEsEscalada = [], sinRespuesta = [];
+
+  IDS.forEach(function(id) {
+    var info = filaPorId.get(id);
+    if (!info) { noEsEscalada.push(id + " (no encontrada en pendiente_biometria)"); return; }
+    if (info.fase !== "ESCALADA") { noEsEscalada.push(id + " (fase: " + info.fase + ")"); return; }
+
+    var datosApi = _consultarSaiIndividual(id);
+    Utilities.sleep(1000);
+    if (!datosApi) { sinRespuesta.push(id); return; }
+
+    var estado = String(datosApi.studyStatus || "").toUpperCase().trim();
+    if (estado === "APROBADO_PENDIENTE_BIOMETRIA") { todaviaPendiente.push(id); return; }
+
+    actualizaciones.push({ fila: info.fila, estadoSai: estado });
+    cerradas.push(id + " (" + estado + ")");
+  });
+
+  if (actualizaciones.length > 0) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (e) {
+      Logger.log("❌ Lock no disponible para cerrar huérfanas resueltas: " + e.message);
+      return;
+    }
+    try {
+      var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+      actualizaciones.forEach(function(u) {
+        hojaBio.getRange(u.fila, 63).setValue(u.estadoSai);
+        hojaBio.getRange(u.fila, 76).setValue("RESUELTA");
+        hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+      });
+      SpreadsheetApp.flush();
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+  }
+
+  Logger.log("✅ Cerradas como RESUELTA: " + cerradas.length + " → " + cerradas.join(", "));
+  if (todaviaPendiente.length) Logger.log("⚠️ Siguen APROBADO_PENDIENTE_BIOMETRIA ahora mismo (no se tocaron, correr recuperarLoteHuerfanasBiometria de nuevo): " + todaviaPendiente.join(", "));
+  if (noEsEscalada.length) Logger.log("ℹ️ No estaban en fase ESCALADA (sin tocar): " + noEsEscalada.join(", "));
+  if (sinRespuesta.length) Logger.log("⚠️ Sin respuesta de SAI, reintentar más tarde: " + sinRespuesta.join(", "));
+
+  return { cerradas: cerradas, todaviaPendiente: todaviaPendiente, noEsEscalada: noEsEscalada, sinRespuesta: sinRespuesta };
 }
 
 // BACKFILL ÚNICO — correr una sola vez, después de agregarColumnaFechaActualizacionFase(),
