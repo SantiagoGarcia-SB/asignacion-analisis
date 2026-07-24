@@ -1645,13 +1645,8 @@ html { scroll-behavior: smooth; }
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-aplazamiento" data-bs-toggle="pill" data-bs-target="#panel-aplazamiento" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
-                    <i class="bi bi-clock-history me-1"></i> Motivos Aplazamiento
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-negacion" data-bs-toggle="pill" data-bs-target="#panel-negacion" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
-                    <i class="bi bi-x-octagon me-1"></i> Motivos Negación
+                <button class="nav-link" id="tab-desplegables" data-bs-toggle="pill" data-bs-target="#panel-desplegables" type="button" role="tab" style="border-radius:10px;font-size:0.85rem;font-weight:600;">
+                    <i class="bi bi-list-check me-1"></i> Desplegables Resultados
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -1680,29 +1675,42 @@ html { scroll-behavior: smooth; }
                 </div>
             </div>
 
-            <!-- Motivos Aplazamiento -->
-            <div class="tab-pane fade" id="panel-aplazamiento" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted" style="font-size:0.85rem;">Motivos disponibles cuando se aplaza una solicitud</span>
-                    <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('aplazamiento', null)" style="border-radius:10px;">
-                        <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
-                    </button>
+            <!-- Desplegables Resultados: Motivos Aplazamiento + Negación -->
+            <div class="tab-pane fade" id="panel-desplegables" role="tabpanel">
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between align-items-center mb-2" style="flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-weight:700;font-size:0.95rem;color:var(--text-main);">
+                                <i class="bi bi-pause-circle me-2" style="color:var(--color-secundario);"></i>Motivos de Aplazamiento
+                            </div>
+                            <span class="text-muted" style="font-size:0.78rem;">Disponibles cuando se aplaza una solicitud</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('aplazamiento', null)" style="border-radius:10px;">
+                            <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
+                        </button>
+                    </div>
+                    <div id="motivos-aplazamiento-lista">
+                        <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                    </div>
                 </div>
-                <div id="motivos-aplazamiento-lista">
-                    <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
-                </div>
-            </div>
 
-            <!-- Motivos Negación -->
-            <div class="tab-pane fade" id="panel-negacion" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <span class="text-muted" style="font-size:0.85rem;">Motivos disponibles cuando se niega una solicitud</span>
-                    <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('negacion', null)" style="border-radius:10px;">
-                        <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
-                    </button>
-                </div>
-                <div id="motivos-negacion-lista">
-                    <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                <hr style="margin:28px 0;">
+
+                <div>
+                    <div class="d-flex justify-content-between align-items-center mb-2" style="flex-wrap:wrap;gap:8px;">
+                        <div>
+                            <div style="font-weight:700;font-size:0.95rem;color:var(--text-main);">
+                                <i class="bi bi-x-octagon me-2" style="color:var(--color-primario);"></i>Motivos de Negación
+                            </div>
+                            <span class="text-muted" style="font-size:0.78rem;">Disponibles cuando se niega una solicitud</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo('negacion', null)" style="border-radius:10px;">
+                            <i class="bi bi-plus-lg me-1"></i> Nuevo Motivo
+                        </button>
+                    </div>
+                    <div id="motivos-negacion-lista">
+                        <div class="text-center text-muted py-4"><i class="bi bi-arrow-clockwise spin"></i> Cargando...</div>
+                    </div>
                 </div>
             </div>
 
@@ -1996,6 +2004,20 @@ html { scroll-behavior: smooth; }
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="mot_activo" checked>
                     <label class="form-check-label" for="mot_activo">Activo</label>
+                </div>
+                <hr>
+                <label class="form-label" style="font-weight:600;font-size:0.8rem;text-transform:uppercase;color:#6c757d;">Aparece en</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="mot_aplica_digital" checked>
+                    <label class="form-check-label" for="mot_aplica_digital">Digital / Cánones Altos</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="mot_aplica_reestudio" checked>
+                    <label class="form-check-label" for="mot_aplica_reestudio">Reestudios / UAR</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="mot_aplica_biometria" checked>
+                    <label class="form-check-label" for="mot_aplica_biometria">Desaplazamiento (Biometría)</label>
                 </div>
             </div>
             <div class="modal-footer" style="border-top:1px solid #eee;padding:16px 24px;">
@@ -5979,23 +6001,42 @@ function cargarMotivosNegacion() {
     google.script.run.withSuccessHandler(function(m) { renderMotivos('negacion', m); }).admin_getMotivosNegacion();
 }
 
+function _scopeIconMotivo(activo, colorOn, titulo) {
+    if (activo) {
+        return '<i class="bi bi-check-circle-fill" title="' + titulo + '" style="color:' + colorOn + ';font-size:0.95rem;"></i>';
+    }
+    return '<i class="bi bi-dash-circle" title="No aplica a ' + titulo + '" style="color:#d1d5db;font-size:0.95rem;"></i>';
+}
+
 function renderMotivos(tipo, motivos) {
     var cont = document.getElementById('motivos-' + tipo + '-lista');
     if (!motivos || motivos.length === 0) {
         cont.innerHTML = '<div class="text-center text-muted py-4">No hay motivos configurados.</div>';
         return;
     }
-    var html = '<div class="list-group" style="gap:4px;">';
+    var html = '<div class="table-responsive" style="border:1px solid var(--border);border-radius:14px;">';
+    html += '<table class="table mb-0" style="font-size:0.85rem;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;">Motivo</th>';
+    html += '<th class="text-center" style="width:70px;">Digital</th>';
+    html += '<th class="text-center" style="width:80px;">Reestudio</th>';
+    html += '<th class="text-center" style="width:80px;">Biometría</th>';
+    html += '<th class="text-center" style="width:80px;">Estado</th>';
+    html += '<th class="text-end" style="width:80px;"></th>';
+    html += '</tr></thead><tbody>';
     motivos.forEach(function(m) {
-        var actClass = m.activo ? 'border-start border-3 border-success' : 'border-start border-3 border-danger opacity-50';
-        html += '<div class="list-group-item d-flex justify-content-between align-items-center ' + actClass + '" style="border-radius:10px;padding:10px 16px;font-size:0.85rem;">';
-        html += '<span>' + m.motivo + '</span>';
-        html += '<div class="d-flex gap-1">';
-        html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo(\'' + tipo + '\', ' + m.id + ')" style="border-radius:6px;padding:2px 8px;font-size:0.75rem;"><i class="bi bi-pencil"></i></button>';
+        html += '<tr' + (m.activo ? '' : ' style="opacity:0.55;"') + '>';
+        html += '<td>' + m.motivo + '</td>';
+        html += '<td class="text-center">' + _scopeIconMotivo(m.aplicaDigital, '#1d4ed8', 'Digital / Cánones Altos') + '</td>';
+        html += '<td class="text-center">' + _scopeIconMotivo(m.aplicaReestudio, '#7c3aed', 'Reestudios / UAR') + '</td>';
+        html += '<td class="text-center">' + _scopeIconMotivo(m.aplicaBiometria, '#4338ca', 'Desaplazamiento / Biometría') + '</td>';
+        html += '<td class="text-center"><span class="badge-pill ' + (m.activo ? 'badge-est-activo' : 'badge-est-inactivo') + '">' + (m.activo ? 'Activo' : 'Inactivo') + '</span></td>';
+        html += '<td class="text-end">';
+        html += '<button class="btn btn-sm btn-outline-primary" onclick="abrirModalMotivo(\'' + tipo + '\', ' + m.id + ')" style="border-radius:6px;padding:2px 8px;font-size:0.75rem;"><i class="bi bi-pencil"></i></button> ';
         html += '<button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo(\'' + tipo + '\', ' + m.id + ')" style="border-radius:6px;padding:2px 8px;font-size:0.75rem;"><i class="bi bi-trash"></i></button>';
-        html += '</div></div>';
+        html += '</td></tr>';
     });
-    html += '</div>';
+    html += '</tbody></table></div>';
     cont.innerHTML = html;
 }
 
@@ -6004,6 +6045,9 @@ function abrirModalMotivo(tipo, motivoId) {
     document.getElementById('mot_editando_id').value = '';
     document.getElementById('mot_texto').value = '';
     document.getElementById('mot_activo').checked = true;
+    document.getElementById('mot_aplica_digital').checked = true;
+    document.getElementById('mot_aplica_reestudio').checked = true;
+    document.getElementById('mot_aplica_biometria').checked = true;
     document.getElementById('tituloModalMotivo').textContent = 'Nuevo motivo de ' + tipo;
 
     if (motivoId) {
@@ -6015,6 +6059,9 @@ function abrirModalMotivo(tipo, motivoId) {
             if (m) {
                 document.getElementById('mot_texto').value = m.motivo;
                 document.getElementById('mot_activo').checked = m.activo;
+                document.getElementById('mot_aplica_digital').checked = m.aplicaDigital;
+                document.getElementById('mot_aplica_reestudio').checked = m.aplicaReestudio;
+                document.getElementById('mot_aplica_biometria').checked = m.aplicaBiometria;
             }
         })[fn]();
     }
@@ -6026,7 +6073,10 @@ function guardarMotivo() {
     var editId = document.getElementById('mot_editando_id').value;
     var datos = {
         motivo: document.getElementById('mot_texto').value.trim(),
-        activo: document.getElementById('mot_activo').checked
+        activo: document.getElementById('mot_activo').checked,
+        aplicaDigital: document.getElementById('mot_aplica_digital').checked,
+        aplicaReestudio: document.getElementById('mot_aplica_reestudio').checked,
+        aplicaBiometria: document.getElementById('mot_aplica_biometria').checked
     };
     if (editId) datos.id = parseInt(editId);
     if (!datos.motivo) {

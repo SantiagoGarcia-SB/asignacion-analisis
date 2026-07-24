@@ -475,12 +475,6 @@
                   <label class="gestion-label"><i class="bi bi-pause-circle me-1"></i>Motivo Aplazamiento <span class="text-danger">*</span></label>
                   <select id="bio_motivoAplazamiento" class="motivo-picker-hidden">
                     <option value="">Sin aplazamiento</option>
-                    <option value="Agotó los intentos">Agotó los intentos</option>
-                    <option value="Conserva resultado">Conserva resultado</option>
-                    <option value="Error página biometría">Error página biometría</option>
-                    <option value="No desea realizar el proceso">No desea realizar el proceso</option>
-                    <option value="No llegó link">No llegó link</option>
-                    <option value="Sin intentos de biometría">Sin intentos de biometría</option>
                   </select>
                   <div id="picker_bio_motivoAplazamiento" class="motivo-picker">
                     <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
@@ -489,10 +483,13 @@
                 </div>
                 <div class="col-md-6 d-none" id="bio_contenedor_negacion">
                   <label class="gestion-label"><i class="bi bi-x-circle me-1"></i>Motivo Negación <span class="text-danger">*</span></label>
-                  <select id="bio_motivoNegacion" class="form-select gestion-select">
+                  <select id="bio_motivoNegacion" class="motivo-picker-hidden">
                     <option value="">Seleccione...</option>
-                    <option value="Desistimiento">Desistimiento</option>
                   </select>
+                  <div id="picker_bio_motivoNegacion" class="motivo-picker">
+                    <div class="motivo-picker-wrap"><i class="bi bi-search motivo-picker-icon"></i><input type="text" class="form-control gestion-select motivo-picker-input" placeholder="Buscar motivo..."><button type="button" class="motivo-picker-clear" title="Limpiar"><i class="bi bi-x-lg"></i></button></div>
+                    <div class="motivo-picker-dropdown"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -973,20 +970,24 @@ window.__IS_UNIFIED_VIEW__ = true;
 // Cargar motivos dinámicos al inicio
 function cargarMotivosUnificados() {
   google.script.run.withSuccessHandler(function(motivos) {
-    poblarSelectMotivos('dig_motivo_aplazamiento', motivos);
-    poblarSelectMotivos('rst_motivo_aplazamiento', motivos);
+    poblarSelectMotivos('dig_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaDigital; }));
+    poblarSelectMotivos('rst_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaReestudio; }));
+    poblarSelectMotivos('bio_motivoAplazamiento', motivos.filter(function(m) { return m.aplicaBiometria; }));
     try {
       MotivoPicker.init('picker_dig_motivo_aplazamiento', 'dig_motivo_aplazamiento');
       MotivoPicker.init('picker_rst_motivo_aplazamiento', 'rst_motivo_aplazamiento');
+      MotivoPicker.init('picker_bio_motivoAplazamiento', 'bio_motivoAplazamiento');
     } catch(e) {}
   }).getMotivosAplazamiento();
 
   google.script.run.withSuccessHandler(function(motivos) {
-    poblarSelectMotivos('dig_motivo_negacion', motivos);
-    poblarSelectMotivos('rst_motivo_negacion', motivos);
+    poblarSelectMotivos('dig_motivo_negacion', motivos.filter(function(m) { return m.aplicaDigital; }));
+    poblarSelectMotivos('rst_motivo_negacion', motivos.filter(function(m) { return m.aplicaReestudio; }));
+    poblarSelectMotivos('bio_motivoNegacion', motivos.filter(function(m) { return m.aplicaBiometria; }));
     try {
       MotivoPicker.init('picker_dig_motivo_negacion', 'dig_motivo_negacion');
       MotivoPicker.init('picker_rst_motivo_negacion', 'rst_motivo_negacion');
+      MotivoPicker.init('picker_bio_motivoNegacion', 'bio_motivoNegacion');
     } catch(e) {}
   }).getMotivosNegacion();
 }
@@ -1128,8 +1129,6 @@ function bioActualizarMotivo() {
   if (contNeg) {
     if (estado === 'RECHAZADO') {
       contNeg.classList.remove('d-none');
-      var selNeg = document.getElementById('bio_motivoNegacion');
-      if (selNeg) selNeg.value = 'Desistimiento';
     } else {
       contNeg.classList.add('d-none');
       var txt = document.getElementById('bio_motivoNegacion');

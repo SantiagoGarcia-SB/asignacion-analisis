@@ -2759,14 +2759,25 @@ function admin_eliminarTipoSolicitud(id) {
 // MOTIVOS DE APLAZAMIENTO — CRUD
 // ============================================================
 
+var _HEADERS_MOTIVOS = ["id", "motivo", "activo", "orden", "aplica_digital", "aplica_reestudio", "aplica_biometria"];
+
+// Motivos de aplazamiento propios de Biometría/Desaplazamiento, hasta 2026-07-24
+// hardcodeados como <option> en el modal de VistaUnificada.html. Se usan tanto
+// para sembrar una hoja nueva como para migrar una hoja preexistente (ver
+// _asegurarEsquemaScopeMotivos) — mantenidos en un solo lugar para no duplicar.
+var _SEMILLAS_BIOMETRIA_APLAZAMIENTO = [
+  "Agotó los intentos", "Conserva resultado", "Error página biometría",
+  "No desea realizar el proceso", "No llegó link", "Sin intentos de biometría"
+];
+
 function _getHojaMotivos(tipo) {
   var nombreHoja = tipo === 'negacion' ? 'MotivosNegacion' : 'MotivosAplazamiento';
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hoja = ss.getSheetByName(nombreHoja);
   if (!hoja) {
     hoja = ss.insertSheet(nombreHoja);
-    hoja.getRange(1, 1, 1, 4).setValues([["id", "motivo", "activo", "orden"]]);
-    hoja.getRange(1, 1, 1, 4).setFontWeight("bold");
+    hoja.getRange(1, 1, 1, _HEADERS_MOTIVOS.length).setValues([_HEADERS_MOTIVOS]);
+    hoja.getRange(1, 1, 1, _HEADERS_MOTIVOS.length).setFontWeight("bold");
 
     var semillas = [];
     if (tipo === 'aplazamiento') {
@@ -2794,14 +2805,84 @@ function _getHojaMotivos(tipo) {
     }
 
     var filas = [];
+    var idSeq = 1;
     for (var i = 0; i < semillas.length; i++) {
-      filas.push([i + 1, semillas[i], "TRUE", i + 1]);
+      var esBiometria = tipo === 'negacion' && semillas[i] === 'Desistimiento';
+      filas.push([idSeq, semillas[i], "TRUE", idSeq, "TRUE", "TRUE", esBiometria ? "TRUE" : "FALSE"]);
+      idSeq++;
+    }
+    if (tipo === 'aplazamiento') {
+      for (var j = 0; j < _SEMILLAS_BIOMETRIA_APLAZAMIENTO.length; j++) {
+        filas.push([idSeq, _SEMILLAS_BIOMETRIA_APLAZAMIENTO[j], "TRUE", idSeq, "FALSE", "FALSE", "TRUE"]);
+        idSeq++;
+      }
     }
     if (filas.length > 0) {
-      hoja.getRange(2, 1, filas.length, 4).setValues(filas);
+      hoja.getRange(2, 1, filas.length, _HEADERS_MOTIVOS.length).setValues(filas);
     }
   }
+  // Auto-migra hojas creadas antes de 2026-07-24 (sin columnas de alcance):
+  // se ejecuta en cada llamada, pero es un no-op barato (getLastColumn) una
+  // vez migrada, así que no depende de que un admin recuerde correr nada
+  // manualmente tras el deploy.
+  _asegurarEsquemaScopeMotivos(hoja, tipo);
   return hoja;
+}
+
+function _asegurarEsquemaScopeMotivos(hoja, tipo) {
+  // Chequeo barato sin lock: en el caso normal (ya migrada) evita tomar
+  // ScriptLock en cada carga de página de cada analista.
+  if (hoja.getLastColumn() >= _HEADERS_MOTIVOS.length) return;
+
+  // Varios analistas pueden cargar la vista al mismo tiempo justo tras el
+  // deploy; sin lock, dos ejecuciones concurrentes podrían duplicar las
+  // filas de biometría que se agregan más abajo. Se toma el lock solo en
+  // esta rama rara (migración pendiente), nunca en el camino ya migrado.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    // Re-chequea con el lock ya tomado: otro proceso pudo migrar mientras esperábamos.
+    var lastCol = hoja.getLastColumn();
+    if (lastCol >= _HEADERS_MOTIVOS.length) return;
+
+    hoja.getRange(1, lastCol + 1, 1, _HEADERS_MOTIVOS.length - lastCol)
+      .setValues([_HEADERS_MOTIVOS.slice(lastCol)]);
+    hoja.getRange(1, 1, 1, _HEADERS_MOTIVOS.length).setFontWeight("bold");
+
+    var lastRow = hoja.getLastRow();
+    if (lastRow < 2) return;
+
+    var data = hoja.getRange(2, 1, lastRow - 1, _HEADERS_MOTIVOS.length).getValues();
+    var maxId = 0, maxOrden = 0;
+    var textosExistentes = {};
+    for (var i = 0; i < data.length; i++) {
+      maxId = Math.max(maxId, parseInt(data[i][0]) || 0);
+      maxOrden = Math.max(maxOrden, parseInt(data[i][3]) || 0);
+      var texto = String(data[i][1]).trim();
+      textosExistentes[texto.toLowerCase()] = true;
+      // Filas preexistentes ya se usaban en Digital y Reestudio por igual —
+      // preserva ese comportamiento. "Desistimiento" además aplica a Biometría,
+      // que hasta ahora era la única opción de negación hardcodeada en su modal.
+      var esDesistimiento = tipo === 'negacion' && texto === 'Desistimiento';
+      hoja.getRange(i + 2, 5, 1, 3).setValues([["TRUE", "TRUE", esDesistimiento ? "TRUE" : "FALSE"]]);
+    }
+
+    if (tipo === 'aplazamiento') {
+      var filasNuevas = [];
+      _SEMILLAS_BIOMETRIA_APLAZAMIENTO.forEach(function(texto) {
+        if (!textosExistentes[texto.toLowerCase()]) {
+          maxId++; maxOrden++;
+          filasNuevas.push([maxId, texto, "TRUE", maxOrden, "FALSE", "FALSE", "TRUE"]);
+        }
+      });
+      if (filasNuevas.length > 0) {
+        hoja.getRange(hoja.getLastRow() + 1, 1, filasNuevas.length, _HEADERS_MOTIVOS.length).setValues(filasNuevas);
+      }
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
 }
 
 function _getMotivos(tipo) {
@@ -2809,7 +2890,7 @@ function _getMotivos(tipo) {
   var lastRow = hoja.getLastRow();
   if (lastRow < 2) return [];
 
-  var data = hoja.getRange(2, 1, lastRow - 1, 4).getValues();
+  var data = hoja.getRange(2, 1, lastRow - 1, _HEADERS_MOTIVOS.length).getValues();
   var motivos = [];
   for (var i = 0; i < data.length; i++) {
     var motivo = String(data[i][1]).trim();
@@ -2818,10 +2899,13 @@ function _getMotivos(tipo) {
       id: parseInt(data[i][0]) || (i + 1),
       motivo: motivo,
       activo: String(data[i][2]).toUpperCase() === 'TRUE',
-      orden: parseInt(data[i][3]) || (i + 1)
+      orden: parseInt(data[i][3]) || (i + 1),
+      aplicaDigital: String(data[i][4]).toUpperCase() === 'TRUE',
+      aplicaReestudio: String(data[i][5]).toUpperCase() === 'TRUE',
+      aplicaBiometria: String(data[i][6]).toUpperCase() === 'TRUE'
     });
   }
-  motivos.sort(function(a, b) { return a.orden - b.orden; });
+  motivos.sort(function(a, b) { return a.motivo.localeCompare(b.motivo, 'es', { sensitivity: 'base' }); });
   return motivos;
 }
 
@@ -2855,7 +2939,7 @@ function admin_guardarMotivo(tipo, datos) {
   var maxOrden = 0;
 
   if (lastRow >= 2) {
-    var dataExist = hoja.getRange(2, 1, lastRow - 1, 4).getValues();
+    var dataExist = hoja.getRange(2, 1, lastRow - 1, _HEADERS_MOTIVOS.length).getValues();
     for (var i = 0; i < dataExist.length; i++) {
       var idActual = parseInt(dataExist[i][0]) || 0;
       var ordenActual = parseInt(dataExist[i][3]) || 0;
@@ -2869,10 +2953,15 @@ function admin_guardarMotivo(tipo, datos) {
 
   var id = datos.id ? parseInt(datos.id) : (maxId + 1);
   var orden = datos.orden ? parseInt(datos.orden) : (maxOrden + 1);
-  var fila = [id, String(datos.motivo).trim(), datos.activo !== false ? 'TRUE' : 'FALSE', orden];
+  var fila = [
+    id, String(datos.motivo).trim(), datos.activo !== false ? 'TRUE' : 'FALSE', orden,
+    datos.aplicaDigital !== false ? 'TRUE' : 'FALSE',
+    datos.aplicaReestudio !== false ? 'TRUE' : 'FALSE',
+    datos.aplicaBiometria === true ? 'TRUE' : 'FALSE'
+  ];
 
   if (filaExistente > 0) {
-    hoja.getRange(filaExistente, 1, 1, 4).setValues([fila]);
+    hoja.getRange(filaExistente, 1, 1, _HEADERS_MOTIVOS.length).setValues([fila]);
   } else {
     hoja.appendRow(fila);
   }
@@ -2920,6 +3009,23 @@ function admin_eliminarMotivoAplazamiento(id) {
 
 function admin_eliminarMotivoNegacion(id) {
   return admin_eliminarMotivo('negacion', id);
+}
+
+// ============================================================
+// Disparador manual opcional de la migración de esquema de motivos
+// (columnas aplica_digital/aplica_reestudio/aplica_biometria +
+// motivos de biometría que antes vivían hardcodeados en el modal
+// de VistaUnificada.html). La migración real ya es automática y
+// se ejecuta sola dentro de _getHojaMotivos/_asegurarEsquemaScopeMotivos
+// la primera vez que cualquier llamada toca la hoja — esta función
+// solo sirve para que un admin la dispare/confirme explícitamente
+// desde el editor de Apps Script sin esperar tráfico real. Idempotente.
+// ============================================================
+function admin_migrarEsquemaMotivosScope() {
+  verificarPermisoAdmin();
+  _getHojaMotivos('aplazamiento');
+  _getHojaMotivos('negacion');
+  return { success: true, message: 'Esquema de motivos verificado/migrado correctamente.' };
 }
 
 // ============================================================

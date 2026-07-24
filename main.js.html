@@ -1784,11 +1784,15 @@ function poblarModalBio(fila) {
   setVal('bio_resLlamada', '');
   setVal('bio_resFinal', '');
   setVal('bio_motivoAplazamiento', '');
+  setVal('bio_motivoNegacion', '');
   if (typeof MotivoPicker !== 'undefined') {
     try { MotivoPicker.reset('bio_motivoAplazamiento'); } catch(e) {}
+    try { MotivoPicker.reset('bio_motivoNegacion'); } catch(e) {}
   }
   var contAplaz = document.getElementById('bio_contenedor_aplazamiento');
   if (contAplaz) contAplaz.classList.add('d-none');
+  var contNeg = document.getElementById('bio_contenedor_negacion');
+  if (contNeg) contNeg.classList.add('d-none');
   var btnGrupoBio = document.getElementById('bio_resFinal_btns');
   if (btnGrupoBio) btnGrupoBio.querySelectorAll('.estado-btn').forEach(function(b) { b.classList.remove('active'); });
   _setHeaderTipo('modalBiometria', 'tipo-biometria');
