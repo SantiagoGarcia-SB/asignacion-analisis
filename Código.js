@@ -986,6 +986,17 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
   const ESTADOS_EXCLUIR = new Set(["RECHAZADO", "APROBADO","CODEUDORES_REQUERIDOS"]);
   const TIPOS_EXCLUIR   = new Set(["AC", "AV"]);
 
+  // Configurable por admin (admin_getConfigSincronizacionSAI/admin_setConfigSincronizacionSAI,
+  // Admin.js): si se omite el INGRESO de solicitudes BORRADOR/EN_ESTUDIO a `solicitud`. A
+  // propósito NO se fusiona con ESTADOS_EXCLUIR — ese set también alimenta idsFinalizadas
+  // (líneas más abajo), que dispara eliminarSolicitudesFinalizadas() y borraría filas ya
+  // asignadas/en cola solo por seguir en ese estado. Este set solo bloquea la inserción de
+  // casos nuevos, nunca borra nada. Default "incluir" (true) para no cambiar el
+  // comportamiento histórico al desplegar.
+  const ESTADOS_OMITIR_INGRESO = new Set();
+  if (props.getProperty('SAI_INCLUIR_BORRADOR') === 'false') ESTADOS_OMITIR_INGRESO.add('BORRADOR');
+  if (props.getProperty('SAI_INCLUIR_EN_ESTUDIO') === 'false') ESTADOS_OMITIR_INGRESO.add('EN_ESTUDIO');
+
   Logger.log(`[${etiquetaLog}] Rango de consulta: Desde ${sIni} hasta ${sFin}`);
 
   const solicitudesHomologadas = [];
@@ -1066,7 +1077,7 @@ function _sincronizarVentanaSAI(sIni, sFin, etiquetaLog) {
             return;
           }
 
-          if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido) {
+          if (String(item.mainResultCode) === "2" && !estadoExcluido && !tipoExcluido && !ESTADOS_OMITIR_INGRESO.has(estadoGeneral)) {
             solicitudesHomologadas.push(construirItemHomologado(item, estadoGeneral, mapaTipos));
             guardadosEnPagina++;
           }

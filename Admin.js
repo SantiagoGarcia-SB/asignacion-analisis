@@ -1012,6 +1012,33 @@ function admin_setOrdenDesaplazamiento(nuevoOrden) {
   }
 }
 
+// Control de sincronización SAI: si _sincronizarVentanaSAI() (Código.js) ingresa a
+// `solicitud` las solicitudes que SAI reporta en estado BORRADOR o EN_ESTUDIO (aún sin
+// avanzar). Independientes entre sí. Default "incluir" (true) — comportamiento histórico,
+// no cambia nada hasta que el admin decida excluir alguno explícitamente. No afecta en nada
+// a APROBADO_PENDIENTE_BIOMETRIA, que se resuelve en una rama separada de esa misma función.
+function admin_getConfigSincronizacionSAI() {
+  verificarPermisoAdmin();
+  const props = PropertiesService.getScriptProperties();
+  return {
+    incluirBorrador: props.getProperty('SAI_INCLUIR_BORRADOR') !== 'false',
+    incluirEnEstudio: props.getProperty('SAI_INCLUIR_EN_ESTUDIO') !== 'false'
+  };
+}
+
+function admin_setConfigSincronizacionSAI(incluirBorrador, incluirEnEstudio) {
+  try {
+    verificarPermisoAdmin();
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty('SAI_INCLUIR_BORRADOR', incluirBorrador ? 'true' : 'false');
+    props.setProperty('SAI_INCLUIR_EN_ESTUDIO', incluirEnEstudio ? 'true' : 'false');
+    return { success: true, message: "Configuración de sincronización SAI actualizada." };
+
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
 // Plantilla de WhatsApp (Infobip) usada para el primer contacto de biometría
 // pendiente (enviarBroadcastInfobipConFilas, Biometria.js): nombre de la
 // plantilla + URL de la imagen de encabezado que se envía con ella. El texto/
