@@ -4,19 +4,23 @@
 
 Este documento define los requisitos para la nueva sección "Métricas" del panel de administración (VistaAdmin). El objetivo es proporcionar al coordinador una vista consolidada del rendimiento del equipo de análisis, tiempos de respuesta, cumplimiento de SLA y tendencias históricas de producción. La sección se integra al sidebar existente (Dashboard, Usuarios) como una tercera opción de navegación y utiliza Chart.js para la visualización gráfica.
 
+La implementación incorpora optimizaciones de rendimiento desde el diseño inicial para mitigar la latencia inherente de las operaciones sobre Google Sheets con volúmenes crecientes de datos (hoja Historico_Gestiones con crecimiento diario continuo).
+
 ## Glossary
 
 - **Panel_Admin**: La aplicación web VistaAdmin.html que sirve como interfaz de administración para el coordinador.
 - **Módulo_Métricas**: La nueva sección dentro del Panel_Admin que presenta indicadores de rendimiento, gráficos de productividad y cumplimiento de SLA.
 - **Coordinador**: Usuario con rol ADMIN que accede al Panel_Admin para supervisar al equipo de análisis.
 - **Analista**: Usuario con rol ASESOR que gestiona solicitudes de análisis de pólizas.
-- **Solicitud**: Registro individual de una petición de análisis de póliza de seguros almacenada en la hoja "solicitud".
+- **Solicitud**: Registro individual de una petición de análisis de póliza de seguros almacenada en la hoja "Historico_Gestiones".
 - **Tiempo_Gestión**: Minutos transcurridos desde la asignación de una solicitud a un analista hasta su finalización (columna AI, índice 34).
 - **SLA_Horas**: Horas hábiles calculadas desde la asignación hasta la finalización excluyendo fines de semana y festivos (columna AD, índice 29).
 - **Estado_Final**: Resultado de la gestión de una solicitud: APROBADA, NEGADA o APLAZADA (columna Q, índice 16).
 - **Fecha_Gestión**: Fecha en que el analista completó la gestión de una solicitud en formato dd/MM/yyyy (columna AH, índice 33).
 - **Fecha_Fin_Gestión**: Marca de tiempo completa de finalización de la gestión (columna AC, índice 28).
 - **Backend_Métricas**: Función o funciones del servidor Google Apps Script que recopilan y procesan los datos para el Módulo_Métricas.
+- **CacheService**: Servicio de caché de Google Apps Script que almacena pares clave-valor temporalmente (máximo 6 horas) para evitar lecturas repetidas a Google Sheets.
+- **Instancia_Spreadsheet**: Objeto retornado por `SpreadsheetApp.openById()` que se reutiliza para evitar múltiples aperturas del mismo libro.
 
 ## Requirements
 
@@ -134,7 +138,7 @@ Este documento define los requisitos para la nueva sección "Métricas" del pane
 #### Criterios de Aceptación
 
 1. THE Backend_Métricas SHALL exponer una función `obtenerDatosMetricas(fechaDesde, fechaHasta)` accesible desde el cliente mediante `google.script.run`.
-2. WHEN el Backend_Métricas recibe una solicitud, THE Backend_Métricas SHALL verificar que el usuario tiene permisos de administrador invocando `verificarPermisoAdmin()`.
+2. WHEN el Backend_Métricas recibe una solicitud, THE Backend_Métricas SHALL verificar que el usuario tiene permisos de administrador reutilizando la Instancia_Spreadsheet obtenida durante la verificación para las lecturas de datos posteriores.
 3. WHEN el Backend_Métricas procesa los datos, THE Backend_Métricas SHALL filtrar solicitudes cuya Fecha_Gestión se encuentre dentro del rango proporcionado (comparación en formato dd/MM/yyyy).
 4. THE Backend_Métricas SHALL retornar un objeto con las siguientes propiedades: `totalGestionadas`, `tiempoPromedioMinutos`, `tasaAprobacion`, `fueraDeSLA`, `produccionDiaria` (array de objetos {fecha, cantidad}), `distribucionEstados` (objeto {aprobadas, negadas, aplazadas}), `porAnalista` (array de objetos {nombre, total, aprobadas, negadas, aplazadas, tiempoPromedio, fueraSLA}), `slaDiario` (array de objetos {fecha, dentroSLA, fueraSLA}).
 5. IF el Backend_Métricas encuentra un error al leer la hoja de cálculo, THEN THE Backend_Métricas SHALL lanzar una excepción con un mensaje descriptivo del error.
@@ -164,3 +168,64 @@ Este documento define los requisitos para la nueva sección "Métricas" del pane
 2. WHILE el ancho de pantalla es menor o igual a 992px, THE Módulo_Métricas SHALL apilar los gráficos en una sola columna.
 3. THE Módulo_Métricas SHALL utilizar las clases del sistema de grid de Bootstrap 5 para la distribución de los componentes.
 4. THE Módulo_Métricas SHALL mantener la legibilidad de los gráficos Chart.js al redimensionar la ventana utilizando la opción `responsive: true` en la configuración de cada gráfico.
+
+---
+
+### Requisito 12: Reutilización de Instancia de Spreadsheet
+
+**Historia de usuario:** Como coordinador, quiero que el backend minimice las llamadas redundantes a Google Sheets, para que la respuesta de métricas sea más rápida.
+
+#### Criterios de Aceptación
+
+1. THE Backend_Métricas SHALL abrir el spreadsheet principal (`TARGET_SOLICITUDES_SS_ID`) una sola vez por invocación de `obtenerDatosMetricas`.
+2. WHEN el Backend_Métricas verifica permisos de administrador, THE Backend_Métricas SHALL reutilizar la misma Instancia_Spreadsheet para la lectura posterior de datos de la hoja Historico_Gestiones.
+3. THE Backend_Métricas SHALL pasar la Instancia_Spreadsheet como parámetro interno a las funciones auxiliares de lectura en lugar de invocar `SpreadsheetApp.openById()` adicionales.
+
+---
+
+### Requisito 13: Lectura Selectiva de Columnas
+
+**Historia de usuario:** Como coordinador, quiero que el backend lea solo las columnas necesarias para el cálculo de métricas, para reducir el tiempo de transferencia de datos desde Google Sheets.
+
+#### Criterios de Aceptación
+
+1. THE Backend_Métricas SHALL leer únicamente las columnas requeridas para el cálculo de métricas (índices 0, 16, 27, 28, 29, 30, 33, 34) en lugar de leer el rango completo de datos.
+2. WHEN el Backend_Métricas lee la hoja Historico_Gestiones, THE Backend_Métricas SHALL utilizar `getRange()` especificando solo las columnas necesarias o leer el rango completo y extraer los índices relevantes en una sola pasada.
+3. THE Backend_Métricas SHALL utilizar `getValues()` en lugar de `getDisplayValues()` para la lectura de datos, aplicando conversión manual de fechas solo en la columna Fecha_Gestión.
+
+---
+
+### Requisito 14: Caché de Resultados con CacheService
+
+**Historia de usuario:** Como coordinador, quiero que consultas repetidas al mismo rango de fechas se sirvan desde caché, para obtener respuestas inmediatas al navegar entre secciones.
+
+#### Criterios de Aceptación
+
+1. WHEN el Backend_Métricas completa el cálculo de métricas para un rango de fechas, THE Backend_Métricas SHALL almacenar el resultado en CacheService con una clave basada en el rango de fechas solicitado.
+2. WHEN el Backend_Métricas recibe una solicitud para un rango de fechas que existe en caché, THE Backend_Métricas SHALL retornar los datos almacenados sin acceder a Google Sheets.
+3. THE Backend_Métricas SHALL establecer un tiempo de expiración de caché de 300 segundos (5 minutos) para los resultados almacenados.
+4. WHEN el Coordinador presiona el botón "Actualizar", THE Módulo_Métricas SHALL enviar un parámetro que fuerce al Backend_Métricas a invalidar la caché y recalcular los datos desde la hoja de cálculo.
+
+---
+
+### Requisito 15: Carga Progresiva de la Interfaz
+
+**Historia de usuario:** Como coordinador, quiero que los elementos de la interfaz de métricas se rendericen progresivamente a medida que los datos estén disponibles, para percibir menor tiempo de espera.
+
+#### Criterios de Aceptación
+
+1. WHEN el Módulo_Métricas recibe los datos del backend, THE Módulo_Métricas SHALL renderizar primero las tarjetas de resumen y luego los gráficos en secuencia con un intervalo mínimo de 50ms entre cada renderizado.
+2. WHILE los gráficos se renderizan, THE Módulo_Métricas SHALL mostrar un placeholder con animación de carga en cada contenedor de gráfico que aún no se ha dibujado.
+3. THE Módulo_Métricas SHALL renderizar los gráficos en el siguiente orden de prioridad: tarjetas de resumen, gráfico de producción diaria, gráfico de distribución por estado, gráfico de productividad por analista, gráfico de SLA, tabla de analistas.
+
+---
+
+### Requisito 16: Optimización del Procesamiento de Fechas
+
+**Historia de usuario:** Como coordinador, quiero que el filtrado por fecha sea eficiente incluso con miles de registros, para que el cálculo de métricas no se degrade con el crecimiento de datos.
+
+#### Criterios de Aceptación
+
+1. THE Backend_Métricas SHALL convertir las fechas de límite del rango (fechaDesde, fechaHasta) a formato numérico comparable una sola vez antes del ciclo de iteración sobre los registros.
+2. WHEN el Backend_Métricas itera sobre la hoja Historico_Gestiones, THE Backend_Métricas SHALL convertir cada Fecha_Gestión a formato numérico comparable para la comparación contra los límites del rango, evitando operaciones de parsing de string repetitivas.
+3. IF una fila de Historico_Gestiones contiene un valor de Fecha_Gestión vacío o no parseable, THEN THE Backend_Métricas SHALL omitir esa fila del cálculo sin interrumpir el procesamiento de las filas restantes.

@@ -637,8 +637,14 @@ function getTableData() {
   agregarDesdeRegistros(registros, 'SOLICITUD');
 
   // 3. Reestudios: Historico_Gestiones (nueva lógica) + ORIGEN (legados)
+  // ssReestudios se abre UNA sola vez y se reutiliza en los pasos 3, 4 y detección de reasignaciones.
+  let _ssReest = null;
+  function _getSsReest() {
+    if (!_ssReest) _ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    return _ssReest;
+  }
   try {
-    const ssReest = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const ssReest = _getSsReest();
     const hojaReest = ssReest.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
     if (hojaReest) {
       const lastRowR = hojaReest.getLastRow();
@@ -687,7 +693,7 @@ function getTableData() {
   // Mismo cambio: se salta si no hay carga pendiente, y si hay, ubica la fila
   // con TextFinder en vez de leer toda la hoja.
   try {
-    const ssReestH = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const ssReestH = _getSsReest();
     const hojaHistReest = ssReestH.getSheetByName("Historico_Gestiones");
     const lastRowHistReest = hojaHistReest ? hojaHistReest.getLastRow() : 0;
     if (hojaHistReest && lastRowHistReest > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
@@ -777,7 +783,7 @@ function getTableData() {
         });
       }
       // Reestudios: col 20 (idx 19)
-      var ssReestCheck = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+      var ssReestCheck = _getSsReest();
       var hojaHistRCheck = ssReestCheck.getSheetByName("Historico_Gestiones");
       var lastRowRCheck = hojaHistRCheck ? hojaHistRCheck.getLastRow() : 0;
       if (hojaHistRCheck && lastRowRCheck > 1) {
@@ -1716,8 +1722,77 @@ function getSetDeIds(sheet) {
 }
 
 // ===================================================================
-// GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
+// TELEMETRÍA DE LOCK — Medición de contención de ScriptLock
 // ===================================================================
+
+/**
+ * Registra una invocación de lock con su duración y resultado.
+ * Almacena en ScriptProperties particionado por día (últimas 100 entradas/día, 7 días retenidos).
+ * Clave: LOCK_TEL_{yyyy-MM-dd} — permite comparar semana completa antes/después.
+ * No lanza errores — si falla la escritura, se ignora silenciosamente.
+ * @param {string} functionName - Nombre de la función que tomó el lock
+ * @param {number} lockDurationMs - Milisegundos que el lock estuvo retenido
+ * @param {number} retriesUsed - Cantidad de reintentos de re-verificación usados
+ * @param {boolean} success - Si la operación completó exitosamente
+ */
+function _registrarTelemetriaLock(functionName, lockDurationMs, retriesUsed, success) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var hoy = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+    var key = 'LOCK_TEL_' + hoy;
+    var raw = props.getProperty(key);
+    var entries = [];
+    if (raw) {
+      try { entries = JSON.parse(raw); } catch (e) { entries = []; }
+    }
+    entries.push({
+      fn: functionName,
+      ts: Date.now(),
+      lockMs: lockDurationMs,
+      retries: retriesUsed,
+      ok: success
+    });
+    // Mantener solo las últimas 100 entradas del día (cabe en ~8KB)
+    if (entries.length > 100) entries = entries.slice(-100);
+    props.setProperty(key, JSON.stringify(entries));
+
+    // Limpieza: borrar claves de hace más de 7 días (1 vez por cada 50 registros para no hacerlo siempre)
+    if (entries.length % 50 === 0) {
+      var todas = props.getKeys();
+      var hace7 = new Date(Date.now() - 7 * 86400000);
+      var limiteStr = Utilities.formatDate(hace7, TIMEZONE, 'yyyy-MM-dd');
+      todas.forEach(function(k) {
+        if (k.startsWith('LOCK_TEL_') && k.substring(9) < limiteStr) {
+          props.deleteProperty(k);
+        }
+      });
+    }
+  } catch (e) {
+    Logger.log('_registrarTelemetriaLock error: ' + e.message);
+  }
+}
+
+/**
+ * Incrementa el contador de timeouts de lock (waitLock failures).
+ * @param {string} functionName - Nombre de la función que no pudo adquirir el lock
+ */
+function _incrementarLockTimeout(functionName) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = 'LOCK_TIMEOUT_COUNT_V1';
+    var raw = props.getProperty(key);
+    var data = {};
+    if (raw) {
+      try { data = JSON.parse(raw); } catch (e) { data = {}; }
+    }
+    if (!data[functionName]) data[functionName] = 0;
+    data[functionName]++;
+    data._lastTimeout = new Date().toISOString();
+    props.setProperty(key, JSON.stringify(data));
+  } catch (e) {
+    Logger.log('_incrementarLockTimeout error: ' + e.message);
+  }
+}
 
 // ===================================================================
 // GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
@@ -1752,9 +1827,17 @@ function guardarCambiosInternos(data) {
   try {
     const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
 
-    const ssReestudios = SpreadsheetApp.openById(
-      PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
-    );
+    // ssReestudios se abre SOLO si el caso no se encuentra en Historico_Gestiones principal (Ruta A).
+    // Para el ~80% de guardados (digitales/biometría/inducción) esto ahorra ~1s de openById.
+    let ssReestudios = null;
+    function _getSsReestudios() {
+      if (!ssReestudios) {
+        ssReestudios = SpreadsheetApp.openById(
+          PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
+        );
+      }
+      return ssReestudios;
+    }
 
     const ahora = new Date();
     const fechaSoloDia = Utilities.formatDate(ahora, "GMT-5", 'dd/MM/yyyy');
@@ -1862,7 +1945,7 @@ function guardarCambiosInternos(data) {
 
     } else {
       // 🔵 RUTA B: REESTUDIO — buscar en Historico_Gestiones de ssReestudios
-      const hojaHistoricoR = ssReestudios.getSheetByName("Historico_Gestiones");
+      const hojaHistoricoR = _getSsReestudios().getSheetByName("Historico_Gestiones");
       let targetRowReest = -1;
 
       if (hojaHistoricoR && hojaHistoricoR.getLastRow() > 1) {

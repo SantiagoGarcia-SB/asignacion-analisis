@@ -867,6 +867,11 @@ html { scroll-behavior: smooth; }
         scroll-behavior: auto !important;
     }
 }
+
+/* Métricas: chart placeholders */
+.chart-placeholder { animation: metricsPulse 1.5s ease-in-out infinite; }
+@keyframes metricsPulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+.sla-alert { background: #fef2f2 !important; color: #991b1b !important; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -1764,6 +1769,118 @@ html { scroll-behavior: smooth; }
         </div>
     </div>
 
+    <div id="seccion-metricas" class="seccion-admin" style="display:none;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h1 class="page-title">Métricas del Equipo</h1>
+            <button class="btn-outline-brand" onclick="cargarMetricas(true)" title="Actualizar datos (ignora caché)">
+                <i class="bi bi-arrow-clockwise"></i> Actualizar
+            </button>
+        </div>
+        
+        <!-- Filtros de fecha -->
+        <div class="d-flex align-items-end flex-wrap gap-3 mb-4 p-3" style="background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border);">
+            <div>
+                <label style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Desde</label>
+                <input type="date" id="metricas-desde" class="form-control" style="min-width:150px;">
+            </div>
+            <div>
+                <label style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Hasta</label>
+                <input type="date" id="metricas-hasta" class="form-control" style="min-width:150px;">
+            </div>
+            <button class="btn-primary-brand" onclick="aplicarFiltroMetricas()">
+                <i class="bi bi-funnel"></i> Aplicar
+            </button>
+            <div class="d-flex gap-2 ms-auto">
+                <button class="btn-outline-brand" onclick="setRangoRapido('hoy')">Hoy</button>
+                <button class="btn-outline-brand" onclick="setRangoRapido('semana')">Última semana</button>
+                <button class="btn-outline-brand" onclick="setRangoRapido('mes')">Último mes</button>
+            </div>
+        </div>
+
+        <!-- Tarjetas de resumen -->
+        <div class="metrics-row mb-4">
+            <div class="metric-card">
+                <div class="card-top"><span class="metric-label">Total Gestionadas</span><div class="card-arrow"><i class="bi bi-clipboard-check"></i></div></div>
+                <div class="metric-value" id="met-total">--</div>
+            </div>
+            <div class="metric-card">
+                <div class="card-top"><span class="metric-label">Tiempo Promedio (min)</span><div class="card-arrow"><i class="bi bi-clock"></i></div></div>
+                <div class="metric-value" id="met-tiempo">--</div>
+            </div>
+            <div class="metric-card">
+                <div class="card-top"><span class="metric-label">Tasa Aprobación</span><div class="card-arrow"><i class="bi bi-check-circle"></i></div></div>
+                <div class="metric-value" id="met-aprobacion">--</div>
+                <div class="metric-trend"><span id="met-aprobacion-pct"></span></div>
+            </div>
+            <div class="metric-card">
+                <div class="card-top"><span class="metric-label">Fuera de SLA</span><div class="card-arrow"><i class="bi bi-exclamation-triangle"></i></div></div>
+                <div class="metric-value" id="met-sla">--</div>
+            </div>
+        </div>
+
+        <!-- Gráficos 2x2 -->
+        <div class="row g-3 mb-4">
+            <div class="col-lg-6">
+                <div class="table-container" id="container-produccion">
+                    <div class="table-header"><span class="table-title">Producción Diaria</span></div>
+                    <div class="chart-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:250px;">
+                        <span style="color:var(--text-light);font-size:0.85rem;">Cargando...</span>
+                    </div>
+                    <canvas id="chart-produccion" style="display:none;max-height:280px;"></canvas>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="table-container" id="container-estados">
+                    <div class="table-header"><span class="table-title">Distribución por Estado</span></div>
+                    <div class="chart-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:250px;">
+                        <span style="color:var(--text-light);font-size:0.85rem;">Cargando...</span>
+                    </div>
+                    <canvas id="chart-estados" style="display:none;max-height:280px;"></canvas>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="table-container" id="container-analistas">
+                    <div class="table-header"><span class="table-title">Productividad por Analista</span></div>
+                    <div class="chart-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:250px;">
+                        <span style="color:var(--text-light);font-size:0.85rem;">Cargando...</span>
+                    </div>
+                    <canvas id="chart-analistas" style="display:none;max-height:280px;"></canvas>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="table-container" id="container-sla">
+                    <div class="table-header"><span class="table-title">Cumplimiento SLA</span></div>
+                    <div class="chart-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:250px;">
+                        <span style="color:var(--text-light);font-size:0.85rem;">Cargando...</span>
+                    </div>
+                    <canvas id="chart-sla" style="display:none;max-height:280px;"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de analistas -->
+        <div class="table-container">
+            <div class="table-header">
+                <div><span class="table-title">Rendimiento Individual</span><span class="table-sub"> por analista</span></div>
+            </div>
+            <table id="tabla-metricas-analistas" class="table table-hover" style="width:100%">
+                <thead>
+                    <tr>
+                        <th>Analista</th>
+                        <th>Total</th>
+                        <th>Aprobadas</th>
+                        <th>Negadas</th>
+                        <th>Aplazadas</th>
+                        <th>Rechazadas</th>
+                        <th>T. Promedio (min)</th>
+                        <th>Fuera SLA</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-metricas-analistas"></tbody>
+            </table>
+        </div>
+    </div>
+
 </div>
 
 <!-- ===== MODAL EQUIPO ===== -->
@@ -2234,6 +2351,7 @@ html { scroll-behavior: smooth; }
 <script src="https://cdn.datatables.net/1.13.5/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 // Los warnings de DataTables (ej. "Incorrect column count" en tablas que se
 // inicializan dentro de pestañas ocultas) usan alert() por defecto y bloquean
@@ -2837,6 +2955,7 @@ function mostrarSeccion(id, e, forzar) {
     if (id === 'turnos') cargarTurnos();
     if (id === 'equipos') cargarKanbanEquipos();
     if (id === 'catalogo') cargarCatalogo();
+    if (id === 'metricas') cargarMetricas();
 }
 
 function _renderFromCache(id, data) {
@@ -4973,6 +5092,265 @@ function resetearCuposIndividual() {
             }).admin_setCuposIndividual(_analistaSeleccionado, null);
         }
     });
+}
+
+// ═══ MÓDULO DE MÉTRICAS ═══
+var chartProduccion = null, chartEstados = null, chartAnalistas = null, chartSLA = null;
+var dtMetricasAnalistas = null;
+
+function cargarMetricas(forceRefresh) {
+  var desde = document.getElementById('metricas-desde').value;
+  var hasta = document.getElementById('metricas-hasta').value;
+  
+  // Si no hay fechas, establecer últimos 7 días
+  if (!desde || !hasta) {
+    var hoy = new Date();
+    var hace7 = new Date(hoy.getTime() - 7 * 86400000);
+    document.getElementById('metricas-hasta').value = hoy.toISOString().split('T')[0];
+    document.getElementById('metricas-desde').value = hace7.toISOString().split('T')[0];
+    desde = document.getElementById('metricas-desde').value;
+    hasta = document.getElementById('metricas-hasta').value;
+  }
+  
+  // Convertir de yyyy-MM-dd a dd/MM/yyyy para el backend
+  var fechaDesde = desde.split('-').reverse().join('/');
+  var fechaHasta = hasta.split('-').reverse().join('/');
+  
+  mostrarPlaceholdersMetricas();
+  
+  google.script.run
+    .withSuccessHandler(renderizarMetricas)
+    .withFailureHandler(function(err) {
+      ocultarPlaceholdersMetricas();
+      Swal.fire({ icon: 'error', title: 'Error', text: err.message || 'Error al cargar métricas' });
+    })
+    .obtenerDatosMetricas(fechaDesde, fechaHasta, forceRefresh || false);
+}
+
+function aplicarFiltroMetricas() {
+  var desde = document.getElementById('metricas-desde').value;
+  var hasta = document.getElementById('metricas-hasta').value;
+  if (!desde || !hasta) {
+    Swal.fire({ icon: 'warning', title: 'Rango incompleto', text: 'Seleccione ambas fechas.' });
+    return;
+  }
+  if (desde > hasta) {
+    Swal.fire({ icon: 'warning', title: 'Rango inválido', text: "La fecha 'Desde' no puede ser posterior a 'Hasta'." });
+    return;
+  }
+  cargarMetricas(false);
+}
+
+function setRangoRapido(tipo) {
+  var hoy = new Date();
+  var desde = new Date();
+  if (tipo === 'hoy') { desde = hoy; }
+  else if (tipo === 'semana') { desde = new Date(hoy.getTime() - 7 * 86400000); }
+  else if (tipo === 'mes') { desde = new Date(hoy.getTime() - 30 * 86400000); }
+  document.getElementById('metricas-desde').value = desde.toISOString().split('T')[0];
+  document.getElementById('metricas-hasta').value = hoy.toISOString().split('T')[0];
+  cargarMetricas(false);
+}
+
+function mostrarPlaceholdersMetricas() {
+  document.querySelectorAll('#seccion-metricas .chart-placeholder').forEach(function(el) { el.style.display = 'flex'; });
+  document.querySelectorAll('#seccion-metricas canvas').forEach(function(el) { el.style.display = 'none'; });
+}
+
+function ocultarPlaceholdersMetricas() {
+  document.querySelectorAll('#seccion-metricas .chart-placeholder').forEach(function(el) { el.style.display = 'none'; });
+}
+
+function renderizarMetricas(datos) {
+  // Tarjetas inmediatas
+  actualizarTarjetasMetricas(datos);
+  
+  // Gráficos progresivos con 50ms de intervalo
+  setTimeout(function() { renderGraficoProduccion(datos.produccionDiaria); }, 50);
+  setTimeout(function() { renderGraficoEstados(datos.distribucionEstados); }, 100);
+  setTimeout(function() { renderGraficoAnalistas(datos.porAnalista); }, 150);
+  setTimeout(function() { renderGraficoSLA(datos.slaDiario); }, 200);
+  setTimeout(function() { renderTablaMetricasAnalistas(datos.porAnalista); }, 250);
+}
+
+function actualizarTarjetasMetricas(datos) {
+  document.getElementById('met-total').textContent = datos.totalGestionadas.toLocaleString();
+  document.getElementById('met-tiempo').textContent = datos.tiempoPromedioMinutos;
+  document.getElementById('met-aprobacion').textContent = datos.tasaAprobacion + '%';
+  document.getElementById('met-sla').textContent = datos.fueraDeSLA;
+}
+
+function renderGraficoProduccion(produccionDiaria) {
+  var container = document.getElementById('container-produccion');
+  container.querySelector('.chart-placeholder').style.display = 'none';
+  var canvas = document.getElementById('chart-produccion');
+  canvas.style.display = 'block';
+  
+  if (chartProduccion) chartProduccion.destroy();
+  
+  if (!produccionDiaria || produccionDiaria.length === 0) {
+    canvas.style.display = 'none';
+    container.querySelector('.chart-placeholder').style.display = 'flex';
+    container.querySelector('.chart-placeholder span').textContent = 'Sin datos para el período seleccionado';
+    return;
+  }
+  
+  chartProduccion = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: produccionDiaria.map(function(d) { return d.fecha; }),
+      datasets: [{
+        label: 'Solicitudes',
+        data: produccionDiaria.map(function(d) { return d.cantidad; }),
+        borderColor: '#253150',
+        backgroundColor: 'rgba(37,49,80,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#253150'
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+  });
+}
+
+function renderGraficoEstados(distribucion) {
+  var container = document.getElementById('container-estados');
+  container.querySelector('.chart-placeholder').style.display = 'none';
+  var canvas = document.getElementById('chart-estados');
+  canvas.style.display = 'block';
+  
+  if (chartEstados) chartEstados.destroy();
+  
+  var total = distribucion.aprobadas + distribucion.negadas + distribucion.aplazadas + (distribucion.rechazadas || 0);
+  if (total === 0) {
+    canvas.style.display = 'none';
+    container.querySelector('.chart-placeholder').style.display = 'flex';
+    container.querySelector('.chart-placeholder span').textContent = 'Sin datos para el período seleccionado';
+    return;
+  }
+  
+  chartEstados = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels: ['Aprobadas', 'Negadas', 'Aplazadas', 'Rechazadas'],
+      datasets: [{
+        data: [distribucion.aprobadas, distribucion.negadas, distribucion.aplazadas, distribucion.rechazadas || 0],
+        backgroundColor: ['#22c55e', '#ef4444', '#f59e0b', '#6b7280']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              var pct = total > 0 ? Math.round((ctx.parsed / total) * 100) : 0;
+              return ctx.label + ': ' + ctx.parsed + ' (' + pct + '%)';
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderGraficoAnalistas(porAnalista) {
+  var container = document.getElementById('container-analistas');
+  container.querySelector('.chart-placeholder').style.display = 'none';
+  var canvas = document.getElementById('chart-analistas');
+  canvas.style.display = 'block';
+  
+  if (chartAnalistas) chartAnalistas.destroy();
+  
+  if (!porAnalista || porAnalista.length === 0) {
+    canvas.style.display = 'none';
+    container.querySelector('.chart-placeholder').style.display = 'flex';
+    container.querySelector('.chart-placeholder span').textContent = 'Sin datos para el período seleccionado';
+    return;
+  }
+  
+  var top10 = porAnalista.slice(0, 10);
+  
+  chartAnalistas = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: top10.map(function(a) { return a.nombre; }),
+      datasets: [{
+        label: 'Gestionadas',
+        data: top10.map(function(a) { return a.total; }),
+        backgroundColor: 'rgba(37,49,80,0.8)'
+      }]
+    },
+    options: {
+      responsive: true,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function renderGraficoSLA(slaDiario) {
+  var container = document.getElementById('container-sla');
+  container.querySelector('.chart-placeholder').style.display = 'none';
+  var canvas = document.getElementById('chart-sla');
+  canvas.style.display = 'block';
+  
+  if (chartSLA) chartSLA.destroy();
+  
+  if (!slaDiario || slaDiario.length === 0) {
+    canvas.style.display = 'none';
+    container.querySelector('.chart-placeholder').style.display = 'flex';
+    container.querySelector('.chart-placeholder span').textContent = 'Sin datos para el período seleccionado';
+    return;
+  }
+  
+  chartSLA = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: slaDiario.map(function(d) { return d.fecha; }),
+      datasets: [
+        { label: 'Dentro SLA', data: slaDiario.map(function(d) { return d.dentroSLA; }), backgroundColor: '#22c55e' },
+        { label: 'Fuera SLA', data: slaDiario.map(function(d) { return d.fueraSLA; }), backgroundColor: '#ef4444' }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        annotation: {
+          annotations: {
+            line1: { type: 'line', yMin: 0.9, yMax: 0.9, borderColor: '#f59e0b', borderWidth: 2, borderDash: [5,5], label: { display: true, content: '90% SLA', position: 'end' } }
+          }
+        }
+      }
+    }
+  });
+}
+
+function renderTablaMetricasAnalistas(porAnalista) {
+  if (dtMetricasAnalistas) {
+    dtMetricasAnalistas.destroy();
+    dtMetricasAnalistas = null;
+  }
+  
+  var tbody = document.getElementById('tbody-metricas-analistas');
+  tbody.innerHTML = '';
+  
+  if (!porAnalista || porAnalista.length === 0) return;
+  
+  for (var i = 0; i < porAnalista.length; i++) {
+    var a = porAnalista[i];
+    var slaClass = a.fueraSLA > 0 ? ' class="sla-alert"' : '';
+    tbody.innerHTML += '<tr><td>' + a.nombre + '</td><td>' + a.total + '</td><td>' + a.aprobadas + '</td><td>' + a.negadas + '</td><td>' + a.aplazadas + '</td><td>' + (a.rechazadas || 0) + '</td><td>' + a.tiempoPromedio + '</td><td' + slaClass + '>' + a.fueraSLA + '</td></tr>';
+  }
+  
+  dtMetricasAnalistas = $('#tabla-metricas-analistas').DataTable({
+    destroy: true,
+    pageLength: 10,
+    language: { search: 'Buscar:', lengthMenu: 'Mostrar _MENU_', info: '_START_ a _END_ de _TOTAL_', paginate: { previous: '‹', next: '›' } },
+    order: [[1, 'desc']]
+  });
 }
 
 </script>

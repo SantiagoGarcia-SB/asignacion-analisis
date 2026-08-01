@@ -513,170 +513,349 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
 }
 
 // ============================================================
-// MOTOR PRINCIPAL: RequestLeadUnificado
+// PHASE 1: PRE-READ — Extracción de lecturas para la optimización de lock
+// Coexiste con RequestLeadUnificado sin reemplazarlo. En Task 3 se refactoriza
+// RequestLeadUnificado para que llame a esta función en vez de duplicar el código.
+// ============================================================
+
+/**
+ * Ejecuta toda la fase de lectura y cómputo de RequestLeadUnificado SIN tomar lock.
+ * Retorna un objeto con todo lo necesario para la fase de escritura, o un objeto
+ * con {earlyReturn: true, response: {...}} si la invocación debe terminar antes.
+ *
+ * Campos de conteo separados (necesarios para el re-check de cupo en Phase 2):
+ *   conteoHoyDeHojas   — suma de cPrincipal + cReestudios (no cambia dentro del lock)
+ *   conteoHoyDeContador — snapshot de _obtenerConteoHoyAnalista en Phase 1
+ *   conteoHoyTotal      — conteoHoyDeHojas + conteoHoyDeContador (para selección de candidatos)
+ *
+ * @param {string} [equipoIdOverride] - ID del equipo (opcional)
+ * @returns {Object} preReadResult
+ */
+function _preReadRequestLead(equipoIdOverride) {
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var dataUsuarios = _getDataUsuarios();
+  var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
+
+  if (!usuarioInfo) return { earlyReturn: true, response: { success: false, message: "Usuario no registrado en el sistema." } };
+
+  var nombreUsuario = usuarioInfo[1];
+  var especialidad = usuarioInfo[4];
+  var estadoUsuario = usuarioInfo[5].toString().trim().toUpperCase();
+  var capTotal = parseInt(usuarioInfo[6]) || 0;
+
+  if (estadoUsuario !== "ACTIVO") return { earlyReturn: true, response: { success: false, message: "Tu usuario no está Activo." } };
+
+  var turnoCheck = verificarTurnoActivo(userEmail, ss);
+  if (!turnoCheck.ok) return { earlyReturn: true, response: { success: false, message: turnoCheck.message } };
+
+  var permisoCheck = verificarPermisoVigenteHoy();
+  if (permisoCheck.tienePermiso) return { earlyReturn: true, response: { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." } };
+
+  var equipo;
+  if (equipoIdOverride) {
+    equipo = _getEquipos().find(function(e) { return e.id === equipoIdOverride; });
+    if (!equipo) equipo = resolverEquipoDesdeEspecialidad(especialidad);
+  } else {
+    equipo = resolverEquipoDesdeEspecialidad(especialidad);
+  }
+  var equipoId = equipo.id;
+
+  var propsLocal = PropertiesService.getScriptProperties();
+  var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
+  var ctx = _buildFechaHoyFormats();
+
+  // ─── CONTEO SEPARADO: hojas vs contadores ─────────────────────────
+  var conteoHoyDeHojas = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var capPendienteReal = 0;
+
+  var cPrincipal = _contarDesdeHojaPrincipal(userEmail, ss, ctx);
+  for (var k in cPrincipal.conteoHoy) { conteoHoyDeHojas[k] = (conteoHoyDeHojas[k] || 0) + cPrincipal.conteoHoy[k]; }
+  capPendienteReal += cPrincipal.cargaPendiente;
+  var refPrincipal = { hoja: cPrincipal.hojaRef, data: cPrincipal.dataSolicitudes };
+
+  var ID_REEST = propsLocal.getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
+  var ssReestudios = SpreadsheetApp.openById(ID_REEST);
+  var cReestudios = _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx);
+  for (var k2 in cReestudios.conteoHoy) { conteoHoyDeHojas[k2] = (conteoHoyDeHojas[k2] || 0) + cReestudios.conteoHoy[k2]; }
+  capPendienteReal += cReestudios.cargaPendiente;
+  var refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
+
+  // Snapshot del contador incremental en Phase 1
+  var conteoHoyDeContador = _obtenerConteoHoyAnalista(userEmail);
+  capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
+
+  // Total = hojas + contador (usado para selección de candidatos y filtros de cupo)
+  var conteoHoyTotal = {};
+  for (var kt in conteoHoyDeHojas) {
+    conteoHoyTotal[kt] = (conteoHoyDeHojas[kt] || 0) + (conteoHoyDeContador[kt] || 0);
+  }
+
+  var capacidadDisponible = capTotal - capPendienteReal;
+  if (capacidadDisponible < 1) return { earlyReturn: true, response: { success: false, message: "No tienes capacidad disponible. Termina casos pendientes primero." } };
+
+  var pendientes = [];
+  if (refPrincipal && refPrincipal.data) {
+    var pPrincipal = _recolectarPendientesPrincipal(refPrincipal.data, cuotas, conteoHoyTotal, equipo.canonDesde || 0, equipo.canonHasta || 0, equipo.canonTipos || []);
+    pendientes = pendientes.concat(pPrincipal);
+  }
+  if (refReestudios && refReestudios.data) {
+    var pReestudios = _recolectarPendientesReestudios(refReestudios.data, cuotas, conteoHoyTotal);
+    pendientes = pendientes.concat(pReestudios);
+  }
+
+  var cuposLlenosHoy = Object.entries(cuotas)
+    .filter(function(e) { return e[1] > 0 && conteoHoyTotal[e[0]] >= e[1]; })
+    .map(function(e) { return (ETIQUETAS_TIPO[e[0]] || e[0]) + " (" + conteoHoyTotal[e[0]] + "/" + e[1] + ")"; });
+
+  if (pendientes.length === 0) {
+    if (cuposLlenosHoy.length > 0) {
+      return { earlyReturn: true, response: { success: false, message: "Sin casos disponibles. Cupos del día completados: " + cuposLlenosHoy.join(', ') + "." } };
+    }
+    return { earlyReturn: true, response: { success: false, message: "No hay casos en bandeja para tus subcategorías disponibles." } };
+  }
+
+  var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
+  var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
+  var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
+  var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
+
+  var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);
+  var seleccionados = resultadoSeleccion.seleccionados;
+
+  if (seleccionados.length === 0) {
+    return { earlyReturn: true, response: { success: false, message: "Error interno: no se pudo seleccionar un caso." } };
+  }
+
+  // ─── ENRIQUECER con solicitudId explícito (necesario para TextFinder en Phase 2) ──
+  seleccionados.forEach(function(s) {
+    s.solicitudId = s.base === 'PRINCIPAL'
+      ? String(s.rowData[0] || '').trim()
+      : String(s.rowData[1] || '').trim();
+  });
+
+  return {
+    earlyReturn: false,
+    ss: ss,
+    ssReestudios: ssReestudios,
+    userEmail: userEmail,
+    nombreUsuario: nombreUsuario,
+    equipo: equipo,
+    cuotas: cuotas,
+    conteoHoyDeHojas: conteoHoyDeHojas,
+    conteoHoyDeContador: conteoHoyDeContador,
+    conteoHoyTotal: conteoHoyTotal,
+    seleccionados: seleccionados,
+    pendientes: pendientes,
+    refPrincipal: refPrincipal,
+    refReestudios: refReestudios,
+    cuposLlenosHoy: cuposLlenosHoy,
+    capacidadDisponible: capacidadDisponible,
+    cupoDisponible: cupoDisponible,
+    propsLocal: propsLocal
+  };
+}
+
+// ============================================================
+// MOTOR PRINCIPAL: RequestLeadUnificado (v2 — Two-Phase Lock)
+// Phase 1: _preReadRequestLead() — todas las lecturas sin lock
+// Phase 2: lock → re-verificar con TextFinder → escribir → flush → release
 // ============================================================
 
 function RequestLeadUnificado(equipoIdOverride) {
+  // ─── PHASE 1: LECTURAS SIN LOCK ──────────────────────────────────
+  var preRead = _preReadRequestLead(equipoIdOverride);
+
+  if (preRead.earlyReturn) {
+    return preRead.response;
+  }
+
+  var ss = preRead.ss;
+  var ssReestudios = preRead.ssReestudios;
+  var userEmail = preRead.userEmail;
+  var nombreUsuario = preRead.nombreUsuario;
+  var equipo = preRead.equipo;
+  var cuotas = preRead.cuotas;
+  var conteoHoyDeHojas = preRead.conteoHoyDeHojas;
+  var conteoHoyTotal = preRead.conteoHoyTotal;
+  var seleccionados = preRead.seleccionados;
+  var pendientes = preRead.pendientes;
+  var refPrincipal = preRead.refPrincipal;
+  var refReestudios = preRead.refReestudios;
+  var cuposLlenosHoy = preRead.cuposLlenosHoy;
+  var cupoDisponible = preRead.cupoDisponible;
+
+  // LOG DIAGNÓSTICO (fuera del lock)
+  var _tiposPend = {};
+  pendientes.forEach(function(p) { _tiposPend[p.tipo] = (_tiposPend[p.tipo] || 0) + 1; });
+  var _reasCount = pendientes.filter(function(p) { return p.reasignada; }).length;
+  Logger.log("Motor Unificado [" + equipo.id + "] | Analista: " + userEmail +
+    " | Cupos: " + JSON.stringify(cuotas) + " | Conteo: " + JSON.stringify(conteoHoyTotal) +
+    " | Pendientes: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount +
+    " | Seleccionados: " + seleccionados.length);
+
+  // ─── PHASE 2: LOCK → RE-VERIFICAR → ESCRIBIR ─────────────────────
   var lock = LockService.getScriptLock();
+  var lockAcquiredAt;
   try {
     lock.waitLock(25000);
+    lockAcquiredAt = Date.now();
   } catch (e) {
+    _incrementarLockTimeout('RequestLeadUnificado');
     return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
   }
 
+  var asignados = [];
+  var retriesUsed = 0;
+
   try {
-    var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    var dataUsuarios = _getDataUsuarios();
-    var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
-
-    if (!usuarioInfo) return { success: false, message: "Usuario no registrado en el sistema." };
-
-    var nombreUsuario = usuarioInfo[1];
-    var especialidad = usuarioInfo[4];
-    var estadoUsuario = usuarioInfo[5].toString().trim().toUpperCase();
-    var capTotal = parseInt(usuarioInfo[6]) || 0;
-
-    if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
-
-    var turnoCheck = verificarTurnoActivo(userEmail, ss);
-    if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
-
-    var permisoCheck = verificarPermisoVigenteHoy();
-    if (permisoCheck.tienePermiso) return { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
-
-    // Resolver equipo
-    var equipo;
-    if (equipoIdOverride) {
-      equipo = _getEquipos().find(function(e) { return e.id === equipoIdOverride; });
-      if (!equipo) equipo = resolverEquipoDesdeEspecialidad(especialidad);
-    } else {
-      equipo = resolverEquipoDesdeEspecialidad(especialidad);
-    }
-    var equipoId = equipo.id;
-
-    var propsLocal = PropertiesService.getScriptProperties();
-    var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
-
-    var ctx = _buildFechaHoyFormats();
-
-    // === CONTEO ===
-    var conteoHoyTotal = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
-    var capPendienteReal = 0;
-
-    var refPrincipal = null;
-    var refReestudios = null;
-
-    // Contar desde hoja principal (siempre se necesita para cualquier equipo)
-    var cPrincipal = _contarDesdeHojaPrincipal(userEmail, ss, ctx);
-    for (var k in cPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + cPrincipal.conteoHoy[k]; }
-    capPendienteReal += cPrincipal.cargaPendiente;
-    refPrincipal = { hoja: cPrincipal.hojaRef, data: cPrincipal.dataSolicitudes };
-
-    // Contar desde hoja reestudios
-    var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
-    var ssReestudios = SpreadsheetApp.openById(ID_REEST);
-    var cReestudios = _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx);
-    for (var k2 in cReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2]; }
-    capPendienteReal += cReestudios.cargaPendiente;
-    refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
-
-    // Suma lo que ya se cerró/asignó hoy vía Historico_Gestiones — de los contadores
-    // incrementales, no de un escaneo completo de la hoja (ver Código.js).
-    var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
-    for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
-    capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
-
-    Logger.log("Motor Unificado [" + equipoId + "] | Analista: " + userEmail + " | Cupos: " + JSON.stringify(cuotas) + " | Conteo: " + JSON.stringify(conteoHoyTotal));
-
-    var capacidadDisponible = capTotal - capPendienteReal;
-    if (capacidadDisponible < 1) return { success: false, message: "No tienes capacidad disponible. Termina casos pendientes primero." };
-
-    // === RECOLECTAR PENDIENTES ===
-    var pendientes = [];
-
-    if (refPrincipal && refPrincipal.data) {
-      var pPrincipal = _recolectarPendientesPrincipal(refPrincipal.data, cuotas, conteoHoyTotal, equipo.canonDesde || 0, equipo.canonHasta || 0, equipo.canonTipos || []);
-      pendientes = pendientes.concat(pPrincipal);
-    }
-
-    if (refReestudios && refReestudios.data) {
-      var pReestudios = _recolectarPendientesReestudios(refReestudios.data, cuotas, conteoHoyTotal);
-      pendientes = pendientes.concat(pReestudios);
-    }
-
-    var cuposLlenosHoy = Object.entries(cuotas)
-      .filter(function(e) { return e[1] > 0 && conteoHoyTotal[e[0]] >= e[1]; })
-      .map(function(e) { return (ETIQUETAS_TIPO[e[0]] || e[0]) + " (" + conteoHoyTotal[e[0]] + "/" + e[1] + ")"; });
-
-    if (pendientes.length === 0) {
-      if (cuposLlenosHoy.length > 0) {
-        return { success: false, message: "Sin casos disponibles. Cupos del día completados: " + cuposLlenosHoy.join(', ') + "." };
-      }
-      return { success: false, message: "No hay casos en bandeja para tus subcategorías disponibles." };
-    }
-
-    // === ORDENAR Y SELECCIONAR (lógica pura, ver _ordenarYSeleccionarCandidatos) ===
     var fechaHora = new Date();
-    var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
-    var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
-    var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
-    var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
+    var maxRetries = 3;
+    var candidateIndex = 0;
 
-    var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);
-    var seleccionados = resultadoSeleccion.seleccionados;
-    var _tiposConPendientes = resultadoSeleccion.tiposConPendientes;
+    // Contador en memoria: asignaciones confirmadas dentro de esta misma invocación,
+    // por tipo. Necesario porque _registrarAsignacionContador (que actualiza
+    // PropertiesService) se ejecuta DESPUÉS dentro de _asignarCasoPrincipal/Reestudios,
+    // pero el re-check de cupo ocurre ANTES de agregar el candidato a asignados.
+    // Sin esto, si cupoDisponible=2 y cupo restante del tipo=1, se asignarían 2.
+    var conteoEnMemoria = {};
 
-    if (seleccionados.length === 0) {
-      return { success: false, message: "Error interno: no se pudo seleccionar un caso." };
+    while (asignados.length < cupoDisponible && candidateIndex < seleccionados.length && retriesUsed < maxRetries) {
+      var candidate = seleccionados[candidateIndex];
+      candidateIndex++;
+
+      // ─── RE-VERIFICACIÓN con TextFinder ────────────────────────
+      if (candidate.base === 'PRINCIPAL') {
+        var hojaPrincipal = refPrincipal.hoja;
+        var match = hojaPrincipal.getRange(1, 1, hojaPrincipal.getLastRow(), 1)
+          .createTextFinder(candidate.solicitudId)
+          .matchEntireCell(true)
+          .findNext();
+
+        if (!match) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (deleted): " + candidate.solicitudId);
+          continue;
+        }
+
+        // Verificar que col 28 (asignado) sigue vacía
+        var assignedVal = hojaPrincipal.getRange(match.getRow(), 28).getValue();
+        if (assignedVal !== '' && assignedVal !== null && assignedVal !== undefined) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (taken): " + candidate.solicitudId + " → " + assignedVal);
+          continue;
+        }
+
+        // ─── CUPO RE-CHECK ────────────────────────────────────────
+        // Tres fuentes sumadas:
+        //   conteoHoyDeHojas[tipo] — de la lectura de hojas en Phase 1 (no cambia)
+        //   contadorActualizado[tipo] — re-lectura de PropertiesService (refleja otros procesos)
+        //   conteoEnMemoria[tipo] — asignaciones ya confirmadas en ESTE loop (aún no en Properties)
+        var contadorActualizado = _obtenerConteoHoyAnalista(userEmail);
+        var conteoTotalActualizado = (conteoHoyDeHojas[candidate.tipo] || 0)
+          + (contadorActualizado[candidate.tipo] || 0)
+          + (conteoEnMemoria[candidate.tipo] || 0);
+        if (cuotas[candidate.tipo] > 0 && conteoTotalActualizado >= cuotas[candidate.tipo]) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (cupo full): " + candidate.tipo + " " + conteoTotalActualizado + "/" + cuotas[candidate.tipo]);
+          continue;
+        }
+
+        // Actualizar rowIndex con la posición real actual
+        candidate.rowIndex = match.getRow();
+        asignados.push(candidate);
+        conteoEnMemoria[candidate.tipo] = (conteoEnMemoria[candidate.tipo] || 0) + 1;
+
+      } else {
+        // REESTUDIOS
+        var hojaReest = refReestudios.hoja;
+        var matchR = hojaReest.getRange(1, 1, hojaReest.getLastRow(), 1)
+          .createTextFinder(candidate.solicitudId)
+          .matchEntireCell(true)
+          .findNext();
+
+        if (!matchR) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (deleted reest): " + candidate.solicitudId);
+          continue;
+        }
+
+        // Verificar que col 7 (asignado) sigue vacía en reestudios
+        var assignedValR = hojaReest.getRange(matchR.getRow(), 7).getValue();
+        if (assignedValR !== '' && assignedValR !== null && assignedValR !== undefined) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (taken reest): " + candidate.solicitudId + " → " + assignedValR);
+          continue;
+        }
+
+        // ─── CUPO RE-CHECK (reestudios) ──────────────────────────
+        var contadorActR = _obtenerConteoHoyAnalista(userEmail);
+        var conteoTotalActR = (conteoHoyDeHojas[candidate.tipo] || 0)
+          + (contadorActR[candidate.tipo] || 0)
+          + (conteoEnMemoria[candidate.tipo] || 0);
+        if (cuotas[candidate.tipo] > 0 && conteoTotalActR >= cuotas[candidate.tipo]) {
+          retriesUsed++;
+          Logger.log("  Re-verify SKIP (cupo full reest): " + candidate.tipo);
+          continue;
+        }
+
+        candidate.rowIndex = matchR.getRow();
+        asignados.push(candidate);
+        conteoEnMemoria[candidate.tipo] = (conteoEnMemoria[candidate.tipo] || 0) + 1;
+      }
     }
 
-    // LOG DIAGNÓSTICO
-    var _reasCount = pendientes.filter(function(p){ return p.reasignada; }).length;
-    var _tiposPend = {};
-    pendientes.forEach(function(p){ _tiposPend[p.tipo] = (_tiposPend[p.tipo]||0)+1; });
-    Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionados: " + seleccionados.length + " | Orden tipos: " + JSON.stringify(_tiposConPendientes));
+    if (asignados.length === 0) {
+      var lockMs = Date.now() - lockAcquiredAt;
+      _registrarTelemetriaLock('RequestLeadUnificado', lockMs, retriesUsed, false);
+      return { success: false, message: "Casos tomados por otros analistas. Reintenta." };
+    }
 
-    // === ASIGNAR (de mayor a menor rowIndex por hoja, para no invalidar filas al borrar) ===
-    var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
-    var reestudios = seleccionados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+    // ─── ESCRIBIR ASIGNACIONES (desc por rowIndex para no invalidar filas) ──
+    var principales = asignados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
+    var reestudiosArr = asignados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
     principales.forEach(function(lead) {
       _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, refPrincipal.hoja, ss);
     });
-    reestudios.forEach(function(lead) {
+    reestudiosArr.forEach(function(lead) {
       _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
     });
 
-    // Una sola confirmación para todo el lote (antes era hasta 2 por caso asignado).
     SpreadsheetApp.flush();
 
-    // Registrar en pendiente_biometria las biometrías asignadas (tipo 'desaplazamiento').
-    var idsBioAsignadas = principales
-      .filter(function(lead) { return lead.tipo === 'desaplazamiento'; })
-      .map(function(lead) { return String(lead.rowData[0] || '').trim(); })
-      .filter(function(id) { return id; });
-    if (idsBioAsignadas.length > 0) {
-      _actualizarFaseBiometriaPendiente(idsBioAsignadas, "ASIGNADA");
-    }
-
-    var _resumenTipos = {};
-    seleccionados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
-    var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');
-
-    var msgAsignacion = seleccionados.length === 1
-      ? "Asignado: 1 caso de " + (ETIQUETAS_TIPO[seleccionados[0].tipo] || seleccionados[0].tipo.toUpperCase()) + "."
-      : "Asignados: " + seleccionados.length + " casos (" + _detalleTipos + ").";
-    if (cuposLlenosHoy.length > 0) {
-      msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
-    }
-
-    return { success: true, nueva: true, message: msgAsignacion };
+    var lockMs = Date.now() - lockAcquiredAt;
+    _registrarTelemetriaLock('RequestLeadUnificado', lockMs, retriesUsed, true);
 
   } catch (err) {
-    Logger.log("❌ Error crítico en RequestLeadUnificado: " + err.message);
+    Logger.log("❌ Error crítico en RequestLeadUnificado Phase 2: " + err.message + "\n" + err.stack);
+    var lockMsErr = Date.now() - lockAcquiredAt;
+    _registrarTelemetriaLock('RequestLeadUnificado', lockMsErr, retriesUsed, false);
     return { success: false, message: "Error interno: " + err.message };
   } finally {
     lock.releaseLock();
   }
+
+  // ─── POST-LOCK: Operaciones no críticas (idempotentes) ────────────
+  var idsBioAsignadas = asignados
+    .filter(function(lead) { return lead.tipo === 'desaplazamiento' && lead.base === 'PRINCIPAL'; })
+    .map(function(lead) { return String(lead.rowData[0] || '').trim(); })
+    .filter(function(id) { return id; });
+  if (idsBioAsignadas.length > 0) {
+    _actualizarFaseBiometriaPendiente(idsBioAsignadas, "ASIGNADA");
+  }
+
+  // ─── RESPONSE ─────────────────────────────────────────────────────
+  var _resumenTipos = {};
+  asignados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
+  var _detalleTipos = Object.entries(_resumenTipos).map(function(e) { return e[1] + " " + (ETIQUETAS_TIPO[e[0]] || e[0].toUpperCase()); }).join(', ');
+
+  var msgAsignacion = asignados.length === 1
+    ? "Asignado: 1 caso de " + (ETIQUETAS_TIPO[asignados[0].tipo] || asignados[0].tipo.toUpperCase()) + "."
+    : "Asignados: " + asignados.length + " casos (" + _detalleTipos + ").";
+  if (cuposLlenosHoy.length > 0) {
+    msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
+  }
+
+  return { success: true, nueva: true, message: msgAsignacion };
 }

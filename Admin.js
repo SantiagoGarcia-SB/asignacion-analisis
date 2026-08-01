@@ -3176,6 +3176,7 @@ function admin_agregarFestivo(fecha, descripcion) {
   hoja.appendRow([fechaObj, descripcion || '']);
   hoja.getRange(hoja.getLastRow(), 1).setNumberFormat('yyyy-MM-dd');
   SpreadsheetApp.flush();
+  _invalidarCacheConfigHoraria();
   return { success: true, message: 'Festivo agregado: ' + fecha };
 
   } catch (e) {
@@ -3192,6 +3193,7 @@ function admin_eliminarFestivo(fila) {
   if (fila < 1 || fila > hoja.getLastRow()) return { success: false, message: 'Fila inválida.' };
   hoja.deleteRow(fila);
   SpreadsheetApp.flush();
+  _invalidarCacheConfigHoraria();
   return { success: true, message: 'Festivo eliminado.' };
 
   } catch (e) {
@@ -3264,6 +3266,7 @@ function _importarFestivosColombiaInterno(anio) {
   hoja.getRange(startRow, 1, filasNuevas.length, 2).setValues(filasNuevas);
   hoja.getRange(startRow, 1, filasNuevas.length, 1).setNumberFormat('yyyy-MM-dd');
   SpreadsheetApp.flush();
+  _invalidarCacheConfigHoraria();
 
   return { success: true, message: filasNuevas.length + ' festivo(s) importado(s) para ' + anio + '.', agregados: filasNuevas.length };
 
@@ -3296,4 +3299,342 @@ function admin_verificarDesaplazamientos() {
   } catch (e) {
     return { success: false, message: e.message || e.toString() };
   }
+}
+
+/**
+ * Retorna las métricas de telemetría de lock almacenadas (últimos 7 días).
+ * Solo accesible por ADMIN.
+ * @returns {Object} { entries: Array (todas las entradas de los últimos 7 días), timeouts: Object, dias: number }
+ */
+function admin_getLockTelemetry() {
+  verificarPermisoAdmin();
+  var props = PropertiesService.getScriptProperties();
+
+  // Leer entradas de los últimos 7 días
+  var entries = [];
+  var hoy = new Date();
+  for (var d = 0; d < 7; d++) {
+    var fecha = new Date(hoy.getTime() - d * 86400000);
+    var key = 'LOCK_TEL_' + Utilities.formatDate(fecha, TIMEZONE, 'yyyy-MM-dd');
+    var raw = props.getProperty(key);
+    if (raw) {
+      try {
+        var dayEntries = JSON.parse(raw);
+        entries = entries.concat(dayEntries);
+      } catch (e) {}
+    }
+  }
+
+  var timeouts = {};
+  var rawTimeouts = props.getProperty('LOCK_TIMEOUT_COUNT_V1');
+  if (rawTimeouts) {
+    try { timeouts = JSON.parse(rawTimeouts); } catch (e) {}
+  }
+
+  return { entries: entries, timeouts: timeouts, dias: 7, totalEntries: entries.length };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MÓDULO DE MÉTRICAS - Funciones auxiliares y endpoint principal
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Convierte string "dd/MM/yyyy" a entero YYYYMMDD para comparación numérica rápida.
+ * Ejemplo: "25/12/2024" → 20241225
+ * @param {string} fechaStr - Fecha en formato "dd/MM/yyyy"
+ * @returns {number|null} Entero YYYYMMDD o null si formato inválido
+ */
+function _fechaDDMMYYYYaNumero(fechaStr) {
+  if (!fechaStr || typeof fechaStr !== 'string') return null;
+  var partes = fechaStr.split('/');
+  if (partes.length !== 3) return null;
+  var dd = parseInt(partes[0], 10);
+  var mm = parseInt(partes[1], 10);
+  var yyyy = parseInt(partes[2], 10);
+  if (isNaN(dd) || isNaN(mm) || isNaN(yyyy)) return null;
+  // Advertencia para fechas imposibles — no rompe el flujo pero deja registro
+  if (dd < 1 || dd > 31 || mm < 1 || mm > 12) {
+    Logger.log('⚠️ _fechaDDMMYYYYaNumero: fecha fuera de rango detectada: "' + fechaStr + '" (dd=' + dd + ', mm=' + mm + ')');
+  }
+  return yyyy * 10000 + mm * 100 + dd;
+}
+
+/**
+ * Convierte un valor de celda (Date object o string "dd/MM/yyyy") a entero YYYYMMDD.
+ * getValues() retorna Date objects para celdas con formato fecha, pero la columna
+ * puede tener strings si el formato de la hoja es texto.
+ * @param {Date|string|*} valor - Valor de la celda
+ * @returns {number|null} Entero YYYYMMDD o null si inválido/vacío
+ */
+function _valorAFechaNumero(valor) {
+  if (!valor) return null;
+
+  // Si es un Date object (getValues() lo retorna así para celdas con formato fecha)
+  if (valor instanceof Date) {
+    if (isNaN(valor.getTime())) return null;
+    return valor.getFullYear() * 10000 + (valor.getMonth() + 1) * 100 + valor.getDate();
+  }
+
+  // Si es string "dd/MM/yyyy"
+  return _fechaDDMMYYYYaNumero(String(valor));
+}
+
+/**
+ * Reconstruye string "dd/MM/yyyy" desde entero YYYYMMDD.
+ * @param {number} num - Entero YYYYMMDD
+ * @returns {string} Fecha en formato "dd/MM/yyyy"
+ */
+function _fechaNumeroAString(num) {
+  var yyyy = Math.floor(num / 10000);
+  var mm = Math.floor((num % 10000) / 100);
+  var dd = num % 100;
+  return String(dd).padStart(2, '0') + '/' + String(mm).padStart(2, '0') + '/' + yyyy;
+}
+
+/**
+ * Verifica permisos ADMIN reutilizando una instancia ya abierta del spreadsheet.
+ * Misma lógica que verificarPermisoAdmin() pero sin llamar openById() de nuevo.
+ * @param {Spreadsheet} ss - Instancia ya abierta del spreadsheet
+ * @throws {Error} Si el usuario no tiene permisos ADMIN
+ */
+function _verificarAdminDesdeInstancia(ss) {
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var hojaUser = ss.getSheetByName("Usuarios");
+  var dataUser = hojaUser.getDataRange().getValues();
+  var usuario = null;
+  for (var i = 0; i < dataUser.length; i++) {
+    if (String(dataUser[i][2]).toLowerCase().trim() === userEmail) {
+      usuario = dataUser[i];
+      break;
+    }
+  }
+  if (!usuario || String(usuario[23]).toUpperCase().trim() !== "ADMIN") {
+    throw new Error("Acceso Denegado: Se requieren permisos de Administrador.");
+  }
+}
+
+/**
+ * Retorna objeto de métricas vacío para cuando no hay datos en el rango.
+ * @returns {Object} Estructura completa con contadores en 0 y arrays vacíos
+ */
+function _resultadoVacio() {
+  return {
+    totalGestionadas: 0,
+    tiempoPromedioMinutos: 0,
+    tasaAprobacion: 0,
+    fueraDeSLA: 0,
+    produccionDiaria: [],
+    distribucionEstados: { aprobadas: 0, negadas: 0, aplazadas: 0, rechazadas: 0 },
+    porAnalista: [],
+    slaDiario: []
+  };
+}
+
+/**
+ * Convierte mapa de producción por día {fecha: count} a array ordenado cronológicamente.
+ * @param {Object} porDia - Mapa {string: number} con claves "dd/MM/yyyy"
+ * @returns {Array} [{fecha, cantidad}] ordenado por fecha ascendente
+ */
+function _objectToSortedArray(porDia) {
+  var keys = Object.keys(porDia);
+  var arr = [];
+  for (var i = 0; i < keys.length; i++) {
+    arr.push({ fecha: keys[i], cantidad: porDia[keys[i]] });
+  }
+  arr.sort(function(a, b) {
+    return _fechaDDMMYYYYaNumero(a.fecha) - _fechaDDMMYYYYaNumero(b.fecha);
+  });
+  return arr;
+}
+
+/**
+ * Construye array de analistas con tiempoPromedio calculado, ordenado por total descendente.
+ * @param {Object} porAnalista - Mapa interno {nombre: {total, aprobadas, negadas, aplazadas, sumaTiempo, countTiempo, fueraSLA}}
+ * @returns {Array} [{nombre, total, aprobadas, negadas, aplazadas, tiempoPromedio, fueraSLA}]
+ */
+function _buildAnalystArray(porAnalista) {
+  var keys = Object.keys(porAnalista);
+  var arr = [];
+  for (var i = 0; i < keys.length; i++) {
+    var nombre = keys[i];
+    var datos = porAnalista[nombre];
+    arr.push({
+      nombre: nombre,
+      total: datos.total,
+      aprobadas: datos.aprobadas,
+      negadas: datos.negadas,
+      aplazadas: datos.aplazadas,
+      rechazadas: datos.rechazadas || 0,
+      tiempoPromedio: datos.countTiempo > 0
+        ? Math.round((datos.sumaTiempo / datos.countTiempo) * 10) / 10
+        : 0,
+      fueraSLA: datos.fueraSLA
+    });
+  }
+  arr.sort(function(a, b) {
+    return b.total - a.total;
+  });
+  return arr;
+}
+
+/**
+ * Convierte mapa de SLA por día a array ordenado cronológicamente.
+ * @param {Object} slaPorDia - Mapa {string: {dentro: number, fuera: number}}
+ * @returns {Array} [{fecha, dentroSLA, fueraSLA}] ordenado por fecha ascendente
+ */
+function _buildSLAArray(slaPorDia) {
+  var keys = Object.keys(slaPorDia);
+  var arr = [];
+  for (var i = 0; i < keys.length; i++) {
+    arr.push({
+      fecha: keys[i],
+      dentroSLA: slaPorDia[keys[i]].dentro,
+      fueraSLA: slaPorDia[keys[i]].fuera
+    });
+  }
+  arr.sort(function(a, b) {
+    return _fechaDDMMYYYYaNumero(a.fecha) - _fechaDDMMYYYYaNumero(b.fecha);
+  });
+  return arr;
+}
+
+/**
+ * Función principal del módulo de métricas.
+ * Calcula y retorna todas las métricas de gestión para el rango de fechas indicado.
+ * Usa CacheService para evitar recálculos innecesarios.
+ *
+ * @param {string} fechaDesde - Fecha inicio "dd/MM/yyyy" (inclusive)
+ * @param {string} fechaHasta - Fecha fin "dd/MM/yyyy" (inclusive)
+ * @param {boolean} forceRefresh - Si true, ignora caché y recalcula desde Sheets
+ * @returns {Object} MetricasResponse con todos los datos agregados
+ */
+function obtenerDatosMetricas(fechaDesde, fechaHasta, forceRefresh) {
+  // ═══ PASO 1: Verificar caché ═══
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'metricas_' + fechaDesde + '_' + fechaHasta;
+
+  if (!forceRefresh) {
+    var cached = cache.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  }
+
+  // ═══ PASO 2: Abrir spreadsheet UNA sola vez ═══
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+
+  // ═══ PASO 3: Verificar permisos reutilizando instancia ═══
+  _verificarAdminDesdeInstancia(ss);
+
+  // ═══ PASO 4: Leer datos con getValues() ═══
+  var hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja) {
+    throw new Error("No se pudo acceder a la hoja de gestiones");
+  }
+  var lastRow = hoja.getLastRow();
+  if (lastRow <= 1) return _resultadoVacio();
+
+  var data = hoja.getRange(2, 1, lastRow - 1, 35).getValues();
+
+  // ═══ PASO 5: Convertir fechas límite a entero YYYYMMDD UNA vez ═══
+  var desdeNum = _fechaDDMMYYYYaNumero(fechaDesde);
+  var hastaNum = _fechaDDMMYYYYaNumero(fechaHasta);
+
+  // ═══ PASO 6: Iterar filas con comparación numérica optimizada ═══
+  var totalGestionadas = 0;
+  var sumaTiempo = 0, countTiempo = 0;
+  var aprobadas = 0, negadas = 0, aplazadas = 0, rechazadas = 0;
+  var fueraDeSLA = 0;
+  var porDia = {};
+  var slaPorDia = {};
+  var porAnalista = {};
+
+  for (var i = 0; i < data.length; i++) {
+    var fila = data[i];
+    var fechaGestionRaw = fila[33];
+
+    // Convertir Fecha_Gestión a entero numérico
+    var fechaNum = _valorAFechaNumero(fechaGestionRaw);
+    if (fechaNum === null) continue;
+
+    // Comparación numérica rápida sin Date objects
+    if (fechaNum < desdeNum || fechaNum > hastaNum) continue;
+
+    // --- Fila dentro del rango: agregar métricas ---
+    var estado = String(fila[16] || "").toUpperCase().trim();
+    
+    // Todo registro en Historico_Gestiones con Fecha_Gestión cuenta como gestión del analista
+    totalGestionadas++;
+    
+    var esAprobada = estado === "APROBADA" || estado === "APROBADO";
+    var esNegada = estado === "NEGADA" || estado === "NEGADO";
+    var esAplazada = estado === "APLAZADA" || estado === "APLAZADO";
+    var esRechazada = estado === "RECHAZADO" || estado === "RECHAZADA";
+    
+    if (esAprobada) aprobadas++;
+    else if (esNegada) negadas++;
+    else if (esAplazada) aplazadas++;
+    else if (esRechazada) rechazadas++;
+
+    var tiempoGestion = Number(fila[34]);
+    if (!isNaN(tiempoGestion) && tiempoGestion > 0) {
+      sumaTiempo += tiempoGestion;
+      countTiempo++;
+    }
+
+    var slaHoras = Number(fila[29]);
+    var fechaStr = _fechaNumeroAString(fechaNum);
+
+    if (!isNaN(slaHoras) && fila[29] !== "" && fila[29] !== null) {
+      if (slaHoras > 4) fueraDeSLA++;
+      if (!slaPorDia[fechaStr]) slaPorDia[fechaStr] = { dentro: 0, fuera: 0 };
+      if (slaHoras <= 4) {
+        slaPorDia[fechaStr].dentro++;
+      } else {
+        slaPorDia[fechaStr].fuera++;
+      }
+    }
+
+    // Agrupación por día
+    porDia[fechaStr] = (porDia[fechaStr] || 0) + 1;
+
+    // Agrupación por analista
+    var nombre = String(fila[30] || "").trim() || "Sin nombre";
+    if (!porAnalista[nombre]) {
+      porAnalista[nombre] = { total: 0, aprobadas: 0, negadas: 0, aplazadas: 0, rechazadas: 0, sumaTiempo: 0, countTiempo: 0, fueraSLA: 0 };
+    }
+    porAnalista[nombre].total++;
+    if (esAprobada) porAnalista[nombre].aprobadas++;
+    else if (esNegada) porAnalista[nombre].negadas++;
+    else if (esAplazada) porAnalista[nombre].aplazadas++;
+    else if (esRechazada) porAnalista[nombre].rechazadas++;
+    if (!isNaN(tiempoGestion) && tiempoGestion > 0) {
+      porAnalista[nombre].sumaTiempo += tiempoGestion;
+      porAnalista[nombre].countTiempo++;
+    }
+    if (!isNaN(slaHoras) && fila[29] !== "" && fila[29] !== null && slaHoras > 4) {
+      porAnalista[nombre].fueraSLA++;
+    }
+  }
+
+  // ═══ PASO 7: Construir respuesta ═══
+  var resultado = {
+    totalGestionadas: totalGestionadas,
+    tiempoPromedioMinutos: countTiempo > 0 ? Math.round((sumaTiempo / countTiempo) * 10) / 10 : 0,
+    tasaAprobacion: totalGestionadas > 0 ? Math.round((aprobadas / totalGestionadas) * 1000) / 10 : 0,
+    fueraDeSLA: fueraDeSLA,
+    produccionDiaria: _objectToSortedArray(porDia),
+    distribucionEstados: { aprobadas: aprobadas, negadas: negadas, aplazadas: aplazadas, rechazadas: rechazadas },
+    porAnalista: _buildAnalystArray(porAnalista),
+    slaDiario: _buildSLAArray(slaPorDia)
+  };
+
+  // ═══ PASO 8: Almacenar en caché con TTL 5 minutos (300s) ═══
+  try {
+    cache.put(cacheKey, JSON.stringify(resultado), 300);
+  } catch (e) {
+    Logger.log("Cache write failed (size limit): " + e.message);
+  }
+
+  return resultado;
 }

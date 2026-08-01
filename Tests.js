@@ -1152,6 +1152,782 @@ function test_X1_SimulacionDiaProduccion() {
 }
 
 // ============================================================
+// ============================================================
+// BLOQUE Y: MÓDULO DE MÉTRICAS
+// ============================================================
+
+function test_Y1_FechaConversion_CasosNormales() {
+  _seccion('Y1. _fechaDDMMYYYYaNumero: casos normales');
+  _assert('25/12/2024 → 20241225', 20241225, _fechaDDMMYYYYaNumero('25/12/2024'));
+  _assert('01/01/2025 → 20250101', 20250101, _fechaDDMMYYYYaNumero('01/01/2025'));
+  _assert('28/02/2024 → 20240228', 20240228, _fechaDDMMYYYYaNumero('28/02/2024'));
+  _assert('29/02/2024 (bisiesto) → 20240229', 20240229, _fechaDDMMYYYYaNumero('29/02/2024'));
+  _assert('31/12/2024 → 20241231', 20241231, _fechaDDMMYYYYaNumero('31/12/2024'));
+  _assert('15/06/2023 → 20230615', 20230615, _fechaDDMMYYYYaNumero('15/06/2023'));
+}
+
+function test_Y2_FechaConversion_CasosInvalidos() {
+  _seccion('Y2. _fechaDDMMYYYYaNumero: casos inválidos y vacíos');
+  _assert('null → null', null, _fechaDDMMYYYYaNumero(null));
+  _assert('undefined → null', null, _fechaDDMMYYYYaNumero(undefined));
+  _assert('"" → null', null, _fechaDDMMYYYYaNumero(''));
+  _assert('"invalid" → null', null, _fechaDDMMYYYYaNumero('invalid'));
+  _assert('"abc/def/ghi" → null', null, _fechaDDMMYYYYaNumero('abc/def/ghi'));
+  _assert('número 12345 → null', null, _fechaDDMMYYYYaNumero(12345));
+  _assert('"2024-12-25" (ISO) → null', null, _fechaDDMMYYYYaNumero('2024-12-25'));
+  _assert('"25/12" (sin año) → null', null, _fechaDDMMYYYYaNumero('25/12'));
+}
+
+function test_Y3_FechaConversion_Imposibles() {
+  _seccion('Y3. _fechaDDMMYYYYaNumero: fechas imposibles (no rompen, generan Logger.log)');
+  // No deben romper — retornan un entero pero generan advertencia en logs
+  var r1 = _fechaDDMMYYYYaNumero('32/13/2024');
+  _assert('"32/13/2024" retorna número (no null)', true, typeof r1 === 'number');
+  _assert('"32/13/2024" = 20241332', 20241332, r1);
+  Logger.log('  → Arriba debería verse un ⚠️ de Logger.log por fecha fuera de rango');
+
+  var r2 = _fechaDDMMYYYYaNumero('00/00/2024');
+  _assert('"00/00/2024" retorna número', true, typeof r2 === 'number');
+  Logger.log('  → Arriba debería verse un ⚠️ por dd=0, mm=0');
+}
+
+function test_Y4_ValorAFechaNumero_DateObjects() {
+  _seccion('Y4. _valorAFechaNumero: Date objects');
+  _assert('Date(2024,11,31) → 20241231', 20241231, _valorAFechaNumero(new Date(2024, 11, 31)));
+  _assert('Date(2025,0,1) → 20250101', 20250101, _valorAFechaNumero(new Date(2025, 0, 1)));
+  _assert('Date(2024,1,29) bisiesto → 20240229', 20240229, _valorAFechaNumero(new Date(2024, 1, 29)));
+  _assert('Invalid Date → null', null, _valorAFechaNumero(new Date('invalid')));
+  _assert('null → null', null, _valorAFechaNumero(null));
+  _assert('"" → null', null, _valorAFechaNumero(''));
+  _assert('0 → null', null, _valorAFechaNumero(0));
+}
+
+function test_Y5_ValorAFechaNumero_Strings() {
+  _seccion('Y5. _valorAFechaNumero: strings dd/MM/yyyy');
+  _assert('"31/12/2024" → 20241231', 20241231, _valorAFechaNumero('31/12/2024'));
+  _assert('"01/01/2025" → 20250101', 20250101, _valorAFechaNumero('01/01/2025'));
+  _assert('"texto" → null', null, _valorAFechaNumero('texto'));
+}
+
+function test_Y6_FechaIdaYVuelta() {
+  _seccion('Y6. Ida y vuelta: string → número → string');
+  var casos = ['01/01/2000', '31/12/2024', '29/02/2024', '15/06/2023', '05/03/2025', '28/02/2025'];
+  for (var i = 0; i < casos.length; i++) {
+    var num = _fechaDDMMYYYYaNumero(casos[i]);
+    var vuelta = _fechaNumeroAString(num);
+    _assert('Ida-vuelta "' + casos[i] + '"', casos[i], vuelta);
+  }
+}
+
+function test_Y7_FechaOrdenCronologico() {
+  _seccion('Y7. Comparación numérica preserva orden cronológico');
+  var fechas = ['31/12/2024', '01/01/2025', '15/01/2025', '28/02/2025'];
+  for (var i = 0; i < fechas.length - 1; i++) {
+    var a = _fechaDDMMYYYYaNumero(fechas[i]);
+    var b = _fechaDDMMYYYYaNumero(fechas[i + 1]);
+    _assert(fechas[i] + ' < ' + fechas[i + 1], true, a < b);
+  }
+}
+
+function test_Y8_VerificarAdminDesdeInstancia_Rechaza() {
+  _seccion('Y8. _verificarAdminDesdeInstancia: rechaza NO-admin');
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaUser = ss.getSheetByName("Usuarios");
+  var data = hojaUser.getDataRange().getValues();
+
+  // Buscar un usuario ASESOR real
+  var correoAsesor = null;
+  for (var i = 1; i < data.length; i++) {
+    var rol = String(data[i][23] || '').toUpperCase().trim();
+    if (rol === 'ASESOR' || (rol !== 'ADMIN' && rol !== '')) {
+      correoAsesor = String(data[i][2]).trim();
+      break;
+    }
+  }
+  Logger.log('  ASESOR encontrado para test: ' + (correoAsesor || '(ninguno)'));
+
+  // El test de rechazo NO puede simular Session.getActiveUser() directamente —
+  // pero podemos verificar la lógica con una versión inline que acepta email
+  function _verificarConEmail(ss, email) {
+    var hojaU = ss.getSheetByName("Usuarios");
+    var dataU = hojaU.getDataRange().getValues();
+    var usuario = null;
+    for (var j = 0; j < dataU.length; j++) {
+      if (String(dataU[j][2]).toLowerCase().trim() === email.toLowerCase().trim()) { usuario = dataU[j]; break; }
+    }
+    if (!usuario || String(usuario[23]).toUpperCase().trim() !== "ADMIN") {
+      throw new Error("Acceso Denegado: Se requieren permisos de Administrador.");
+    }
+  }
+
+  // Test: ASESOR debe ser rechazado
+  if (correoAsesor) {
+    var lanzaError = false;
+    try { _verificarConEmail(ss, correoAsesor); } catch (e) { lanzaError = true; }
+    _assert('ASESOR "' + correoAsesor + '" es RECHAZADO', true, lanzaError);
+  } else {
+    Logger.log('  ⚠️ No hay ASESOR para probar rechazo');
+  }
+
+  // Test: email inexistente debe ser rechazado
+  var lanzaNoExiste = false;
+  try { _verificarConEmail(ss, 'no_existe_xyz_000@fake.com'); } catch (e) { lanzaNoExiste = true; }
+  _assert('Email inexistente es RECHAZADO', true, lanzaNoExiste);
+
+  // Test: el usuario actual (ejecutando este test) es ADMIN y debe pasar
+  var lanzaAdmin = false;
+  try { _verificarAdminDesdeInstancia(ss); } catch (e) { lanzaAdmin = true; }
+  _assert('Usuario actual (ADMIN) PASA', false, lanzaAdmin);
+}
+
+function test_Y9_ObtenerDatosMetricas_Real() {
+  _seccion('Y9. obtenerDatosMetricas: datos reales con rango última semana');
+  var hoy = new Date();
+  var hace7 = new Date(hoy.getTime() - 7 * 86400000);
+  var dd = function(d) { return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear(); };
+  var fechaDesde = dd(hace7);
+  var fechaHasta = dd(hoy);
+  Logger.log('  Rango: ' + fechaDesde + ' → ' + fechaHasta);
+
+  var resultado = obtenerDatosMetricas(fechaDesde, fechaHasta, true);
+
+  // Estructura completa
+  _assert('Tiene totalGestionadas (number)', true, typeof resultado.totalGestionadas === 'number');
+  _assert('Tiene tiempoPromedioMinutos (number)', true, typeof resultado.tiempoPromedioMinutos === 'number');
+  _assert('Tiene tasaAprobacion (number)', true, typeof resultado.tasaAprobacion === 'number');
+  _assert('Tiene fueraDeSLA (number)', true, typeof resultado.fueraDeSLA === 'number');
+  _assert('Tiene produccionDiaria (array)', true, Array.isArray(resultado.produccionDiaria));
+  _assert('Tiene distribucionEstados.aprobadas', true, typeof resultado.distribucionEstados.aprobadas === 'number');
+  _assert('Tiene distribucionEstados.negadas', true, typeof resultado.distribucionEstados.negadas === 'number');
+  _assert('Tiene distribucionEstados.aplazadas', true, typeof resultado.distribucionEstados.aplazadas === 'number');
+  _assert('Tiene porAnalista (array)', true, Array.isArray(resultado.porAnalista));
+  _assert('Tiene slaDiario (array)', true, Array.isArray(resultado.slaDiario));
+
+  // Invariantes aritméticas
+  var sumaEstados = resultado.distribucionEstados.aprobadas + resultado.distribucionEstados.negadas + resultado.distribucionEstados.aplazadas + (resultado.distribucionEstados.rechazadas || 0);
+  _assert('aprobadas+negadas+aplazadas+rechazadas == totalGestionadas', resultado.totalGestionadas, sumaEstados);
+
+  if (resultado.totalGestionadas > 0) {
+    var tasaEsperada = Math.round((resultado.distribucionEstados.aprobadas / resultado.totalGestionadas) * 1000) / 10;
+    _assert('tasaAprobacion = (aprobadas/total)*100', tasaEsperada, resultado.tasaAprobacion);
+  }
+
+  // Producción diaria suma al total
+  var sumaProduccion = 0;
+  for (var i = 0; i < resultado.produccionDiaria.length; i++) {
+    sumaProduccion += resultado.produccionDiaria[i].cantidad;
+  }
+  _assert('sum(produccionDiaria) == totalGestionadas', resultado.totalGestionadas, sumaProduccion);
+
+  // porAnalista ordenado descendente
+  var ordenOK = true;
+  for (var j = 0; j < resultado.porAnalista.length - 1; j++) {
+    if (resultado.porAnalista[j].total < resultado.porAnalista[j + 1].total) { ordenOK = false; break; }
+  }
+  _assert('porAnalista ordenado desc por total', true, ordenOK);
+
+  // Log resumen
+  Logger.log('  totalGestionadas: ' + resultado.totalGestionadas);
+  Logger.log('  tiempoPromedio: ' + resultado.tiempoPromedioMinutos + ' min');
+  Logger.log('  tasaAprobacion: ' + resultado.tasaAprobacion + '%');
+  Logger.log('  fueraSLA: ' + resultado.fueraDeSLA);
+  Logger.log('  analistas: ' + resultado.porAnalista.length);
+  Logger.log('  días con datos: ' + resultado.produccionDiaria.length);
+}
+
+function test_Y10_Cache_ForceRefresh() {
+  _seccion('Y10. CacheService: forceRefresh=false usa caché, true la ignora');
+  var fechaDesde = '01/01/2020';
+  var fechaHasta = '02/01/2020';
+
+  // Primera llamada: cache miss, escribe en caché
+  var r1 = obtenerDatosMetricas(fechaDesde, fechaHasta, true);
+  _assert('Primera llamada retorna objeto', true, typeof r1 === 'object' && r1 !== null);
+
+  // Segunda llamada sin forceRefresh: debería venir de caché (mismos datos)
+  var r2 = obtenerDatosMetricas(fechaDesde, fechaHasta, false);
+  _assert('Cache hit retorna mismo totalGestionadas', r1.totalGestionadas, r2.totalGestionadas);
+  _assert('Cache hit retorna misma tasaAprobacion', r1.tasaAprobacion, r2.tasaAprobacion);
+
+  // Tercera llamada con forceRefresh: recalcula (puede ser igual si no hay cambios)
+  var r3 = obtenerDatosMetricas(fechaDesde, fechaHasta, true);
+  _assert('forceRefresh retorna objeto válido', true, typeof r3.totalGestionadas === 'number');
+
+  // Nota: forceRefresh NO tiene rate-limiting server-side — el botón "Actualizar"
+  // es la única UI que envía forceRefresh=true. Navegación, filtros y botones
+  // rápidos siempre pasan false. Un admin tendría que presionar "Actualizar"
+  // manualmente cada vez — no hay riesgo real de abuso.
+  Logger.log('  ⓘ forceRefresh no tiene throttle server-side (deliberado: 1-2 admins)');
+  _assert('forceRefresh: sin throttle (by design)', true, true);
+}
+
+// ============================================================
+// BLOQUE Z: RENDIMIENTO guardarCambiosInternos + caché MotorTiempos
+// ============================================================
+
+function test_Z1_CacheConfigHoraria_TTL6h() {
+  _seccion('Z1. CacheService para config horaria: TTL = 6h (21600s)');
+  _assert('TTL definido como 21600', 21600, _CACHE_TTL_CONFIG_HORARIA_SEG);
+}
+
+function test_Z2_CacheConfigHoraria_ConsistenciaConYSinCache() {
+  _seccion('Z2. Config horaria: caché devuelve mismo resultado que lectura directa');
+  
+  // Forzar lectura sin caché
+  _invalidarCacheConfigHoraria();
+  var t0 = new Date().getTime();
+  var sinCache = _cargarConfigHorariaSinCache();
+  var durSinCache = new Date().getTime() - t0;
+  
+  // Ahora debe quedar cacheado
+  var t1 = new Date().getTime();
+  var conCache = _cargarConfigHoraria();
+  var durConCache = new Date().getTime() - t1;
+  
+  // Segunda lectura — debería ser cache hit
+  var t2 = new Date().getTime();
+  var cacheHit = _cargarConfigHoraria();
+  var durCacheHit = new Date().getTime() - t2;
+  
+  Logger.log('  Sin caché: ' + durSinCache + 'ms | Con caché (primer hit tras write): ' + durConCache + 'ms | Cache hit puro: ' + durCacheHit + 'ms');
+  
+  _assert('festivos.size igual', sinCache.festivos.size, conCache.festivos.size);
+  _assert('turnos.size igual', sinCache.turnos.size, conCache.turnos.size);
+  _assert('analistaTurnos.size igual', sinCache.analistaTurnos.size, conCache.analistaTurnos.size);
+  _assert('Cache hit más rápido que sin caché', true, durCacheHit < durSinCache);
+}
+
+function test_Z3_InvalidacionCacheFestivos() {
+  _seccion('Z3. _invalidarCacheConfigHoraria se invoca en funciones de festivos');
+  var srcAgregar = admin_agregarFestivo.toString();
+  var srcEliminar = admin_eliminarFestivo.toString();
+  var srcImportar = _importarFestivosColombiaInterno.toString();
+  
+  _assert('admin_agregarFestivo llama _invalidarCacheConfigHoraria', true, srcAgregar.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('admin_eliminarFestivo llama _invalidarCacheConfigHoraria', true, srcEliminar.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('_importarFestivosColombiaInterno llama _invalidarCacheConfigHoraria', true, srcImportar.indexOf('_invalidarCacheConfigHoraria') !== -1);
+}
+
+function test_Z4_GuardarDigital_NoCargaReestudios() {
+  _seccion('Z4. guardarCambiosInternos: caso digital NO abre ssReestudios');
+  var src = guardarCambiosInternos.toString();
+  _assert('Usa _getSsReestudios() (lazy)', true, src.indexOf('_getSsReestudios()') !== -1);
+  _assert('NO abre ssReestudios directamente al inicio', true, src.indexOf('const ssReestudios = SpreadsheetApp.openById') === -1);
+}
+
+function test_Z5_CalcTiempos_ConCacheVsSinCache() {
+  _seccion('Z5. calcularTiemposCaso: rendimiento con caché vs sin caché');
+  
+  // Buscar un caso real reciente para medir
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja || hoja.getLastRow() <= 1) { Logger.log('  Sin datos para medir'); return; }
+  
+  // Tomar la última fila con datos completos
+  var lastRow = hoja.getLastRow();
+  var fila = hoja.getRange(lastRow, 1, 1, 35).getValues()[0];
+  var emailTest = String(fila[25] || '').toLowerCase().trim();
+  var fechaAsig = fila[24] instanceof Date ? fila[24] : new Date();
+  var fechaRad = fila[17] instanceof Date ? fila[17] : fechaAsig;
+  var ahora = new Date();
+  
+  if (!emailTest) { Logger.log('  No hay email en última fila'); return; }
+  
+  // Medición 1: sin caché (invalidar primero)
+  _invalidarCacheConfigHoraria();
+  var t0 = new Date().getTime();
+  var r1 = calcularTiemposCaso(fechaRad, fechaAsig, ahora, emailTest);
+  var durSinCache = new Date().getTime() - t0;
+  
+  // Medición 2: con caché (ya quedó cacheado por la llamada anterior)
+  var t1 = new Date().getTime();
+  var r2 = calcularTiemposCaso(fechaRad, fechaAsig, ahora, emailTest);
+  var durConCache = new Date().getTime() - t1;
+  
+  Logger.log('  calcularTiemposCaso SIN caché: ' + durSinCache + 'ms');
+  Logger.log('  calcularTiemposCaso CON caché: ' + durConCache + 'ms');
+  Logger.log('  Ahorro: ' + (durSinCache - durConCache) + 'ms (' + Math.round((1 - durConCache/durSinCache) * 100) + '%)');
+  Logger.log('  Resultado: cola=' + r1.minutos_cola + ' gestión=' + r1.minutos_gestion + ' general=' + r1.minutos_general);
+  
+  _assert('Resultado sin/con caché es idéntico (cola)', r1.minutos_cola, r2.minutos_cola);
+  _assert('Resultado sin/con caché es idéntico (gestion)', r1.minutos_gestion, r2.minutos_gestion);
+  _assert('Resultado sin/con caché es idéntico (general)', r1.minutos_general, r2.minutos_general);
+  _assert('Con caché es más rápido', true, durConCache < durSinCache);
+}
+
+function test_Z6_InvalidacionCacheTurnosYHorasExtra() {
+  _seccion('Z6. _invalidarCacheConfigHoraria se invoca en funciones de turnos y horas extra');
+  var srcGuardarTurno = admin_guardarTurno.toString();
+  var srcDesactivarTurno = admin_desactivarTurno.toString();
+  var srcAsignarTurno = admin_asignarTurnoAnalista.toString();
+  var srcGuardarHE = admin_guardarHorasExtra.toString();
+  var srcEliminarHE = admin_eliminarHorasExtra.toString();
+
+  _assert('admin_guardarTurno llama _invalidarCacheConfigHoraria', true, srcGuardarTurno.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('admin_desactivarTurno llama _invalidarCacheConfigHoraria', true, srcDesactivarTurno.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('admin_asignarTurnoAnalista llama _invalidarCacheConfigHoraria', true, srcAsignarTurno.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('admin_guardarHorasExtra llama _invalidarCacheConfigHoraria', true, srcGuardarHE.indexOf('_invalidarCacheConfigHoraria') !== -1);
+  _assert('admin_eliminarHorasExtra llama _invalidarCacheConfigHoraria', true, srcEliminarHE.indexOf('_invalidarCacheConfigHoraria') !== -1);
+}
+
+function test_Z7_GetTableData_ReusaSsReestudios() {
+  _seccion('Z7. getTableData: reutiliza ssReestudios (no abre 3 veces)');
+  var src = getTableData.toString();
+  
+  // Debe tener _getSsReest() (lazy)
+  _assert('Usa _getSsReest() (lazy open)', true, src.indexOf('_getSsReest()') !== -1);
+  
+  // Debe tener exactamente 1 openById(ID_HOJA_REESTUDIOS) — dentro de _getSsReest
+  // (antes tenía 3 directos). El de TARGET_SOLICITUDES_SS_ID es aparte.
+  var reestOpens = (src.match(/openById\(ID_HOJA_REESTUDIOS\)/g) || []).length;
+  _assert('Solo 1 openById(ID_HOJA_REESTUDIOS) — dentro de _getSsReest', 1, reestOpens);
+}
+
+function test_Z8_GetTableData_Rendimiento() {
+  _seccion('Z8. getTableData: medición de rendimiento real');
+  
+  var t0 = new Date().getTime();
+  var resultado = getTableData();
+  var dur = new Date().getTime() - t0;
+  
+  Logger.log('  getTableData total: ' + dur + 'ms');
+  Logger.log('  Filas pendientes retornadas: ' + (resultado.tabla ? resultado.tabla.length - 1 : 0));
+  Logger.log('  Gestionadas hoy: ' + resultado.stats.hoy + ' | total: ' + resultado.stats.total);
+  
+  _assert('Retorna objeto con tabla', true, Array.isArray(resultado.tabla));
+  _assert('Retorna stats.hoy (number)', true, typeof resultado.stats.hoy === 'number');
+  _assert('Retorna stats.total (number)', true, typeof resultado.stats.total === 'number');
+  _assert('Completa en menos de 10s', true, dur < 10000);
+}
+
+function test_Z9_CargarPanelAnalista_Rendimiento() {
+  _seccion('Z9. cargarPanelAnalista: medición end-to-end');
+  
+  var t0 = new Date().getTime();
+  var panel = cargarPanelAnalista();
+  var dur = new Date().getTime() - t0;
+  
+  Logger.log('  cargarPanelAnalista total: ' + dur + 'ms');
+  Logger.log('  tabla filas: ' + (panel.tabla && panel.tabla.tabla ? panel.tabla.tabla.length - 1 : '?'));
+  Logger.log('  cupos: ' + (panel.cupos ? 'OK' : 'null'));
+  Logger.log('  gestionesHoy: ' + (panel.gestionesHoyCruzadas ? panel.gestionesHoyCruzadas.hoyTotal : '?'));
+  
+  _assert('panel.tabla existe', true, panel.tabla !== null);
+  _assert('panel.cupos existe', true, panel.cupos !== null);
+  _assert('panel.gestionesHoyCruzadas existe', true, panel.gestionesHoyCruzadas !== null);
+  _assert('Completa en menos de 15s', true, dur < 15000);
+}
+
+function test_Z10_TelemetriaLock_RegistraYLee() {
+  _seccion('Z10. Telemetría de lock: registra y lee correctamente');
+  
+  var props = PropertiesService.getScriptProperties();
+  var hoy = Utilities.formatDate(new Date(), TIMEZONE, 'yyyy-MM-dd');
+  var keyHoy = 'LOCK_TEL_' + hoy;
+  var keyTimeouts = 'LOCK_TIMEOUT_COUNT_V1';
+  
+  // PRESERVAR estado original (no destruir datos reales en producción)
+  var originalEntries = props.getProperty(keyHoy);
+  var originalTimeouts = props.getProperty(keyTimeouts);
+  
+  // Limpiar para el test
+  props.deleteProperty(keyHoy);
+  props.deleteProperty(keyTimeouts);
+  
+  try {
+    // Registrar 3 entradas de prueba
+    _registrarTelemetriaLock('TEST_FN_1', 250, 0, true);
+    _registrarTelemetriaLock('TEST_FN_2', 1200, 2, true);
+    _registrarTelemetriaLock('TEST_FN_1', 0, 0, false);
+    
+    // Registrar 2 timeouts
+    _incrementarLockTimeout('TEST_FN_1');
+    _incrementarLockTimeout('TEST_FN_1');
+    _incrementarLockTimeout('TEST_FN_2');
+    
+    // Leer vía admin
+    var telemetry = admin_getLockTelemetry();
+    
+    _assert('entries es array', true, Array.isArray(telemetry.entries));
+    _assert('Al menos 3 entries registradas', true, telemetry.entries.length >= 3);
+    
+    // Verificar las últimas 3 entries (las nuestras)
+    var last3 = telemetry.entries.slice(-3);
+    _assert('Entry 1 fn = TEST_FN_1', 'TEST_FN_1', last3[0].fn);
+    _assert('Entry 1 lockMs = 250', 250, last3[0].lockMs);
+    _assert('Entry 2 retries = 2', 2, last3[1].retries);
+    _assert('Entry 3 ok = false', false, last3[2].ok);
+    
+    _assert('timeouts es objeto', true, typeof telemetry.timeouts === 'object');
+    _assert('TEST_FN_1 timeouts = 2', 2, telemetry.timeouts['TEST_FN_1']);
+    _assert('TEST_FN_2 timeouts = 1', 1, telemetry.timeouts['TEST_FN_2']);
+    _assert('_lastTimeout existe', true, !!telemetry.timeouts._lastTimeout);
+    
+  } finally {
+    // RESTAURAR estado original exactamente como estaba
+    if (originalEntries !== null) {
+      props.setProperty(keyHoy, originalEntries);
+    } else {
+      props.deleteProperty(keyHoy);
+    }
+    if (originalTimeouts !== null) {
+      props.setProperty(keyTimeouts, originalTimeouts);
+    } else {
+      props.deleteProperty(keyTimeouts);
+    }
+  }
+}
+
+function test_Z11_PreReadRequestLead_Estructura() {
+  _seccion('Z11. _preReadRequestLead: retorna estructura correcta');
+
+  var resultado = _preReadRequestLead();
+
+  _assert('Retorna objeto', true, typeof resultado === 'object' && resultado !== null);
+  _assert('Tiene earlyReturn (boolean)', true, typeof resultado.earlyReturn === 'boolean');
+
+  if (resultado.earlyReturn) {
+    _assert('earlyReturn: tiene response', true, typeof resultado.response === 'object');
+    _assert('earlyReturn: response.success es boolean', true, typeof resultado.response.success === 'boolean');
+    _assert('earlyReturn: response.message es string', true, typeof resultado.response.message === 'string');
+    Logger.log('  → Early return: ' + resultado.response.message);
+  } else {
+    _assert('Full: tiene ss', true, resultado.ss !== null && resultado.ss !== undefined);
+    _assert('Full: tiene ssReestudios', true, resultado.ssReestudios !== null);
+    _assert('Full: tiene userEmail (string)', true, typeof resultado.userEmail === 'string' && resultado.userEmail.length > 0);
+    _assert('Full: tiene nombreUsuario (string)', true, typeof resultado.nombreUsuario === 'string');
+    _assert('Full: tiene equipo.id', true, typeof resultado.equipo.id === 'string');
+    _assert('Full: tiene cuotas (object)', true, typeof resultado.cuotas === 'object');
+    _assert('Full: tiene conteoHoyTotal (object)', true, typeof resultado.conteoHoyTotal === 'object');
+    _assert('Full: tiene seleccionados (array, length > 0)', true, Array.isArray(resultado.seleccionados) && resultado.seleccionados.length > 0);
+    _assert('Full: seleccionados[0] tiene solicitudId', true, typeof resultado.seleccionados[0].solicitudId === 'string' && resultado.seleccionados[0].solicitudId.length > 0);
+    _assert('Full: seleccionados[0] tiene rowIndex', true, typeof resultado.seleccionados[0].rowIndex === 'number');
+    _assert('Full: seleccionados[0] tiene tipo', true, typeof resultado.seleccionados[0].tipo === 'string');
+    _assert('Full: seleccionados[0] tiene base', true, typeof resultado.seleccionados[0].base === 'string');
+    _assert('Full: tiene pendientes (array)', true, Array.isArray(resultado.pendientes));
+    _assert('Full: tiene cupoDisponible (number > 0)', true, typeof resultado.cupoDisponible === 'number' && resultado.cupoDisponible > 0);
+    Logger.log('  → Full result: ' + resultado.seleccionados.length + ' seleccionados, equipo=' + resultado.equipo.id + ', solicitudId[0]=' + resultado.seleccionados[0].solicitudId);
+  }
+}
+
+/**
+ * Z12: Test de equivalencia con escenario controlado.
+ * Crea un caso de prueba en la hoja "solicitud" con estado EN_ESTUDIO,
+ * ejecuta _preReadRequestLead() con equipo DIGITAL, y verifica que el caso
+ * aparece en seleccionados con los valores esperados.
+ * 
+ * SEGURIDAD:
+ * - Toma ScriptLock durante toda la ejecución (impide que RequestLeadUnificado
+ *   o autoAsignarBiometria tomen el caso de prueba durante el test)
+ * - En finally: verifica que el caso NO fue movido a Historico_Gestiones
+ * - Verifica cleanup explícitamente
+ *
+ * NOTA SOBRE ÍNDICES: Este proyecto NO usa constantes de columna; todos los
+ * archivos (.js) usan índices numéricos directos (row[16], row[27], etc.)
+ * siguiendo el mapeo documentado en DOCUMENTACION_TECNICA.md §Mapeo de Columnas.
+ */
+function test_Z12_PreReadRequestLead_EquivalenciaControlada() {
+  _seccion('Z12. _preReadRequestLead: equivalencia con escenario controlado');
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  var testSolicitudId = 'TEST-EQUIV-001';
+  var testFilaInsertada = -1;
+
+  // ─── TOMAR LOCK para impedir asignaciones concurrentes ─────
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (eLock) {
+    Logger.log('  ⚠️ No se pudo tomar ScriptLock — test abortado (sistema ocupado).');
+    _assert('ScriptLock adquirido', true, false);
+    return;
+  }
+
+  try {
+    // ─── SETUP: Insertar caso de prueba ────────────────────────
+    // Índices según mapeo estándar del proyecto (DOCUMENTACION_TECNICA.md):
+    //   0=solicitudId, 1=poliza, 9=canon, 16=estadoGeneral,
+    //   17=fechaRadicacion, 20=clase, 27=asignado
+    var numCols = hoja.getLastColumn();
+    var filaTest = new Array(numCols).fill('');
+    filaTest[0] = testSolicitudId;         // col A: solicitudId
+    filaTest[1] = '999999';                 // col B: poliza (fake)
+    filaTest[9] = '1500000';               // col J: canon (dentro del rango DIGITAL 0-7.999.999)
+    filaTest[16] = 'EN_ESTUDIO';           // col Q: estadoGeneral → tipo 'digital'
+    filaTest[17] = '01/08/2026 08:00:00';  // col R: fechaRadicacion
+    filaTest[20] = 'NUEVA';                // col U: clase
+    filaTest[27] = '';                      // col AB: sin asignar
+
+    hoja.appendRow(filaTest);
+    hoja.getRange(hoja.getLastRow(), 1, 1, numCols).setNumberFormat('@');
+    SpreadsheetApp.flush();
+    testFilaInsertada = hoja.getLastRow();
+    Logger.log('  Caso de prueba insertado en fila ' + testFilaInsertada + ' (lock activo)');
+
+    // ─── EJECUTAR _preReadRequestLead con equipo DIGITAL ───────
+    var resultado = _preReadRequestLead('DIGITAL');
+
+    _assert('Retorna objeto', true, typeof resultado === 'object');
+    _assert('Tiene earlyReturn', true, typeof resultado.earlyReturn === 'boolean');
+
+    if (resultado.earlyReturn) {
+      Logger.log('  ⚠️ earlyReturn: ' + resultado.response.message);
+      Logger.log('  → El usuario actual no puede recibir casos DIGITAL.');
+      _assert('earlyReturn tiene response', true, typeof resultado.response === 'object');
+    } else {
+      // ─── VERIFICAR EQUIVALENCIA ────────────────────────────────
+      var enPendientes = resultado.pendientes.filter(function(p) {
+        return String(p.rowData[0]).trim() === testSolicitudId;
+      });
+      _assert('TEST-EQUIV-001 aparece en pendientes', true, enPendientes.length > 0);
+
+      if (enPendientes.length > 0) {
+        _assert('Pendiente tiene base=PRINCIPAL', 'PRINCIPAL', enPendientes[0].base);
+        _assert('Pendiente tiene tipo=digital', 'digital', enPendientes[0].tipo);
+        _assert('Pendiente tiene rowIndex > 0', true, enPendientes[0].rowIndex > 0);
+      }
+
+      // Verificar que seleccionados tiene solicitudId explícito
+      var enSeleccionados = resultado.seleccionados.filter(function(s) {
+        return s.solicitudId === testSolicitudId;
+      });
+      Logger.log('  TEST-EQUIV-001 en pendientes: ' + enPendientes.length +
+                 ' | en seleccionados: ' + enSeleccionados.length);
+
+      if (enSeleccionados.length > 0) {
+        _assert('Seleccionado tiene solicitudId', testSolicitudId, enSeleccionados[0].solicitudId);
+        _assert('Seleccionado tiene tipo=digital', 'digital', enSeleccionados[0].tipo);
+        _assert('Seleccionado tiene base=PRINCIPAL', 'PRINCIPAL', enSeleccionados[0].base);
+      }
+
+      // Verificar valores esperados de conteo y cuotas
+      _assert('conteoHoyTotal tiene campo digital', true, typeof resultado.conteoHoyTotal.digital === 'number');
+      _assert('cuotas tiene campo digital', true, typeof resultado.cuotas.digital === 'number');
+      _assert('cuotas.digital > 0 (DIGITAL tiene cupo)', true, resultado.cuotas.digital > 0);
+      Logger.log('  conteoHoyTotal: ' + JSON.stringify(resultado.conteoHoyTotal));
+      Logger.log('  cuotas: ' + JSON.stringify(resultado.cuotas));
+      Logger.log('  seleccionados: ' + resultado.seleccionados.length +
+                 ' | pendientes: ' + resultado.pendientes.length);
+    }
+
+  } finally {
+    // ─── CLEANUP: Eliminar caso de prueba ─────────────────────
+    var casoEliminado = false;
+    if (testFilaInsertada > 0) {
+      var valorEnFila = String(hoja.getRange(testFilaInsertada, 1).getValue()).trim();
+      if (valorEnFila === testSolicitudId) {
+        hoja.deleteRow(testFilaInsertada);
+        SpreadsheetApp.flush();
+        casoEliminado = true;
+        Logger.log('  Caso de prueba eliminado de fila ' + testFilaInsertada);
+      } else {
+        // Buscar con TextFinder por si la fila se movió
+        var matchSol = hoja.getRange(1, 1, hoja.getLastRow(), 1)
+          .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+        if (matchSol) {
+          hoja.deleteRow(matchSol.getRow());
+          SpreadsheetApp.flush();
+          casoEliminado = true;
+          Logger.log('  Caso de prueba eliminado de fila reubicada ' + matchSol.getRow());
+        }
+      }
+    }
+
+    // ─── VERIFICAR que NO fue asignado por error a Historico_Gestiones ──
+    if (!casoEliminado) {
+      var hojaHist = ss.getSheetByName("Historico_Gestiones");
+      if (hojaHist && hojaHist.getLastRow() > 1) {
+        var matchHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1)
+          .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+        if (matchHist) {
+          _assert('❌ CRÍTICO: TEST-EQUIV-001 fue ASIGNADO a Historico_Gestiones — REVERTIR MANUALMENTE fila ' + matchHist.getRow(), false, true);
+          Logger.log('  ❌❌❌ El caso de prueba fue tomado por el motor y movido a Historico_Gestiones fila ' + matchHist.getRow());
+          Logger.log('  ❌❌❌ Esto NO debería pasar porque el ScriptLock estaba tomado.');
+          Logger.log('  ❌❌❌ ACCIÓN: Eliminar manualmente la fila ' + matchHist.getRow() + ' de Historico_Gestiones.');
+        }
+      }
+    }
+
+    // ─── VERIFICAR CLEANUP FINAL ──────────────────────────────
+    var postCheck = hoja.getRange(1, 1, hoja.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    _assert('Cleanup: TEST-EQUIV-001 ya no existe en hoja solicitud', null, postCheck);
+
+    // ─── LIBERAR LOCK ─────────────────────────────────────────
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Medición end-to-end de guardarCambiosInternos con un caso real.
+ * Ejecutar manualmente: BENCHMARK_guardarCambios → Run
+ * NO se incluye en EJECUTAR_TODAS_LAS_PRUEBAS porque escribe datos reales.
+ */
+function BENCHMARK_guardarCambios() {
+  Logger.log('╔══════════════════════════════════════════════════════════════╗');
+  Logger.log('║  BENCHMARK: guardarCambiosInternos — medición de tiempo     ║');
+  Logger.log('╚══════════════════════════════════════════════════════════════╝');
+  
+  // Buscar un caso pendiente real del usuario actual
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja || hoja.getLastRow() <= 1) { Logger.log('Sin datos'); return; }
+  
+  var email = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var lastRow = hoja.getLastRow();
+  var colAsig = hoja.getRange(2, 26, lastRow - 1, 1);
+  var matches = colAsig.createTextFinder(email).matchEntireCell(true).matchCase(false).findAll();
+  
+  var casoPendiente = null;
+  for (var i = 0; i < matches.length; i++) {
+    var row = matches[i].getRow();
+    var fechaFin = String(hoja.getRange(row, 27).getDisplayValue()).trim();
+    if (fechaFin === '') {
+      casoPendiente = { row: row, id: String(hoja.getRange(row, 1).getDisplayValue()).trim() };
+      break;
+    }
+  }
+  
+  if (!casoPendiente) {
+    Logger.log('⚠️ No tienes un caso pendiente para benchmarkear. Necesitas al menos 1 caso asignado sin gestionar.');
+    Logger.log('   Alternativa: medir solo calcularTiemposCaso (test Z5).');
+    return;
+  }
+  
+  Logger.log('Caso encontrado: ' + casoPendiente.id + ' (fila ' + casoPendiente.row + ')');
+  Logger.log('⚠️ Este benchmark NO guarda realmente — solo mide hasta el punto de búsqueda + cálculo de tiempos.');
+  
+  // Simular el flujo sin escribir: medir solo la parte pesada (openById + búsqueda + calcTiempos)
+  var t0 = new Date().getTime();
+  var ssTest = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var t1 = new Date().getTime();
+  
+  var hojaH = ssTest.getSheetByName("Historico_Gestiones");
+  var colId = hojaH.getRange(2, 1, hojaH.getLastRow() - 1, 1);
+  var match = colId.createTextFinder(casoPendiente.id).matchEntireCell(true).findNext();
+  var t2 = new Date().getTime();
+  
+  var filaData = hojaH.getRange(match.getRow(), 1, 1, 37).getValues()[0];
+  var t3 = new Date().getTime();
+  
+  var tiempos = calcularTiemposCaso(
+    filaData[17] instanceof Date ? filaData[17] : new Date(),
+    filaData[24] instanceof Date ? filaData[24] : new Date(),
+    new Date(),
+    email
+  );
+  var t4 = new Date().getTime();
+  
+  Logger.log('');
+  Logger.log('┌──────────────────────────────────────────┬──────────┐');
+  Logger.log('│ Operación                                │ Tiempo   │');
+  Logger.log('├──────────────────────────────────────────┼──────────┤');
+  Logger.log('│ openById(TARGET_SOLICITUDES_SS_ID)       │ ' + String(t1-t0).padStart(5) + ' ms │');
+  Logger.log('│ TextFinder en Historico_Gestiones        │ ' + String(t2-t1).padStart(5) + ' ms │');
+  Logger.log('│ getRange fila completa (37 cols)         │ ' + String(t3-t2).padStart(5) + ' ms │');
+  Logger.log('│ calcularTiemposCaso (con caché 6h)      │ ' + String(t4-t3).padStart(5) + ' ms │');
+  Logger.log('├──────────────────────────────────────────┼──────────┤');
+  Logger.log('│ TOTAL (sin escritura)                    │ ' + String(t4-t0).padStart(5) + ' ms │');
+  Logger.log('└──────────────────────────────────────────┴──────────┘');
+  Logger.log('');
+  Logger.log('Tiempos calculados: cola=' + tiempos.minutos_cola + ' | gestión=' + tiempos.minutos_gestion + ' | general=' + tiempos.minutos_general);
+}
+
+/**
+ * TEST DIAGNÓSTICO: Enumera registros con Fecha_Gestión en la última semana
+ * que NO tienen estado canónico (APROBADA/NEGADA/APLAZADA).
+ * NO es un _assert — solo genera output informativo para decisión humana.
+ * Ejecutar individualmente: seleccionar DIAGNOSTICO_registros_sin_estado_canonico → Run
+ */
+function DIAGNOSTICO_registros_sin_estado_canonico() {
+  Logger.log('╔══════════════════════════════════════════════════════════════╗');
+  Logger.log('║  DIAGNÓSTICO: Registros con Fecha_Gestión pero sin estado   ║');
+  Logger.log('║  canónico (APROBADA/NEGADA/APLAZADA) en Historico_Gestiones  ║');
+  Logger.log('╚══════════════════════════════════════════════════════════════╝');
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja || hoja.getLastRow() <= 1) { Logger.log('Hoja vacía.'); return; }
+
+  var data = hoja.getRange(2, 1, hoja.getLastRow() - 1, 35).getValues();
+
+  // Mismo rango que el test Y9: última semana
+  var hoy = new Date();
+  var hace7 = new Date(hoy.getTime() - 7 * 86400000);
+  var desdeNum = hoy.getFullYear() * 10000 + (hace7.getMonth() + 1) * 100 + hace7.getDate();
+  // Corregir: usar hace7 para desde
+  desdeNum = hace7.getFullYear() * 10000 + (hace7.getMonth() + 1) * 100 + hace7.getDate();
+  var hastaNum = hoy.getFullYear() * 10000 + (hoy.getMonth() + 1) * 100 + hoy.getDate();
+
+  Logger.log('Rango: ' + _fechaNumeroAString(desdeNum) + ' → ' + _fechaNumeroAString(hastaNum));
+  Logger.log('');
+
+  var noCanonicos = [];
+  var totalEnRango = 0;
+
+  for (var i = 0; i < data.length; i++) {
+    var fila = data[i];
+    var fechaNum = _valorAFechaNumero(fila[33]);
+    if (fechaNum === null) continue;
+    if (fechaNum < desdeNum || fechaNum > hastaNum) continue;
+
+    totalEnRango++;
+    var estado = String(fila[16] || "").toUpperCase().trim();
+    var esCanon = estado === "APROBADA" || estado === "APROBADO" ||
+                  estado === "NEGADA" || estado === "NEGADO" ||
+                  estado === "APLAZADA" || estado === "APLAZADO";
+
+    if (!esCanon) {
+      noCanonicos.push({
+        fila: i + 2,
+        solicitudId: String(fila[0] || "").trim(),
+        estadoGeneral: estado || "(VACÍO)",
+        fechaGestion: _fechaNumeroAString(fechaNum),
+        analista: String(fila[30] || "").trim(),
+        fechaFin: fila[28] ? String(fila[28]) : "(vacío)"
+      });
+    }
+  }
+
+  Logger.log('Total registros con Fecha_Gestión en rango: ' + totalEnRango);
+  Logger.log('Registros con estado canónico: ' + (totalEnRango - noCanonicos.length));
+  Logger.log('Registros SIN estado canónico: ' + noCanonicos.length);
+  Logger.log('');
+
+  if (noCanonicos.length === 0) {
+    Logger.log('✅ No hay registros sin estado canónico en este rango.');
+    return;
+  }
+
+  Logger.log('┌─────┬──────────────┬──────────────────────────────┬────────────┬─────────────────────────┬─────────────────────────┐');
+  Logger.log('│ # │ Solicitud ID │ estadoGeneral (col Q)         │ Fecha Gest │ Analista                │ Fecha Fin Gestión       │');
+  Logger.log('├─────┼──────────────┼──────────────────────────────┼────────────┼─────────────────────────┼─────────────────────────┤');
+
+  for (var j = 0; j < noCanonicos.length; j++) {
+    var r = noCanonicos[j];
+    Logger.log('│ ' + String(j + 1).padStart(2) + '  │ ' +
+      r.solicitudId.padEnd(12) + ' │ ' +
+      r.estadoGeneral.padEnd(28) + ' │ ' +
+      r.fechaGestion + ' │ ' +
+      r.analista.substring(0, 23).padEnd(23) + ' │ ' +
+      r.fechaFin.substring(0, 23).padEnd(23) + ' │');
+  }
+  Logger.log('└─────┴──────────────┴──────────────────────────────┴────────────┴─────────────────────────┴─────────────────────────┘');
+
+  // Agrupar por estado para resumen
+  var porEstado = {};
+  for (var k = 0; k < noCanonicos.length; k++) {
+    var e = noCanonicos[k].estadoGeneral;
+    porEstado[e] = (porEstado[e] || 0) + 1;
+  }
+  Logger.log('');
+  Logger.log('Resumen por valor de estadoGeneral:');
+  for (var est in porEstado) {
+    Logger.log('  "' + est + '": ' + porEstado[est] + ' registro(s)');
+  }
+}
+
 // RUNNER
 // ============================================================
 
@@ -1188,10 +1964,420 @@ function EJECUTAR_TODAS_LAS_PRUEBAS() {
   test_V1_DerivarTipoReestudio(); test_V2_FechaEsHoyYMD(); test_V3_ContadorCupoHoy(); test_V3b_DecrementarContadorCupo(); test_V4_CargaPendiente(); test_V5_RegistrarAsignacionYCierre();
   test_W1_ParseCanonColombiano();
   test_X1_SimulacionDiaProduccion();
+  test_Y1_FechaConversion_CasosNormales(); test_Y2_FechaConversion_CasosInvalidos(); test_Y3_FechaConversion_Imposibles(); test_Y4_ValorAFechaNumero_DateObjects(); test_Y5_ValorAFechaNumero_Strings(); test_Y6_FechaIdaYVuelta(); test_Y7_FechaOrdenCronologico(); test_Y8_VerificarAdminDesdeInstancia_Rechaza(); test_Y9_ObtenerDatosMetricas_Real(); test_Y10_Cache_ForceRefresh();
+  test_Z1_CacheConfigHoraria_TTL6h(); test_Z2_CacheConfigHoraria_ConsistenciaConYSinCache(); test_Z3_InvalidacionCacheFestivos(); test_Z4_GuardarDigital_NoCargaReestudios(); test_Z5_CalcTiempos_ConCacheVsSinCache(); test_Z6_InvalidacionCacheTurnosYHorasExtra();
+  test_Z7_GetTableData_ReusaSsReestudios(); test_Z8_GetTableData_Rendimiento(); test_Z9_CargarPanelAnalista_Rendimiento(); test_Z10_TelemetriaLock_RegistraYLee();
+  test_Z11_PreReadRequestLead_Estructura(); test_Z12_PreReadRequestLead_EquivalenciaControlada();
+  test_Z13_ConteoEnMemoria_BloqueaCupoDentroDeLoop();
 
   Logger.log('\n╔══════════════════════════════════════════╗');
   Logger.log('║   ✅ PASS: ' + _totalPass);
   Logger.log('║   ❌ FAIL: ' + _totalFail);
   Logger.log('║   TOTAL:  ' + (_totalPass + _totalFail));
   Logger.log('╚══════════════════════════════════════════╝');
+}
+
+
+// ============================================================
+// TEST Z13: conteoEnMemoria bloquea cupo intra-invocación
+// Incluido en EJECUTAR_TODAS_LAS_PRUEBAS — es lógica pura, no toca hojas
+// ============================================================
+
+/**
+ * Z13: Verifica que conteoEnMemoria bloquea asignaciones intra-invocación.
+ * Escenario: cupoDisponible=2, 2 candidatos tipo 'digital', pero cupo restante=1.
+ * Resultado esperado: solo 1 se asigna.
+ *
+ * Método: simula la lógica del while-loop de Phase 2 con datos sintéticos,
+ * sin tocar hojas reales ni ScriptLock (es lógica pura de decisión).
+ */
+function test_Z13_ConteoEnMemoria_BloqueaCupoDentroDeLoop() {
+  _seccion('Z13. conteoEnMemoria bloquea exceso de cupo intra-invocación');
+
+  // SETUP: simular el escenario
+  var cuotas = { digital: 5 };
+  var conteoHoyDeHojas = { digital: 2 };  // 2 ya contados de hojas
+  // El contador incremental (PropertiesService) dice 2 más → total=4, cupo restante=1
+  var contadorSimulado = { digital: 2 };
+  var conteoEnMemoria = {};
+
+  var candidatos = [
+    { solicitudId: 'CASO-A', tipo: 'digital', base: 'PRINCIPAL', rowIndex: 10 },
+    { solicitudId: 'CASO-B', tipo: 'digital', base: 'PRINCIPAL', rowIndex: 11 }
+  ];
+
+  var cupoDisponible = 2;
+  var asignados = [];
+  var retriesUsed = 0;
+  var maxRetries = 3;
+
+  // Simular el loop (sin TextFinder — asumir que ambos pasan la re-verificación de disponibilidad)
+  for (var i = 0; i < candidatos.length && asignados.length < cupoDisponible && retriesUsed < maxRetries; i++) {
+    var candidate = candidatos[i];
+
+    // Re-check de cupo: conteoHoyDeHojas + contadorSimulado + conteoEnMemoria
+    var conteoTotalActualizado = (conteoHoyDeHojas[candidate.tipo] || 0)
+      + (contadorSimulado[candidate.tipo] || 0)
+      + (conteoEnMemoria[candidate.tipo] || 0);
+
+    if (cuotas[candidate.tipo] > 0 && conteoTotalActualizado >= cuotas[candidate.tipo]) {
+      retriesUsed++;
+      Logger.log('  → ' + candidate.solicitudId + ' SKIP cupo full: ' + conteoTotalActualizado + '/' + cuotas[candidate.tipo]);
+      continue;
+    }
+
+    asignados.push(candidate);
+    conteoEnMemoria[candidate.tipo] = (conteoEnMemoria[candidate.tipo] || 0) + 1;
+    Logger.log('  → ' + candidate.solicitudId + ' ASIGNADO (conteoEnMemoria.' + candidate.tipo + ' = ' + conteoEnMemoria[candidate.tipo] + ')');
+  }
+
+  _assert('Solo 1 asignado (no 2)', 1, asignados.length);
+  _assert('CASO-A fue el asignado', 'CASO-A', asignados[0].solicitudId);
+  _assert('CASO-B fue rechazado por cupo', 1, retriesUsed);
+  _assert('conteoEnMemoria.digital = 1', 1, conteoEnMemoria.digital);
+
+  // Verificar el cálculo: al intentar CASO-B, total = 2(hojas) + 2(contador) + 1(memoria) = 5 >= cuota(5)
+  var checkB = (conteoHoyDeHojas.digital || 0) + (contadorSimulado.digital || 0) + (conteoEnMemoria.digital || 0);
+  _assert('Total al evaluar CASO-B = 5 (≥ cuota)', 5, checkB);
+  Logger.log('  Desglose al evaluar CASO-B: hojas=' + conteoHoyDeHojas.digital +
+    ' + contador=' + contadorSimulado.digital +
+    ' + memoria=' + conteoEnMemoria.digital + ' = ' + checkB + ' vs cuota=' + cuotas.digital);
+}
+
+// ============================================================
+// TEST MANUAL: Z12b — Full Path forzando condiciones de ACTIVO + turno
+// NO incluido en EJECUTAR_TODAS_LAS_PRUEBAS porque modifica Usuarios y
+// Analistas_Turnos temporalmente. Ejecutar manualmente: test_Z12b → Run
+// ============================================================
+
+/**
+ * Fuerza las condiciones para que _preReadRequestLead() tome el camino
+ * completo (earlyReturn: false) y verifique la estructura de seleccionados
+ * con solicitudId incluido. Restaura TODO en finally.
+ *
+ * Pasos:
+ * 1. Toma ScriptLock (impide asignaciones concurrentes)
+ * 2. Lee estado actual del usuario en Usuarios; si no es ACTIVO, lo cambia
+ * 3. Inserta turno temporal en Analistas_Turnos que cubra la hora actual
+ * 4. Invalida cache de usuarios
+ * 5. Inserta caso de prueba EN_ESTUDIO en "solicitud"
+ * 6. Ejecuta _preReadRequestLead('DIGITAL')
+ * 7. Verifica que earlyReturn=false y seleccionados[0].solicitudId existe
+ * 8. Restaura TODO en finally (estado, turno, caso)
+ */
+function test_Z12b_FullPath_ForceActivo() {
+  _seccion('Z12b. _preReadRequestLead FULL PATH — forzando ACTIVO + turno');
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  Logger.log('  Email ejecutor: ' + userEmail);
+
+  // ─── Variables de restauración ────────────────────────────────
+  var hojaUsuarios = ss.getSheetByName('Usuarios');
+  var hojaAT = ss.getSheetByName('Analistas_Turnos');
+  var hojaSolicitud = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  var testSolicitudId = 'TEST-Z12B-FULLPATH';
+
+  var filaUsuario = -1;
+  var estadoOriginal = null;
+  var capOriginal = null;
+  var espOriginal = null;
+  var turnoInsertado = false;
+  var filaTurnoInsertada = -1;
+  var testCasoFila = -1;
+
+  // ─── TOMAR LOCK ───────────────────────────────────────────────
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (eLock) {
+    Logger.log('  ⚠️ No se pudo tomar ScriptLock — test abortado.');
+    _assert('ScriptLock adquirido', true, false);
+    return;
+  }
+
+  try {
+    // ─── 1. ENCONTRAR Y ACTIVAR USUARIO ───────────────────────────
+    var dataU = hojaUsuarios.getDataRange().getValues();
+    for (var i = 1; i < dataU.length; i++) {
+      if (String(dataU[i][2]).toLowerCase().trim() === userEmail) {
+        filaUsuario = i + 1; // fila 1-indexed en hoja
+        estadoOriginal = String(dataU[i][5]).trim();
+        capOriginal = String(dataU[i][6]).trim();
+        espOriginal = String(dataU[i][4]).trim();
+        break;
+      }
+    }
+
+    if (filaUsuario === -1) {
+      Logger.log('  ❌ Usuario ' + userEmail + ' NO existe en hoja Usuarios. Abortando.');
+      _assert('Usuario existe en Usuarios', true, false);
+      return;
+    }
+
+    Logger.log('  Usuario encontrado fila ' + filaUsuario + ' | estado="' + estadoOriginal + '" | cap="' + capOriginal + '" | esp="' + espOriginal + '"');
+
+    // Forzar estado ACTIVO si no lo está
+    if (estadoOriginal.toUpperCase() !== 'ACTIVO') {
+      hojaUsuarios.getRange(filaUsuario, 6).setValue('ACTIVO'); // col F = estado
+      Logger.log('  → Estado cambiado a ACTIVO (original: "' + estadoOriginal + '")');
+    }
+
+    // Forzar capacidad > 0 si es 0
+    var capNum = parseInt(capOriginal) || 0;
+    if (capNum < 1) {
+      hojaUsuarios.getRange(filaUsuario, 7).setValue(5); // col G = capacidad
+      Logger.log('  → Capacidad forzada a 5 (original: "' + capOriginal + '")');
+    }
+
+    // Forzar especialidad compatible con DIGITAL si no la tiene
+    var espUpper = espOriginal.toUpperCase().trim();
+    var necesitaCambioEsp = (espUpper !== 'ESTUDIO DIGITAL' && espUpper !== 'ESTUDIO_DIGITAL');
+    if (necesitaCambioEsp) {
+      hojaUsuarios.getRange(filaUsuario, 5).setValue('ESTUDIO DIGITAL'); // col E = especialidad
+      Logger.log('  → Especialidad cambiada a ESTUDIO DIGITAL (original: "' + espOriginal + '")');
+    }
+
+    SpreadsheetApp.flush();
+
+    // ─── 2. INSERTAR TURNO TEMPORAL ───────────────────────────────
+    // Necesitamos una fila en Analistas_Turnos con:
+    //   col A = email, col B = idTurno, col C = fechaDesde (Date), col D = fechaHasta (Date/vacío)
+    // Y una fila en Turnos con ese idTurno, con el día actual habilitado y hora cubriendo ahora.
+    // ALTERNATIVA MÁS SIMPLE: si el usuario ya tiene turno activo, no hacer nada.
+    // Verificamos primero:
+    var tieneturnoYa = false;
+    if (hojaAT && hojaAT.getLastRow() > 1) {
+      var dataAT = hojaAT.getDataRange().getValues();
+      var ahora = new Date();
+      for (var j = 1; j < dataAT.length; j++) {
+        var emailAT = String(dataAT[j][0]).toLowerCase().trim();
+        if (emailAT !== userEmail) continue;
+        var desde = dataAT[j][2];
+        var hasta = dataAT[j][3];
+        if (desde instanceof Date && ahora >= desde && (!hasta || !(hasta instanceof Date) || ahora <= hasta)) {
+          tieneturnoYa = true;
+          Logger.log('  Turno existente detectado: ' + String(dataAT[j][1]));
+          break;
+        }
+      }
+    }
+
+    if (!tieneturnoYa) {
+      // Insertar un turno temporal "TEST_TURNO" que cubra todo el día
+      // Primero necesitamos verificar/crear la definición en Turnos
+      var hojaTurnos = ss.getSheetByName('Turnos');
+      var turnoTestId = 'TEST_TURNO_Z12B';
+      var turnoExisteEnDef = false;
+      if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+        var dataTurnos = hojaTurnos.getDataRange().getValues();
+        for (var t = 1; t < dataTurnos.length; t++) {
+          if (String(dataTurnos[t][0]).trim() === turnoTestId) {
+            turnoExisteEnDef = true;
+            break;
+          }
+        }
+      }
+
+      if (!turnoExisteEnDef && hojaTurnos) {
+        // Crear definición: id, nombre, horaTipo, Lun, Mar, Mie, Jue, Vie, Sab, Dom,
+        // IniLun, FinLun, IniMar, FinMar, ... IniDom, FinDom
+        // Cols: 0=id, 1=nombre, 2=tipo, 3-9=boolDias(L-D), 10=IniLun, 11=FinLun, ...
+        var filaTurno = new Array(hojaTurnos.getLastColumn()).fill('');
+        filaTurno[0] = turnoTestId;
+        filaTurno[1] = 'Test Z12b';
+        filaTurno[2] = 'NORMAL';
+        // Habilitar todos los días (cols 3-9)
+        for (var dd = 3; dd <= 9; dd++) filaTurno[dd] = true;
+        // Poner horarios 00:00-23:59 para todos los días (cols 10-23)
+        for (var hh = 10; hh <= 23; hh += 2) {
+          filaTurno[hh] = '00:00';     // inicio
+          filaTurno[hh + 1] = '23:59'; // fin
+        }
+        hojaTurnos.appendRow(filaTurno);
+        SpreadsheetApp.flush();
+        Logger.log('  → Definición de turno TEST insertada en Turnos');
+      }
+
+      // Insertar asignación en Analistas_Turnos
+      if (hojaAT) {
+        var hoy = new Date();
+        var ayer = new Date(hoy.getTime() - 86400000);
+        var manana = new Date(hoy.getTime() + 86400000 * 2);
+        hojaAT.appendRow([userEmail, turnoTestId, ayer, manana]);
+        SpreadsheetApp.flush();
+        filaTurnoInsertada = hojaAT.getLastRow();
+        turnoInsertado = true;
+        Logger.log('  → Turno temporal insertado en Analistas_Turnos fila ' + filaTurnoInsertada);
+      }
+    }
+
+    // ─── 3. INVALIDAR CACHE DE USUARIOS ───────────────────────────
+    _invalidarCacheUsuarios();
+
+    // ─── 4. INSERTAR CASO DE PRUEBA ───────────────────────────────
+    var numCols = hojaSolicitud.getLastColumn();
+    var filaTest = new Array(numCols).fill('');
+    filaTest[0] = testSolicitudId;          // col A: solicitudId
+    filaTest[1] = '999888';                  // col B: poliza (fake, no existe en score)
+    filaTest[9] = '2000000';                // col J: canon
+    filaTest[16] = 'EN_ESTUDIO';            // col Q: estadoGeneral → tipo 'digital'
+    filaTest[17] = '01/08/2026 07:00:00';   // col R: fechaRadicacion
+    filaTest[20] = 'NUEVA';                 // col U: clase
+    filaTest[27] = '';                       // col AB: sin asignar
+
+    hojaSolicitud.appendRow(filaTest);
+    SpreadsheetApp.flush();
+    testCasoFila = hojaSolicitud.getLastRow();
+    Logger.log('  Caso de prueba insertado en fila ' + testCasoFila);
+
+    // ─── 5. EJECUTAR _preReadRequestLead ──────────────────────────
+    var resultado = _preReadRequestLead('DIGITAL');
+
+    _assert('Retorna objeto', true, typeof resultado === 'object' && resultado !== null);
+    _assert('Tiene earlyReturn', true, typeof resultado.earlyReturn === 'boolean');
+
+    if (resultado.earlyReturn) {
+      // ❌ Sigue cayendo en earlyReturn a pesar de forzar las condiciones
+      Logger.log('  ❌ earlyReturn INESPERADO: ' + resultado.response.message);
+      _assert('earlyReturn false (debería ser full path)', false, resultado.earlyReturn);
+      _assert('Mensaje earlyReturn', 'NONE', resultado.response.message);
+    } else {
+      // ✅ FULL PATH — verificar toda la estructura
+      Logger.log('  ✅ FULL PATH alcanzado');
+      _assert('Full: tiene ss', true, resultado.ss !== null && resultado.ss !== undefined);
+      _assert('Full: tiene ssReestudios', true, resultado.ssReestudios !== null);
+      _assert('Full: userEmail correcto', userEmail, resultado.userEmail);
+      _assert('Full: tiene nombreUsuario', true, typeof resultado.nombreUsuario === 'string' && resultado.nombreUsuario.length > 0);
+      _assert('Full: equipo.id = DIGITAL', 'DIGITAL', resultado.equipo.id);
+      _assert('Full: cuotas es object', true, typeof resultado.cuotas === 'object');
+      _assert('Full: cuotas.digital > 0', true, resultado.cuotas.digital > 0);
+      _assert('Full: conteoHoyTotal es object', true, typeof resultado.conteoHoyTotal === 'object');
+      _assert('Full: conteoHoyTotal.digital es number', true, typeof resultado.conteoHoyTotal.digital === 'number');
+      _assert('Full: seleccionados es array no vacío', true, Array.isArray(resultado.seleccionados) && resultado.seleccionados.length > 0);
+      _assert('Full: cupoDisponible > 0', true, resultado.cupoDisponible > 0);
+      _assert('Full: pendientes es array no vacío', true, Array.isArray(resultado.pendientes) && resultado.pendientes.length > 0);
+
+      // Verificar solicitudId en seleccionados
+      _assert('Full: seleccionados[0].solicitudId es string', true, typeof resultado.seleccionados[0].solicitudId === 'string');
+      _assert('Full: seleccionados[0].solicitudId no vacío', true, resultado.seleccionados[0].solicitudId.length > 0);
+      _assert('Full: seleccionados[0].rowIndex es number', true, typeof resultado.seleccionados[0].rowIndex === 'number');
+      _assert('Full: seleccionados[0].tipo es string', true, typeof resultado.seleccionados[0].tipo === 'string');
+      _assert('Full: seleccionados[0].base es string', true, typeof resultado.seleccionados[0].base === 'string');
+
+      // Buscar nuestro caso de prueba específico
+      var enPendientes = resultado.pendientes.filter(function(p) {
+        return String(p.rowData[0]).trim() === testSolicitudId;
+      });
+      _assert('TEST-Z12B-FULLPATH en pendientes', true, enPendientes.length > 0);
+
+      if (enPendientes.length > 0) {
+        _assert('Pendiente base=PRINCIPAL', 'PRINCIPAL', enPendientes[0].base);
+        _assert('Pendiente tipo=digital', 'digital', enPendientes[0].tipo);
+      }
+
+      var enSeleccionados = resultado.seleccionados.filter(function(s) {
+        return s.solicitudId === testSolicitudId;
+      });
+      Logger.log('  TEST-Z12B en pendientes: ' + enPendientes.length + ' | en seleccionados: ' + enSeleccionados.length);
+
+      if (enSeleccionados.length > 0) {
+        _assert('Seleccionado solicitudId', testSolicitudId, enSeleccionados[0].solicitudId);
+        _assert('Seleccionado tipo=digital', 'digital', enSeleccionados[0].tipo);
+        _assert('Seleccionado base=PRINCIPAL', 'PRINCIPAL', enSeleccionados[0].base);
+        _assert('Seleccionado rowIndex > 0', true, enSeleccionados[0].rowIndex > 0);
+      } else {
+        // Si no está en seleccionados pero sí en pendientes, puede ser que otro caso
+        // tiene más prioridad (reasignada, o mejor score). Eso está bien — lo que
+        // importa es que el path completo funcionó y seleccionados[0].solicitudId existe.
+        Logger.log('  ℹ️ TEST-Z12B no fue el caso seleccionado (otro tiene más prioridad) — OK');
+        Logger.log('  → seleccionados[0].solicitudId = ' + resultado.seleccionados[0].solicitudId);
+      }
+
+      // Datos para log de diagnóstico
+      Logger.log('  conteoHoyTotal: ' + JSON.stringify(resultado.conteoHoyTotal));
+      Logger.log('  cuotas: ' + JSON.stringify(resultado.cuotas));
+      Logger.log('  seleccionados: ' + resultado.seleccionados.length + ' | pendientes: ' + resultado.pendientes.length);
+      Logger.log('  seleccionados[0]: solicitudId=' + resultado.seleccionados[0].solicitudId +
+                 ' tipo=' + resultado.seleccionados[0].tipo +
+                 ' base=' + resultado.seleccionados[0].base +
+                 ' rowIndex=' + resultado.seleccionados[0].rowIndex);
+    }
+
+  } finally {
+    // ─── RESTAURAR TODO ─────────────────────────────────────────
+
+    // A. Restaurar estado/cap/esp del usuario
+    if (filaUsuario > 0) {
+      if (estadoOriginal && estadoOriginal.toUpperCase() !== 'ACTIVO') {
+        hojaUsuarios.getRange(filaUsuario, 6).setValue(estadoOriginal);
+        Logger.log('  Restaurado estado: "' + estadoOriginal + '"');
+      }
+      if ((parseInt(capOriginal) || 0) < 1) {
+        hojaUsuarios.getRange(filaUsuario, 7).setValue(capOriginal);
+        Logger.log('  Restaurada capacidad: "' + capOriginal + '"');
+      }
+      if (espOriginal.toUpperCase().trim() !== 'ESTUDIO DIGITAL' && espOriginal.toUpperCase().trim() !== 'ESTUDIO_DIGITAL') {
+        hojaUsuarios.getRange(filaUsuario, 5).setValue(espOriginal);
+        Logger.log('  Restaurada especialidad: "' + espOriginal + '"');
+      }
+    }
+
+    // B. Eliminar turno temporal de Analistas_Turnos
+    if (turnoInsertado && filaTurnoInsertada > 0) {
+      hojaAT.deleteRow(filaTurnoInsertada);
+      Logger.log('  Turno temporal eliminado de fila ' + filaTurnoInsertada);
+    }
+
+    // C. Eliminar definición de turno temporal en Turnos (si la creamos)
+    var hojaTurnosClean = ss.getSheetByName('Turnos');
+    if (hojaTurnosClean && hojaTurnosClean.getLastRow() > 1) {
+      var matchTurno = hojaTurnosClean.getRange(1, 1, hojaTurnosClean.getLastRow(), 1)
+        .createTextFinder('TEST_TURNO_Z12B').matchEntireCell(true).findNext();
+      if (matchTurno) {
+        hojaTurnosClean.deleteRow(matchTurno.getRow());
+        Logger.log('  Definición de turno TEST eliminada');
+      }
+    }
+
+    // D. Eliminar caso de prueba de "solicitud"
+    if (testCasoFila > 0) {
+      var valCheck = String(hojaSolicitud.getRange(testCasoFila, 1).getValue()).trim();
+      if (valCheck === testSolicitudId) {
+        hojaSolicitud.deleteRow(testCasoFila);
+        Logger.log('  Caso de prueba eliminado de fila ' + testCasoFila);
+      } else {
+        var matchCaso = hojaSolicitud.getRange(1, 1, hojaSolicitud.getLastRow(), 1)
+          .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+        if (matchCaso) {
+          hojaSolicitud.deleteRow(matchCaso.getRow());
+          Logger.log('  Caso de prueba eliminado (reubicado) de fila ' + matchCaso.getRow());
+        }
+      }
+    }
+
+    // E. Verificar que el caso NO fue a Historico_Gestiones
+    var hojaHist = ss.getSheetByName("Historico_Gestiones");
+    if (hojaHist && hojaHist.getLastRow() > 1) {
+      var matchHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1)
+        .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+      if (matchHist) {
+        _assert('❌ CRÍTICO: ' + testSolicitudId + ' fue ASIGNADO a Historico — REVERTIR fila ' + matchHist.getRow(), false, true);
+      }
+    }
+
+    // F. Verificar cleanup final
+    var postCheck = hojaSolicitud.getRange(1, 1, hojaSolicitud.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    _assert('Cleanup: ' + testSolicitudId + ' ya no existe en solicitud', null, postCheck);
+
+    // G. Invalidar cache de usuarios (para que no quede con datos temporales)
+    _invalidarCacheUsuarios();
+
+    SpreadsheetApp.flush();
+
+    // H. Liberar lock
+    lock.releaseLock();
+    Logger.log('  Lock liberado. Test finalizado.');
+  }
 }

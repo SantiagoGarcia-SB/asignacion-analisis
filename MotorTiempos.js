@@ -56,7 +56,7 @@ function _parsearHora(valor) {
 // analistas. Turnos/festivos/horas extra no cambian intra-jornada, así que un TTL corto
 // es seguro.
 const _CACHE_KEY_CONFIG_HORARIA = 'CONFIG_HORARIA_V1';
-const _CACHE_TTL_CONFIG_HORARIA_SEG = 600;
+const _CACHE_TTL_CONFIG_HORARIA_SEG = 21600;
 
 function _cargarConfigHoraria() {
   try {
