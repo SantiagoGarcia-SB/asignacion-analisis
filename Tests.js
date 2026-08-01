@@ -2609,10 +2609,14 @@ function test_Z14_RequestLeadUnificado_FullExecution() {
     }
     _assert('Telemetría tiene entrada RequestLeadUnificado', true, ultimaRLU !== null);
     if (ultimaRLU) {
-      // Phase 2 = re-verify (~300-500ms) + write+flush (1.4-4s, varía con latencia Google)
-      // Medido en 3 corridas: 1705ms, 3376ms, 4297ms. Umbral 5s detecta regresiones
-      // reales sin fallar por variabilidad de la API de Sheets.
-      _assert('lockMs < 5000 (Phase 2 verify+write)', true, ultimaRLU.lockMs < 5000);
+      // Umbral 2500ms: en uso real un analista pide caso cada 5-15 minutos, no cada 20s.
+      // Se observó variabilidad de 1.7s-4.3s en ejecuciones consecutivas rápidas,
+      // consistente con throttling temporal de cuota de Apps Script para escrituras
+      // repetidas. No representativo del uso real (los analistas no piden casos cada
+      // 20-40s de forma mecánica). La verificación real de rendimiento en producción
+      // debe hacerse vía LOCK_TELEMETRY_V1 después de uso real, no con pruebas
+      // consecutivas artificiales.
+      _assert('lockMs < 2500 (Phase 2 verify+write)', true, ultimaRLU.lockMs < 2500);
       _assert('ok === true en telemetría', true, ultimaRLU.ok);
       Logger.log('  Telemetría: lockMs=' + ultimaRLU.lockMs + ' retries=' + ultimaRLU.retries + ' ok=' + ultimaRLU.ok);
     }
@@ -2695,3 +2699,4 @@ function test_Z14_RequestLeadUnificado_FullExecution() {
     Logger.log('  Test Z14 finalizado.');
   }
 }
+
