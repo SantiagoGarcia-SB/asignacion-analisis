@@ -727,6 +727,7 @@ function RequestLeadUnificado(equipoIdOverride) {
       // ─── RE-VERIFICACIÓN con TextFinder ────────────────────────
       if (candidate.base === 'PRINCIPAL') {
         var hojaPrincipal = refPrincipal.hoja;
+        var _t1 = Date.now();
         var match = hojaPrincipal.getRange(1, 1, hojaPrincipal.getLastRow(), 1)
           .createTextFinder(candidate.solicitudId)
           .matchEntireCell(true)
@@ -740,6 +741,7 @@ function RequestLeadUnificado(equipoIdOverride) {
 
         // Verificar que col 28 (asignado) sigue vacía
         var assignedVal = hojaPrincipal.getRange(match.getRow(), 28).getValue();
+        var _t2 = Date.now();
         if (assignedVal !== '' && assignedVal !== null && assignedVal !== undefined) {
           retriesUsed++;
           Logger.log("  Re-verify SKIP (taken): " + candidate.solicitudId + " → " + assignedVal);
@@ -752,6 +754,7 @@ function RequestLeadUnificado(equipoIdOverride) {
         //   contadorActualizado[tipo] — re-lectura de PropertiesService (refleja otros procesos)
         //   conteoEnMemoria[tipo] — asignaciones ya confirmadas en ESTE loop (aún no en Properties)
         var contadorActualizado = _obtenerConteoHoyAnalista(userEmail);
+        var _t3 = Date.now();
         var conteoTotalActualizado = (conteoHoyDeHojas[candidate.tipo] || 0)
           + (contadorActualizado[candidate.tipo] || 0)
           + (conteoEnMemoria[candidate.tipo] || 0);
@@ -760,6 +763,8 @@ function RequestLeadUnificado(equipoIdOverride) {
           Logger.log("  Re-verify SKIP (cupo full): " + candidate.tipo + " " + conteoTotalActualizado + "/" + cuotas[candidate.tipo]);
           continue;
         }
+
+        Logger.log("  Phase2 timing: TextFinder+col28=" + (_t2 - _t1) + "ms | cupoReCheck=" + (_t3 - _t2) + "ms");
 
         // Actualizar rowIndex con la posición real actual
         candidate.rowIndex = match.getRow();
@@ -812,6 +817,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     }
 
     // ─── ESCRIBIR ASIGNACIONES (desc por rowIndex para no invalidar filas) ──
+    var _tWriteStart = Date.now();
     var principales = asignados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
     var reestudiosArr = asignados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
@@ -823,8 +829,11 @@ function RequestLeadUnificado(equipoIdOverride) {
     });
 
     SpreadsheetApp.flush();
+    var _tWriteEnd = Date.now();
+    Logger.log("  Phase2 timing: write+flush=" + (_tWriteEnd - _tWriteStart) + "ms");
 
     var lockMs = Date.now() - lockAcquiredAt;
+    Logger.log("  Phase2 timing: TOTAL lockMs=" + lockMs + "ms");
     _registrarTelemetriaLock('RequestLeadUnificado', lockMs, retriesUsed, true);
 
   } catch (err) {
