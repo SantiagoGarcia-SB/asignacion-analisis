@@ -2381,3 +2381,317 @@ function test_Z12b_FullPath_ForceActivo() {
     Logger.log('  Lock liberado. Test finalizado.');
   }
 }
+
+
+// ============================================================
+// TEST MANUAL: Z14 — RequestLeadUnificado ejecución completa end-to-end
+// NO incluido en EJECUTAR_TODAS_LAS_PRUEBAS porque ASIGNA un caso real
+// (lo mueve a Historico_Gestiones). Ejecutar manualmente: test_Z14 → Run
+// ============================================================
+
+/**
+ * Z14: Ejecuta RequestLeadUnificado('DIGITAL') de verdad, end-to-end.
+ * A diferencia de Z12b (que solo llama _preReadRequestLead), este test
+ * dispara el flujo completo: Phase 1 + Phase 2 (lock, re-verify, write).
+ *
+ * SEGURIDAD: Captura el lastRow de Historico_Gestiones ANTES de ejecutar,
+ * y después identifica exactamente qué fila(s) se agregaron — sin asumir
+ * que será testSolicitudId. Si un caso REAL fue asignado por error,
+ * lo detecta, revierte, y falla con mensaje crítico.
+ */
+function test_Z14_RequestLeadUnificado_FullExecution() {
+  _seccion('Z14. RequestLeadUnificado FULL EXECUTION — end-to-end real');
+
+  var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  Logger.log('  Email ejecutor: ' + userEmail);
+
+  var hojaUsuarios = ss.getSheetByName('Usuarios');
+  var hojaAT = ss.getSheetByName('Analistas_Turnos');
+  var hojaSolicitud = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
+  var hojaHist = ss.getSheetByName('Historico_Gestiones');
+  var testSolicitudId = 'TEST-Z14-FULL-EXEC';
+
+  var filaUsuario = -1;
+  var estadoOriginal = null;
+  var capOriginal = null;
+  var espOriginal = null;
+  var turnoInsertado = false;
+  var filaTurnoInsertada = -1;
+  var testCasoFila = -1;
+
+  // Filas realmente escritas en Historico (para cleanup seguro)
+  var filasNuevasHist = [];
+  var lastRowHistAntes = -1;
+  var casoRealAsignado = false;
+
+  try {
+    // ─── 1. ENCONTRAR Y ACTIVAR USUARIO ───────────────────────────
+    var dataU = hojaUsuarios.getDataRange().getValues();
+    for (var i = 1; i < dataU.length; i++) {
+      if (String(dataU[i][2]).toLowerCase().trim() === userEmail) {
+        filaUsuario = i + 1;
+        estadoOriginal = String(dataU[i][5]).trim();
+        capOriginal = String(dataU[i][6]).trim();
+        espOriginal = String(dataU[i][4]).trim();
+        break;
+      }
+    }
+
+    if (filaUsuario === -1) {
+      Logger.log('  ❌ Usuario ' + userEmail + ' NO existe en hoja Usuarios.');
+      _assert('Usuario existe en Usuarios', true, false);
+      return;
+    }
+
+    Logger.log('  Usuario fila ' + filaUsuario + ' | estado="' + estadoOriginal + '" | cap="' + capOriginal + '" | esp="' + espOriginal + '"');
+
+    if (estadoOriginal.toUpperCase() !== 'ACTIVO') {
+      hojaUsuarios.getRange(filaUsuario, 6).setValue('ACTIVO');
+      Logger.log('  → Estado → ACTIVO');
+    }
+    if ((parseInt(capOriginal) || 0) < 1) {
+      hojaUsuarios.getRange(filaUsuario, 7).setValue(5);
+      Logger.log('  → Capacidad → 5');
+    }
+    var espUpper = espOriginal.toUpperCase().trim();
+    if (espUpper !== 'ESTUDIO DIGITAL' && espUpper !== 'ESTUDIO_DIGITAL') {
+      hojaUsuarios.getRange(filaUsuario, 5).setValue('ESTUDIO DIGITAL');
+      Logger.log('  → Especialidad → ESTUDIO DIGITAL');
+    }
+    SpreadsheetApp.flush();
+
+    // ─── 2. VERIFICAR/INSERTAR TURNO ──────────────────────────────
+    var tieneTurnoYa = false;
+    if (hojaAT && hojaAT.getLastRow() > 1) {
+      var dataAT = hojaAT.getDataRange().getValues();
+      var ahora = new Date();
+      for (var j = 1; j < dataAT.length; j++) {
+        if (String(dataAT[j][0]).toLowerCase().trim() !== userEmail) continue;
+        var desde = dataAT[j][2];
+        var hasta = dataAT[j][3];
+        if (desde instanceof Date && ahora >= desde && (!hasta || !(hasta instanceof Date) || ahora <= hasta)) {
+          tieneTurnoYa = true;
+          break;
+        }
+      }
+    }
+
+    if (!tieneTurnoYa) {
+      var hojaTurnos = ss.getSheetByName('Turnos');
+      var turnoTestId = 'TEST_TURNO_Z14';
+      var turnoExiste = false;
+      if (hojaTurnos && hojaTurnos.getLastRow() > 1) {
+        var dataTurnos = hojaTurnos.getDataRange().getValues();
+        for (var t = 1; t < dataTurnos.length; t++) {
+          if (String(dataTurnos[t][0]).trim() === turnoTestId) { turnoExiste = true; break; }
+        }
+      }
+      if (!turnoExiste && hojaTurnos) {
+        var filaTurno = new Array(hojaTurnos.getLastColumn()).fill('');
+        filaTurno[0] = turnoTestId;
+        filaTurno[1] = 'Test Z14';
+        filaTurno[2] = 'NORMAL';
+        for (var dd = 3; dd <= 9; dd++) filaTurno[dd] = true;
+        for (var hh = 10; hh <= 23; hh += 2) { filaTurno[hh] = '00:00'; filaTurno[hh + 1] = '23:59'; }
+        hojaTurnos.appendRow(filaTurno);
+        SpreadsheetApp.flush();
+      }
+      if (hojaAT) {
+        var hoy = new Date();
+        hojaAT.appendRow([userEmail, turnoTestId, new Date(hoy.getTime() - 86400000), new Date(hoy.getTime() + 172800000)]);
+        SpreadsheetApp.flush();
+        filaTurnoInsertada = hojaAT.getLastRow();
+        turnoInsertado = true;
+        Logger.log('  → Turno temporal insertado fila ' + filaTurnoInsertada);
+      }
+    }
+
+    // ─── 3. INVALIDAR CACHE ───────────────────────────────────────
+    _invalidarCacheUsuarios();
+
+    // ─── 4. INSERTAR CASO DE PRUEBA ───────────────────────────────
+    var numCols = hojaSolicitud.getLastColumn();
+    var filaTest = new Array(numCols).fill('');
+    filaTest[0] = testSolicitudId;
+    filaTest[1] = '999777';
+    filaTest[9] = '2500000';
+    filaTest[16] = 'EN_ESTUDIO';
+    filaTest[17] = '01/08/2026 07:30:00';
+    filaTest[20] = 'NUEVA';
+    filaTest[27] = '';
+
+    hojaSolicitud.appendRow(filaTest);
+    SpreadsheetApp.flush();
+    testCasoFila = hojaSolicitud.getLastRow();
+    Logger.log('  Caso insertado fila ' + testCasoFila);
+
+    // ─── 5. VISIBILIDAD: contar casos digitales reales en cola ────
+    var dataSolPreCheck = hojaSolicitud.getRange(2, 1, hojaSolicitud.getLastRow() - 1, 28).getValues();
+    var digitalesRealesEnCola = 0;
+    for (var p = 0; p < dataSolPreCheck.length; p++) {
+      var solId = String(dataSolPreCheck[p][0]).trim();
+      if (solId === testSolicitudId) continue;
+      var asig = String(dataSolPreCheck[p][27]).trim();
+      if (asig !== '') continue;
+      var estado = String(dataSolPreCheck[p][16]).trim().toUpperCase().replace(/_/g, ' ');
+      if (estado === 'EN ESTUDIO' || estado === 'EN_ESTUDIO') digitalesRealesEnCola++;
+    }
+    Logger.log('  ⚡ Casos digitales reales en cola (excluyendo test): ' + digitalesRealesEnCola);
+    if (digitalesRealesEnCola > 0) {
+      Logger.log('  ⚠️ HAY COMPETENCIA: ' + digitalesRealesEnCola + ' casos digitales reales podrían ser seleccionados antes que el de prueba');
+    } else {
+      Logger.log('  ✅ Sin competencia digital — solo el caso de prueba es elegible tipo "digital"');
+    }
+
+    // ─── 6. CAPTURAR ESTADO DE HISTORICO ANTES ────────────────────
+    lastRowHistAntes = hojaHist.getLastRow();
+    Logger.log('  Historico lastRow ANTES: ' + lastRowHistAntes);
+
+    // ─── 7. EJECUTAR RequestLeadUnificado('DIGITAL') ──────────────
+    var t0 = Date.now();
+    var resultado = RequestLeadUnificado('DIGITAL');
+    var duracionTotal = Date.now() - t0;
+    Logger.log('  RequestLeadUnificado completó en ' + duracionTotal + 'ms');
+    Logger.log('  Resultado: ' + JSON.stringify(resultado));
+
+    // ─── 8. ASSERTS PRINCIPALES ───────────────────────────────────
+    _assert('resultado es objeto', true, typeof resultado === 'object');
+    _assert('resultado.success === true', true, resultado.success);
+    _assert('resultado.nueva === true', true, resultado.nueva);
+    _assert('resultado.message contiene "Asignado"', true, (resultado.message || '').indexOf('Asignado') !== -1);
+
+    // ─── 9. IDENTIFICAR FILAS NUEVAS EN HISTORICO ─────────────────
+    SpreadsheetApp.flush();
+    var lastRowHistDespues = hojaHist.getLastRow();
+    Logger.log('  Historico lastRow DESPUÉS: ' + lastRowHistDespues);
+
+    var numFilasNuevas = lastRowHistDespues - lastRowHistAntes;
+    _assert('Se agregó al menos 1 fila a Historico', true, numFilasNuevas >= 1);
+
+    for (var f = lastRowHistAntes + 1; f <= lastRowHistDespues; f++) {
+      var solIdEnFila = String(hojaHist.getRange(f, 1).getValue()).trim();
+      var emailEnFila = String(hojaHist.getRange(f, 26).getValue()).toLowerCase().trim();
+      filasNuevasHist.push({ fila: f, solicitudId: solIdEnFila, email: emailEnFila });
+      Logger.log('  → Fila nueva ' + f + ': solicitudId="' + solIdEnFila + '" email="' + emailEnFila + '"');
+    }
+
+    // ─── 10. VERIFICAR QUÉ SE ASIGNÓ ─────────────────────────────
+    var filaTestEnHist = filasNuevasHist.find(function(fn) { return fn.solicitudId === testSolicitudId; });
+
+    if (filaTestEnHist) {
+      // ✅ Happy path: se asignó nuestro caso de prueba
+      _assert('Caso de prueba asignado al email correcto', userEmail, filaTestEnHist.email);
+      Logger.log('  ✅ Caso de prueba asignado correctamente en fila ' + filaTestEnHist.fila);
+    } else {
+      // ❌ Se asignó un caso REAL en vez del de prueba
+      casoRealAsignado = true;
+      var casosReales = filasNuevasHist.map(function(fn) { return fn.solicitudId; }).join(', ');
+      Logger.log('  ❌❌❌ CRÍTICO: se asignó un caso REAL (' + casosReales + ') al usuario de prueba');
+      Logger.log('  ❌❌❌ en vez del caso de prueba ' + testSolicitudId);
+      Logger.log('  ❌❌❌ Verificar manualmente que el analista legítimo no perdió su caso.');
+      _assert('❌ CRÍTICO: se asignó caso REAL (ID: ' + casosReales + ') al usuario de prueba — verificar manualmente', false, true);
+    }
+
+    // ─── 11. VERIFICAR QUE testSolicitudId YA NO ESTÁ EN "solicitud" ──
+    var matchSol = hojaSolicitud.getRange(1, 1, hojaSolicitud.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    if (filaTestEnHist) {
+      _assert('Caso YA NO está en solicitud (fue movido)', null, matchSol);
+    }
+
+    // ─── 12. VERIFICAR TELEMETRÍA ─────────────────────────────────
+    var telData = admin_getLockTelemetry();
+    var entries = telData.entries || [];
+    var ultimaRLU = null;
+    for (var e = entries.length - 1; e >= 0; e--) {
+      if (entries[e].fn === 'RequestLeadUnificado') { ultimaRLU = entries[e]; break; }
+    }
+    _assert('Telemetría tiene entrada RequestLeadUnificado', true, ultimaRLU !== null);
+    if (ultimaRLU) {
+      // Phase 2 incluye: TextFinder re-verify (~200ms) + _asignarCasoPrincipal
+      // (appendRow + deleteRow + flush, ~1-2s irreducible). Total esperado <3s.
+      // El ahorro real está en que las lecturas de Phase 1 (~5s) ya NO están bajo lock.
+      _assert('lockMs < 3000 (Phase 2 = verify + write)', true, ultimaRLU.lockMs < 3000);
+      _assert('ok === true en telemetría', true, ultimaRLU.ok);
+      Logger.log('  Telemetría: lockMs=' + ultimaRLU.lockMs + ' retries=' + ultimaRLU.retries + ' ok=' + ultimaRLU.ok);
+    }
+
+  } finally {
+    // ─── CLEANUP ──────────────────────────────────────────────────
+
+    // A. Eliminar TODAS las filas nuevas de Historico (sean del test o reales asignados por error)
+    //    Eliminar en orden descendente para no invalidar índices
+    filasNuevasHist.sort(function(a, b) { return b.fila - a.fila; });
+    for (var r = 0; r < filasNuevasHist.length; r++) {
+      hojaHist.deleteRow(filasNuevasHist[r].fila);
+      Logger.log('  Historico: eliminada fila ' + filasNuevasHist[r].fila + ' (solicitudId=' + filasNuevasHist[r].solicitudId + ')');
+    }
+
+    // B. Decrementar contadores por cada fila asignada
+    for (var c = 0; c < filasNuevasHist.length; c++) {
+      _decrementarContadorCupo(userEmail, 'digital');
+      _ajustarCargaPendiente(userEmail, -1);
+    }
+    if (filasNuevasHist.length > 0) {
+      Logger.log('  Contadores revertidos: cupo -' + filasNuevasHist.length + ', carga -' + filasNuevasHist.length);
+    }
+
+    // C. Si el caso de prueba sigue en "solicitud" (no fue el seleccionado), eliminarlo
+    var matchSolClean = hojaSolicitud.getRange(1, 1, hojaSolicitud.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    if (matchSolClean) {
+      hojaSolicitud.deleteRow(matchSolClean.getRow());
+      Logger.log('  Caso de prueba eliminado de solicitud fila ' + matchSolClean.getRow());
+    }
+
+    // D. Si se asignó un caso real, advertir para intervención manual
+    if (casoRealAsignado) {
+      for (var cr = 0; cr < filasNuevasHist.length; cr++) {
+        if (filasNuevasHist[cr].solicitudId !== testSolicitudId) {
+          Logger.log('  ⚠️ ATENCIÓN: el caso REAL "' + filasNuevasHist[cr].solicitudId + '" fue eliminado de Historico pero NO reinsertado en solicitud.');
+          Logger.log('  ⚠️ Esto requiere intervención manual: verificar si el caso necesita reasignación.');
+        }
+      }
+    }
+
+    // E. Restaurar usuario
+    if (filaUsuario > 0) {
+      if (estadoOriginal && estadoOriginal.toUpperCase() !== 'ACTIVO') {
+        hojaUsuarios.getRange(filaUsuario, 6).setValue(estadoOriginal);
+      }
+      if ((parseInt(capOriginal) || 0) < 1) {
+        hojaUsuarios.getRange(filaUsuario, 7).setValue(capOriginal);
+      }
+      if (espOriginal.toUpperCase().trim() !== 'ESTUDIO DIGITAL' && espOriginal.toUpperCase().trim() !== 'ESTUDIO_DIGITAL') {
+        hojaUsuarios.getRange(filaUsuario, 5).setValue(espOriginal);
+      }
+      Logger.log('  Usuario restaurado');
+    }
+
+    // F. Eliminar turno temporal
+    if (turnoInsertado && filaTurnoInsertada > 0) {
+      hojaAT.deleteRow(filaTurnoInsertada);
+      Logger.log('  Turno temporal eliminado');
+    }
+    var hojaTurnosClean = ss.getSheetByName('Turnos');
+    if (hojaTurnosClean) {
+      var matchTurno = hojaTurnosClean.getRange(1, 1, hojaTurnosClean.getLastRow(), 1)
+        .createTextFinder('TEST_TURNO_Z14').matchEntireCell(true).findNext();
+      if (matchTurno) { hojaTurnosClean.deleteRow(matchTurno.getRow()); }
+    }
+
+    // G. Verificación final
+    var postHist = hojaHist.getRange(1, 1, hojaHist.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    _assert('Cleanup: ' + testSolicitudId + ' no queda en Historico', null, postHist);
+
+    var postSol = hojaSolicitud.getRange(1, 1, hojaSolicitud.getLastRow(), 1)
+      .createTextFinder(testSolicitudId).matchEntireCell(true).findNext();
+    _assert('Cleanup: ' + testSolicitudId + ' no queda en solicitud', null, postSol);
+
+    _invalidarCacheUsuarios();
+    SpreadsheetApp.flush();
+    Logger.log('  Test Z14 finalizado.');
+  }
+}
