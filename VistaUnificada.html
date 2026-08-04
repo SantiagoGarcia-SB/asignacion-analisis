@@ -929,6 +929,7 @@
 // Configuración del equipo inyectada desde el servidor
 window.__EQUIPO_CONFIG__ = <?!= equipoConfig ?>;
 window.__IS_UNIFIED_VIEW__ = true;
+window.__USER_EMAIL__ = <?!= JSON.stringify(userEmail) ?>;
 
 (function() {
   var eq = window.__EQUIPO_CONFIG__;
@@ -967,29 +968,44 @@ window.__IS_UNIFIED_VIEW__ = true;
   if (loaderSub) loaderSub.textContent = 'Preparando tu panel de ' + (eq.nombre || 'gestión') + '...';
 })();
 
-// Cargar motivos dinámicos al inicio
+// Cargar motivos dinámicos al inicio.
+// Optimización: si cargarPanelAnalista ya devolvió los motivos (panel.motivosAplazamiento
+// / panel.motivosNegacion), se usan directamente sin viaje de red adicional.
+// La variable window.__MOTIVOS_CARGADOS se setea desde el success handler de cargarDatos
+// (main.js.html) cuando el panel trae los motivos.
 function cargarMotivosUnificados() {
+  if (window.__MOTIVOS_CARGADOS) return;
+  // Fallback: si por algún motivo el panel no trajo los motivos (ej: error parcial),
+  // se cargan por separado como antes.
   google.script.run.withSuccessHandler(function(motivos) {
-    poblarSelectMotivos('dig_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaDigital; }));
-    poblarSelectMotivos('rst_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaReestudio; }));
-    poblarSelectMotivos('bio_motivoAplazamiento', motivos.filter(function(m) { return m.aplicaBiometria; }));
-    try {
-      MotivoPicker.init('picker_dig_motivo_aplazamiento', 'dig_motivo_aplazamiento');
-      MotivoPicker.init('picker_rst_motivo_aplazamiento', 'rst_motivo_aplazamiento');
-      MotivoPicker.init('picker_bio_motivoAplazamiento', 'bio_motivoAplazamiento');
-    } catch(e) {}
+    _aplicarMotivosAplazamiento(motivos);
   }).getMotivosAplazamiento();
 
   google.script.run.withSuccessHandler(function(motivos) {
-    poblarSelectMotivos('dig_motivo_negacion', motivos.filter(function(m) { return m.aplicaDigital; }));
-    poblarSelectMotivos('rst_motivo_negacion', motivos.filter(function(m) { return m.aplicaReestudio; }));
-    poblarSelectMotivos('bio_motivoNegacion', motivos.filter(function(m) { return m.aplicaBiometria; }));
-    try {
-      MotivoPicker.init('picker_dig_motivo_negacion', 'dig_motivo_negacion');
-      MotivoPicker.init('picker_rst_motivo_negacion', 'rst_motivo_negacion');
-      MotivoPicker.init('picker_bio_motivoNegacion', 'bio_motivoNegacion');
-    } catch(e) {}
+    _aplicarMotivosNegacion(motivos);
   }).getMotivosNegacion();
+}
+
+function _aplicarMotivosAplazamiento(motivos) {
+  poblarSelectMotivos('dig_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaDigital; }));
+  poblarSelectMotivos('rst_motivo_aplazamiento', motivos.filter(function(m) { return m.aplicaReestudio; }));
+  poblarSelectMotivos('bio_motivoAplazamiento', motivos.filter(function(m) { return m.aplicaBiometria; }));
+  try {
+    MotivoPicker.init('picker_dig_motivo_aplazamiento', 'dig_motivo_aplazamiento');
+    MotivoPicker.init('picker_rst_motivo_aplazamiento', 'rst_motivo_aplazamiento');
+    MotivoPicker.init('picker_bio_motivoAplazamiento', 'bio_motivoAplazamiento');
+  } catch(e) {}
+}
+
+function _aplicarMotivosNegacion(motivos) {
+  poblarSelectMotivos('dig_motivo_negacion', motivos.filter(function(m) { return m.aplicaDigital; }));
+  poblarSelectMotivos('rst_motivo_negacion', motivos.filter(function(m) { return m.aplicaReestudio; }));
+  poblarSelectMotivos('bio_motivoNegacion', motivos.filter(function(m) { return m.aplicaBiometria; }));
+  try {
+    MotivoPicker.init('picker_dig_motivo_negacion', 'dig_motivo_negacion');
+    MotivoPicker.init('picker_rst_motivo_negacion', 'rst_motivo_negacion');
+    MotivoPicker.init('picker_bio_motivoNegacion', 'bio_motivoNegacion');
+  } catch(e) {}
 }
 
 function poblarSelectMotivos(selectId, motivos) {

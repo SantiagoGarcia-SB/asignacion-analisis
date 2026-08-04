@@ -517,44 +517,62 @@ function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reest
 // ============================================================
 
 function RequestLeadUnificado(equipoIdOverride) {
+  // SPERF (temporal): ver instrucciones en cargarPanelAnalista() (Código.js).
+  var _tRLU0 = Date.now();
+  // === VALIDACIONES PREVIAS AL LOCK ===
+  // Usuario/turno/permiso/equipo son datos propios del analista, no dependen de
+  // la cola compartida de pendientes — no necesitan el candado global. Antes se
+  // evaluaban DESPUÉS de tomar el ScriptLock, así que una solicitud que iba a
+  // fallar de todas formas (turno vencido, permiso vigente, usuario inactivo)
+  // igual hacía esperar a todos los demás analistas detrás de ella. Moverlas
+  // aquí acorta la sección crítica y evita tomar el lock en los casos que de
+  // todas formas se van a rechazar.
+  var ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
+  var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
+  var dataUsuarios = _getDataUsuarios();
+  var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
+
+  if (!usuarioInfo) return { success: false, message: "Usuario no registrado en el sistema." };
+
+  var nombreUsuario = usuarioInfo[1];
+  var especialidad = usuarioInfo[4];
+  var estadoUsuario = usuarioInfo[5].toString().trim().toUpperCase();
+  var capTotal = parseInt(usuarioInfo[6]) || 0;
+
+  if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
+
+  var turnoCheck = verificarTurnoActivo(userEmail, ss);
+  if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
+
+  var permisoCheck = verificarPermisoVigenteHoy();
+  if (permisoCheck.tienePermiso) return { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
+
+  // Resolver equipo
+  var equipo;
+  if (equipoIdOverride) {
+    equipo = _getEquipos().find(function(e) { return e.id === equipoIdOverride; });
+    if (!equipo) equipo = resolverEquipoDesdeEspecialidad(especialidad);
+  } else {
+    equipo = resolverEquipoDesdeEspecialidad(especialidad);
+  }
+  var equipoId = equipo.id;
+  Logger.log('⏱ SPERF RequestLeadUnificado: validaciones previas al lock = ' + (Date.now() - _tRLU0) + 'ms');
+
+  // === A partir de aquí sí hace falta el lock: cupos/conteo/pendientes deben
+  // leerse y escribirse de forma consistente con cualquier otra asignación
+  // corriendo en paralelo (evita que dos analistas se lleven el mismo caso). ===
+  var _tLockWait0 = Date.now();
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(25000);
   } catch (e) {
+    Logger.log('⏱ SPERF RequestLeadUnificado: NO se pudo tomar el lock tras ' + (Date.now() - _tLockWait0) + 'ms — sistema ocupado');
     return { success: false, message: "Sistema ocupado. Otro compañero está recibiendo casos. Intenta en unos segundos." };
   }
+  Logger.log('⏱ SPERF RequestLeadUnificado: ESPERA del lock = ' + (Date.now() - _tLockWait0) + 'ms (contención con otros analistas si esto es alto)');
+  var _tEnLock0 = Date.now();
 
   try {
-    var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-    var userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    var dataUsuarios = _getDataUsuarios();
-    var usuarioInfo = dataUsuarios.find(function(u) { return u[2].trim().toLowerCase() === userEmail; });
-
-    if (!usuarioInfo) return { success: false, message: "Usuario no registrado en el sistema." };
-
-    var nombreUsuario = usuarioInfo[1];
-    var especialidad = usuarioInfo[4];
-    var estadoUsuario = usuarioInfo[5].toString().trim().toUpperCase();
-    var capTotal = parseInt(usuarioInfo[6]) || 0;
-
-    if (estadoUsuario !== "ACTIVO") return { success: false, message: "Tu usuario no está Activo." };
-
-    var turnoCheck = verificarTurnoActivo(userEmail, ss);
-    if (!turnoCheck.ok) return { success: false, message: turnoCheck.message };
-
-    var permisoCheck = verificarPermisoVigenteHoy();
-    if (permisoCheck.tienePermiso) return { success: false, message: "Tienes un permiso vigente (" + permisoCheck.tipo + "). No puedes recibir casos hoy." };
-
-    // Resolver equipo
-    var equipo;
-    if (equipoIdOverride) {
-      equipo = _getEquipos().find(function(e) { return e.id === equipoIdOverride; });
-      if (!equipo) equipo = resolverEquipoDesdeEspecialidad(especialidad);
-    } else {
-      equipo = resolverEquipoDesdeEspecialidad(especialidad);
-    }
-    var equipoId = equipo.id;
-
     var propsLocal = PropertiesService.getScriptProperties();
     var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
 
@@ -568,15 +586,19 @@ function RequestLeadUnificado(equipoIdOverride) {
     var refReestudios = null;
 
     // Contar desde hoja principal (siempre se necesita para cualquier equipo)
+    var _tContarP0 = Date.now();
     var cPrincipal = _contarDesdeHojaPrincipal(userEmail, ss, ctx);
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): _contarDesdeHojaPrincipal = ' + (Date.now() - _tContarP0) + 'ms');
     for (var k in cPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + cPrincipal.conteoHoy[k]; }
     capPendienteReal += cPrincipal.cargaPendiente;
     refPrincipal = { hoja: cPrincipal.hojaRef, data: cPrincipal.dataSolicitudes };
 
     // Contar desde hoja reestudios
+    var _tContarR0 = Date.now();
     var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
-    var ssReestudios = SpreadsheetApp.openById(ID_REEST);
+    var ssReestudios = _abrirSSCacheado(ID_REEST);
     var cReestudios = _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx);
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): _contarDesdeHojaReestudios = ' + (Date.now() - _tContarR0) + 'ms');
     for (var k2 in cReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2]; }
     capPendienteReal += cReestudios.cargaPendiente;
     refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
@@ -593,6 +615,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     if (capacidadDisponible < 1) return { success: false, message: "No tienes capacidad disponible. Termina casos pendientes primero." };
 
     // === RECOLECTAR PENDIENTES ===
+    var _tRecolectar0 = Date.now();
     var pendientes = [];
 
     if (refPrincipal && refPrincipal.data) {
@@ -604,6 +627,7 @@ function RequestLeadUnificado(equipoIdOverride) {
       var pReestudios = _recolectarPendientesReestudios(refReestudios.data, cuotas, conteoHoyTotal);
       pendientes = pendientes.concat(pReestudios);
     }
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): recolectar pendientes = ' + (Date.now() - _tRecolectar0) + 'ms (' + pendientes.length + ' candidatos)');
 
     var cuposLlenosHoy = Object.entries(cuotas)
       .filter(function(e) { return e[1] > 0 && conteoHoyTotal[e[0]] >= e[1]; })
@@ -623,9 +647,11 @@ function RequestLeadUnificado(equipoIdOverride) {
     var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
     var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
 
+    var _tOrdenar0 = Date.now();
     var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);
     var seleccionados = resultadoSeleccion.seleccionados;
     var _tiposConPendientes = resultadoSeleccion.tiposConPendientes;
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): ordenar+seleccionar (VIP/score usarVipRotacion=' + !!equipo.usarVipRotacion + ') = ' + (Date.now() - _tOrdenar0) + 'ms');
 
     if (seleccionados.length === 0) {
       return { success: false, message: "Error interno: no se pudo seleccionar un caso." };
@@ -638,6 +664,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionados: " + seleccionados.length + " | Orden tipos: " + JSON.stringify(_tiposConPendientes));
 
     // === ASIGNAR (de mayor a menor rowIndex por hoja, para no invalidar filas al borrar) ===
+    var _tAsignar0 = Date.now();
     var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
     var reestudios = seleccionados.filter(function(s) { return s.base !== 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
 
@@ -647,9 +674,13 @@ function RequestLeadUnificado(equipoIdOverride) {
     reestudios.forEach(function(lead) {
       _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, refReestudios.hoja, ssReestudios);
     });
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): escritura asignación (' + seleccionados.length + ' casos) = ' + (Date.now() - _tAsignar0) + 'ms');
 
     // Una sola confirmación para todo el lote (antes era hasta 2 por caso asignado).
+    var _tFlush0 = Date.now();
     SpreadsheetApp.flush();
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): SpreadsheetApp.flush() = ' + (Date.now() - _tFlush0) + 'ms');
+    Logger.log('⏱ SPERF RequestLeadUnificado: TOTAL dentro del lock = ' + (Date.now() - _tEnLock0) + 'ms | TOTAL función = ' + (Date.now() - _tRLU0) + 'ms');
 
     // Registrar en pendiente_biometria las biometrías asignadas (tipo 'desaplazamiento').
     var idsBioAsignadas = principales

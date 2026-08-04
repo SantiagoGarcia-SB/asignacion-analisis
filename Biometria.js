@@ -401,9 +401,11 @@ function autoAsignarBiometria() {
 }
 
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
+  // SPERF (temporal): ver instrucciones en cargarPanelAnalista() (Código.js).
+  const _tGGB0 = Date.now();
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
-    const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
     const hojaHist = ss.getSheetByName("Historico_Gestiones");
     if (!hojaHist) return { success: false, message: "Hoja Historico_Gestiones no encontrada." };
 
@@ -414,8 +416,10 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
 
     // Antes leía 34 columnas de toda la hoja para ubicar el ID. Ahora usa
     // TextFinder acotado a la columna del ID.
+    const _tFindBio0 = Date.now();
     const colIdBio = hojaHist.getRange(2, 1, lastRow - 1, 1);
     const matchesIdBio = colIdBio.createTextFinder(idBuscado).matchEntireCell(true).findAll();
+    Logger.log('⏱ SPERF guardarGestionBiometria: TextFinder ID (' + (lastRow - 1) + ' filas) = ' + (Date.now() - _tFindBio0) + 'ms (' + matchesIdBio.length + ' matches)');
 
     for (let i = 0; i < matchesIdBio.length; i++) {
       const filaReal0 = matchesIdBio[i].getRow();
@@ -452,6 +456,7 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         const motivoAplaz = resFinal === 'APLAZADO' ? (datosFormulario.motivoAplazamiento || '') : '';
         const motivoNeg = resFinal === 'RECHAZADO' ? (datosFormulario.motivoNegacion || '') : '';
 
+        const _tWritesBio0 = Date.now();
         // Col Q (17): estado → resultado final
         hojaHist.getRange(filaReal, 17).setValue(resFinal);
         // Col U (21): clase → BIOMETRIA
@@ -466,19 +471,27 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         hojaHist.getRange(filaReal, 29, 1, 2).setValues([[motivoAplaz, motivoNeg]]);
         // Col AE (31): fecha solo día
         hojaHist.getRange(filaReal, 31).setValue(fechaSoloDia);
+        Logger.log('⏱ SPERF guardarGestionBiometria: 7 escrituras de campos = ' + (Date.now() - _tWritesBio0) + 'ms');
 
         // Calcular tiempos SLA
+        const _tSlaBio0 = Date.now();
         const fechaAsignacion = _parseFechaGAS(fila[24]);
         // Desaplazamiento: fechaDiligenciadaRadicación = fechaAsignación (cola = 0)
         const tRadCola = fechaAsignacion;
         hojaHist.getRange(filaReal, 34).setValue(fechaAsignacion || '');
         if (fechaAsignacion) hojaHist.getRange(filaReal, 34).setNumberFormat("dd/MM/yyyy HH:mm:ss");
         const tiempos = calcularTiemposCaso(tRadCola, fechaAsignacion, ahora, userEmail);
+        Logger.log('⏱ SPERF guardarGestionBiometria: calcularTiemposCaso() = ' + (Date.now() - _tSlaBio0) + 'ms');
         hojaHist.getRange(filaReal, 35, 1, 3).setValues([[tiempos.minutos_cola, tiempos.minutos_gestion, tiempos.minutos_general]]);
         hojaHist.getRange(filaReal, 35, 1, 3).setNumberFormat("0.00");
+        const _tFlushBio0 = Date.now();
         SpreadsheetApp.flush();
+        Logger.log('⏱ SPERF guardarGestionBiometria: SpreadsheetApp.flush() = ' + (Date.now() - _tFlushBio0) + 'ms');
 
+        const _tCierreBio0 = Date.now();
         _cerrarConteoConLockCorto(userEmail, 'desaplazamiento', fechaAsignacion);
+        Logger.log('⏱ SPERF guardarGestionBiometria: _cerrarConteoConLockCorto() = ' + (Date.now() - _tCierreBio0) + 'ms');
+        Logger.log('⏱ SPERF guardarGestionBiometria: TOTAL función = ' + (Date.now() - _tGGB0) + 'ms');
 
         return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
       }

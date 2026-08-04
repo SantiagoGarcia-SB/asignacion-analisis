@@ -10,6 +10,41 @@ let tipoSolicitudActual = "";
 let cargaInicialHecha = false;
 let _tablaModoActual = null;
 
+// ═══════════════════════════════════════════════════════════════
+// PERFORMANCE TIMING — Mide tiempos del ciclo completo del asesor:
+// carga de página → activación manual → asignación automática →
+// tiempo de gestión (caso mostrado → clic Guardar) → guardado →
+// tiempo hasta la siguiente asignación. No se resetea automáticamente
+// entre esas fases (antes sí, y eso rompía la continuidad de la medición
+// pedida) — queda como un único timeline por sesión de pestaña. reset()
+// sigue disponible para invocarlo a mano desde la consola si se quiere
+// una medición aislada de un solo ciclo.
+// ═══════════════════════════════════════════════════════════════
+var _PERF = {
+  _inicio: performance.now(),
+  _log: [],
+  mark: function(label) {
+    var t = performance.now() - this._inicio;
+    this._log.push({ label: label, ms: Math.round(t) });
+    console.log('%c⏱ PERF [' + Math.round(t) + 'ms] ' + label, 'color:#2563eb;font-weight:bold;');
+  },
+  resumen: function() {
+    console.log('%c═══ RESUMEN DE TIEMPOS ═══', 'color:#dc2626;font-weight:bold;font-size:14px;');
+    console.table(this._log.map(function(e, i, arr) {
+      return {
+        Paso: e.label,
+        'Tiempo Total (ms)': e.ms,
+        'Delta (ms)': i > 0 ? e.ms - arr[i-1].ms : e.ms
+      };
+    }));
+  },
+  reset: function() {
+    this._inicio = performance.now();
+    this._log = [];
+    console.log('%c⏱ PERF RESET — nuevo ciclo', 'color:#7c3aed;font-weight:bold;');
+  }
+};
+
 // Splash real de 3 pasos: Acceso (obtenerMiEstadoActual) → Datos (getTableData/getUnifiedTableData)
 // → Panel (DataTable initComplete). Cada paso se marca cuando su función real resuelve, no en un
 // timer — si algo falla se muestra el error en el mismo componente en vez de dejarlo girando.
@@ -104,11 +139,8 @@ function _tickRecordatorioAlmuerzo() {
 }
 
 function _programarRecordatorioAlmuerzo() {
-  google.script.run
-    .withSuccessHandler(function(ya) { _yaAlmorzoHoy = !!ya; })
-    .withFailureHandler(function() {})
-    .yaAlmorzoHoy();
-
+  // _yaAlmorzoHoy se setea desde panel.yaAlmorzo en el success handler de
+  // cargarPanelAnalista — ya no hace falta un viaje de red separado aquí.
   setInterval(_tickRecordatorioAlmuerzo, 60 * 1000);
 }
 
@@ -212,32 +244,39 @@ function _programarAutoInactivo() {
   if (_timerFinTurno) { clearTimeout(_timerFinTurno); _timerFinTurno = null; }
   google.script.run
     .withSuccessHandler(function(info) {
-      var badge = document.getElementById('turnoInfoBadge');
-      var txt = document.getElementById('turnoFinText');
-      if (!info || !info.tieneTurno) {
-        if (badge) badge.style.display = 'none';
-        return;
-      }
-
-      if (info.fueraTurno) {
-        _forzarInactivoPorFueraDeTurno(info);
-        return;
-      }
-
-      if (badge && txt) {
-        txt.textContent = (info.nombreTurno ? info.nombreTurno + ' — ' : '') + 'Hasta ' + info.horaFinStr;
-        badge.style.display = 'block';
-      }
-      var msRestantes = info.minutosRestantes * 60 * 1000;
-      if (msRestantes <= 0) {
-        _forzarInactivoPorTurno(info);
-        return;
-      }
-      _timerFinTurno = setTimeout(function() {
-        _forzarInactivoPorTurno(info);
-      }, msRestantes);
+      _aplicarInfoTurno(info);
     })
     .obtenerInfoTurnoActual();
+}
+
+// Aplica la info de turno recibida (sea de cargarPanelAnalista o de la llamada
+// directa a obtenerInfoTurnoActual). Programa el auto-inactivo si corresponde.
+function _aplicarInfoTurno(info) {
+  if (_timerFinTurno) { clearTimeout(_timerFinTurno); _timerFinTurno = null; }
+  var badge = document.getElementById('turnoInfoBadge');
+  var txt = document.getElementById('turnoFinText');
+  if (!info || !info.tieneTurno) {
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  if (info.fueraTurno) {
+    _forzarInactivoPorFueraDeTurno(info);
+    return;
+  }
+
+  if (badge && txt) {
+    txt.textContent = (info.nombreTurno ? info.nombreTurno + ' — ' : '') + 'Hasta ' + info.horaFinStr;
+    badge.style.display = 'block';
+  }
+  var msRestantes = info.minutosRestantes * 60 * 1000;
+  if (msRestantes <= 0) {
+    _forzarInactivoPorTurno(info);
+    return;
+  }
+  _timerFinTurno = setTimeout(function() {
+    _forzarInactivoPorTurno(info);
+  }, msRestantes);
 }
 
 function _forzarInactivoPorFueraDeTurno(info) {
@@ -288,7 +327,9 @@ function _miniLoader(on) {
 // Cachea getEmailUsuario() para que el saludo del loader (main.js.html) y el nombre
 // de la navbar (VistaUnificada.html) compartan una sola llamada al servidor en vez
 // de dispararla cada uno por su cuenta en cada carga de página.
-var _emailUsuarioCache = null;
+// Optimización: si el email ya fue inyectado en el template (window.__USER_EMAIL__),
+// se usa directamente sin viaje de red.
+var _emailUsuarioCache = (typeof window.__USER_EMAIL__ === 'string' && window.__USER_EMAIL__) ? window.__USER_EMAIL__ : null;
 var _emailUsuarioCallbacks = [];
 function _obtenerEmailUsuario(callback) {
   if (_emailUsuarioCache !== null) { callback(_emailUsuarioCache); return; }
@@ -302,6 +343,7 @@ function _obtenerEmailUsuario(callback) {
 }
 
 $(document).ready(function () {
+  _PERF.mark('1. document.ready');
   _loaderSetPaso(1);
 
   // Mostrar saludo en el loader
@@ -317,8 +359,11 @@ $(document).ready(function () {
   });
 
   sincronizarEstadoInicial(true);
-  verificarYAplicarPermisoVigente();
-  _programarAutoInactivo();
+  // verificarYAplicarPermisoVigente, _programarAutoInactivo y
+  // _programarRecordatorioAlmuerzo ahora se ejecutan en el success handler de
+  // cargarPanelAnalista usando panel.permisoVigente, panel.infoTurno y
+  // panel.yaAlmorzo — evita 3 viajes de red separados (~6-9s ahorrados).
+  // Se mantienen como fallback solo si panel no trae esos datos (versión vieja).
   _programarRecordatorioAlmuerzo();
 
   $('#btnGuardarCambios')
@@ -518,37 +563,189 @@ function ajustarCamposPorTipoSolicitud() {
 }
 
 function sincronizarEstadoInicial(debeCargarTabla = false) {
+  if (debeCargarTabla) {
+    // Boot optimizado: en vez de hacer 2 viajes de red secuenciales
+    // (obtenerMiEstadoActual → cargarPanelAnalista), vamos directo a
+    // cargarPanelAnalista que ahora devuelve panel.estadoActual como parte
+    // de su respuesta. Ahorra ~1.8s de latencia de ida/vuelta del iframe.
+    _PERF.mark('2. sincronizarEstadoInicial (boot optimizado) → directo a cargarDatos()');
+    _loaderSetPaso(2);
+    cargarDatos();
+    return;
+  }
+  // Si no necesita cargar tabla (llamado desde otro lugar sin boot), sigue
+  // usando obtenerMiEstadoActual como viaje separado — es raro pero posible.
+  _PERF.mark('2. sincronizarEstadoInicial → llamando obtenerMiEstadoActual()');
   google.script.run
     .withSuccessHandler(function(estadoReal) {
+      _PERF.mark('3. obtenerMiEstadoActual → respuesta: ' + estadoReal);
       if (estadoReal && estadoReal !== "ERROR") {
-        estadoGlobalAsesor = estadoReal.toUpperCase();
-        
-        const statusText = $('#currentStatusText');
-        const statusDot = $('#statusDot');
-        const card = $('#statusIndicatorCard');
-
-        if (statusText.length) statusText.text(estadoGlobalAsesor);
-        
-        if (estadoGlobalAsesor === 'ACTIVO') {
-          statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
-          card.css('border-color', '#22c55e');
-        } else {
-          statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
-          card.css('border-color', '#e2e8f0');
-        }
-        console.log("Sincronizado con DB: " + estadoGlobalAsesor);
+        _aplicarEstadoUI(estadoReal.toUpperCase());
       }
-      
       _loaderSetPaso(2);
-
-      if (debeCargarTabla) {
-        cargarDatos();
-      }
     })
     .withFailureHandler(function(e) {
       _loaderError('No se pudo validar tu sesión. ' + (typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Intenta recargar la página.'));
     })
     .obtenerMiEstadoActual();
+}
+
+// Centraliza la lógica de actualizar el estado visual del asesor en la UI.
+// Se llama tanto desde sincronizarEstadoInicial (fallback) como desde
+// cargarDatos() que ahora recibe panel.estadoActual.
+function _aplicarEstadoUI(estado) {
+  estadoGlobalAsesor = estado;
+  const statusText = $('#currentStatusText');
+  const statusDot = $('#statusDot');
+  const card = $('#statusIndicatorCard');
+
+  if (statusText.length) statusText.text(estadoGlobalAsesor);
+
+  if (estadoGlobalAsesor === 'ACTIVO') {
+    statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
+    card.css('border-color', '#22c55e');
+  } else {
+    statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+    card.css('border-color', '#e2e8f0');
+  }
+  console.log("Estado sincronizado: " + estadoGlobalAsesor);
+}
+
+// Panel pre-cargado por activarYAsignar() — si tiene valor, cargarDatos() lo
+// usa directamente sin hacer la llamada al servidor (ahorra 1 viaje de red).
+var _panelPrecargado = null;
+
+// Atajo para que activarYAsignar() inyecte el panel y dispare la renderización
+// sin hacer un viaje de red adicional.
+function _procesarRespuestaPanel(panel) {
+  _panelPrecargado = panel;
+  cargarDatos();
+}
+
+// Cuerpo principal de procesamiento del panel — extraído del success handler de
+// cargarDatos() para poder reutilizarlo desde _procesarRespuestaPanel (prefetch
+// de activarYAsignar) y desde el callback normal de google.script.run.
+function _onPanelRecibido(panel) {
+  // Sincronizar estado del asesor
+  if (panel.estadoActual) {
+    _aplicarEstadoUI(panel.estadoActual);
+  }
+
+  // Datos consolidados del boot: turno, permiso, almuerzo
+  if (panel.infoTurno !== undefined) {
+    _aplicarInfoTurno(panel.infoTurno);
+  }
+  if (panel.permisoVigente !== undefined) {
+    if (panel.permisoVigente.tienePermiso && (estadoGlobalAsesor === 'INACTIVO' || estadoGlobalAsesor === '')) {
+      cambiarMiEstado(panel.permisoVigente.tipo);
+    }
+  }
+  if (panel.yaAlmorzo !== undefined) {
+    _yaAlmorzoHoy = !!panel.yaAlmorzo;
+  }
+
+  // Motivos de aplazamiento/negación
+  if (panel.motivosAplazamiento && panel.motivosAplazamiento.length > 0 && typeof _aplicarMotivosAplazamiento === 'function') {
+    _aplicarMotivosAplazamiento(panel.motivosAplazamiento);
+    window.__MOTIVOS_CARGADOS = true;
+  }
+  if (panel.motivosNegacion && panel.motivosNegacion.length > 0 && typeof _aplicarMotivosNegacion === 'function') {
+    _aplicarMotivosNegacion(panel.motivosNegacion);
+    window.__MOTIVOS_CARGADOS = true;
+  }
+
+  if (!cargaInicialHecha) _loaderSetPaso(3);
+
+  var cruzado = panel.gestionesHoyCruzadas;
+  if (cruzado && typeof cruzado.hoyTotal === 'number') {
+    if (typeof animarNumero === "function") {
+      animarNumero("countHoy", cruzado.hoyTotal);
+    }
+  }
+
+  var response = panel.tabla || {};
+  if (response.error) {
+    console.error("getUnifiedTableData error:", response.error);
+    Swal.fire({ icon: "warning", title: "Error al cargar datos", text: response.error, confirmButtonColor: "#253150" });
+  }
+
+  var tipoVista = response.tipoVista || 'DIGITAL';
+  if (tipoVista === 'REESTUDIOS') {
+    renderizarTabla(_normalizarFilasReestudios(response.tabla));
+  } else {
+    renderizarTabla(response.tabla);
+  }
+
+  if (response.reasignaciones && response.reasignaciones.length > 0) {
+    if (!window._reasignacionesMostradas) window._reasignacionesMostradas = {};
+    var nuevas = response.reasignaciones.filter(function(r) { return !window._reasignacionesMostradas[r.solicitud]; });
+    if (nuevas.length > 0) {
+      nuevas.forEach(function(r) { window._reasignacionesMostradas[r.solicitud] = true; });
+      var msgs = nuevas.map(function(r) { return '<b>' + r.solicitud + '</b> (por ' + r.admin.split('@')[0] + ')'; }).join('<br>');
+      Swal.fire({ icon: 'info', title: 'Caso reasignado por Admin', html: 'Se te asignó manualmente:<br>' + msgs, confirmButtonColor: '#253150', confirmButtonText: 'Entendido', timer: 8000, timerProgressBar: true });
+    }
+  }
+
+  if (typeof UX !== 'undefined') UX.updateSyncTime();
+
+  var registrosPendientes = 0;
+  if (tipoVista === 'REESTUDIOS') {
+    registrosPendientes = response.tabla ? response.tabla.length : 0;
+  } else {
+    registrosPendientes = response.tabla ? Math.max(response.tabla.length - 1, 0) : 0;
+  }
+  if (typeof animarNumero === "function") animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
+
+  if (window.__IS_UNIFIED_VIEW__ && document.getElementById('countCupos')) {
+    var cuposInfo = panel.cupos;
+    if (cuposInfo && typeof cuposInfo.totalLimite === 'number') {
+      var restantes = cuposInfo.totalLimite - cuposInfo.totalUsado;
+      if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
+      var det = document.getElementById('cuposDetalle');
+      if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
+      if (cuposInfo.cumplido && typeof UX !== 'undefined') UX.showToast('Has cumplido todos tus cupos del día (' + cuposInfo.totalUsado + '/' + cuposInfo.totalLimite + ')', 'success');
+    }
+  }
+
+  if (window.__IS_UNIFIED_VIEW__) actualizarBannerPendientes(panel.pendientesValidacion || []);
+
+  var tablaRealmenteVacia = registrosPendientes <= 0;
+  var estadoParaValidar = (typeof estadoGlobalAsesor !== 'undefined' ? estadoGlobalAsesor : ($('#selectEstadoAsesor').val() || "INACTIVO")).toUpperCase();
+
+  if (!tablaRealmenteVacia) _detenerPollingTablaVacia();
+
+  if (tablaRealmenteVacia && !yaSeIntentoAsignar && estadoParaValidar === "ACTIVO") {
+    if (_pollingEnCurso) {
+      console.log("Asignación omitida: ya hay una autoasignación en vuelo.");
+    } else {
+      yaSeIntentoAsignar = true;
+      _pollingEnCurso = true;
+      _PERF.mark('8. Tabla vacía + ACTIVO → llamando autoAsignar');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          _PERF.mark('9. autoAsignar → respuesta (nueva=' + !!(res.success && res.nueva) + ')');
+          _pollingEnCurso = false;
+          if (res.success && res.nueva) {
+            Swal.fire({ icon: 'info', title: 'Nueva Solicitud', text: res.message || 'Se te ha asignado un nuevo registro.', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000, timerProgressBar: true });
+            setTimeout(function() { yaSeIntentoAsignar = false; cargarDatos(); }, 3000);
+          } else {
+            yaSeIntentoAsignar = false;
+            _iniciarPollingTablaVacia();
+            if (res.message && res.message.trim() !== '') Swal.fire({ icon: 'warning', title: 'Sin nuevos casos', text: res.message, toast: true, position: 'top-end', showConfirmButton: false, timer: 7000, timerProgressBar: true });
+          }
+        })
+        .withFailureHandler(function(err) { _pollingEnCurso = false; yaSeIntentoAsignar = false; _iniciarPollingTablaVacia(); })
+        [window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar']();
+    }
+  } else {
+    if (!tablaRealmenteVacia) console.log("Asignación omitida: La tabla ya tiene datos.");
+    if (estadoParaValidar !== "ACTIVO") console.log("Asignación omitida: El asesor está en estado " + estadoParaValidar);
+    if (tablaRealmenteVacia && estadoParaValidar === "ACTIVO") _asegurarPollingActivo();
+  }
+
+  if (!cargaInicialHecha) { setTimeout(_loaderOcultar, 350); } else { _loaderOcultar(); }
+  cargaInicialHecha = true;
+  _miniLoader(false);
 }
 
 function cargarDatos() {
@@ -560,6 +757,7 @@ function cargarDatos() {
   // (evita perder el refresco que trae un caso recién autoasignado).
   if (_cargarDatosEnCurso) { _cargarDatosPendiente = true; return; }
   _cargarDatosEnCurso = true;
+  _PERF.mark('4. cargarDatos() → llamando cargarPanelAnalista()');
 
   const loader = document.getElementById('loader-container');
   if (!cargaInicialHecha) {
@@ -568,154 +766,30 @@ function cargarDatos() {
     _miniLoader(true);
   }
 
+  // Si activarYAsignar() ya pre-cargó el panel, usarlo directamente sin viaje de red.
+  if (_panelPrecargado) {
+    var panelLocal = _panelPrecargado;
+    _panelPrecargado = null;
+    _PERF.mark('5. cargarPanelAnalista → respuesta recibida (prefetch de activarYAsignar, datos: ' + ((panelLocal.tabla && panelLocal.tabla.tabla) ? panelLocal.tabla.tabla.length : 0) + ' filas)');
+    _cargarDatosEnCurso = false;
+    _onPanelRecibido(panelLocal);
+    return;
+  }
+
   // Antes esto eran 4 llamadas independientes (obtenerGestionesHoyCruzadas,
   // getUnifiedTableData, verificarMisCupos, obtenerCasosPendientesAnalista),
   // cada una releyendo hojas por su cuenta. cargarPanelAnalista() (Código.js)
   // las junta en un solo viaje al servidor y reusa las mismas lecturas.
   google.script.run
     .withSuccessHandler(function (panel) {
+      _PERF.mark('5. cargarPanelAnalista → respuesta recibida (datos: ' + ((panel.tabla && panel.tabla.tabla) ? panel.tabla.tabla.length : 0) + ' filas)');
       _cargarDatosEnCurso = false;
       if (_cargarDatosPendiente) {
         _cargarDatosPendiente = false;
         cargarDatos();
         return;
       }
-      if (!cargaInicialHecha) _loaderSetPaso(3);
-
-      var cruzado = panel.gestionesHoyCruzadas;
-      if (cruzado && typeof cruzado.hoyTotal === 'number') {
-        if (typeof animarNumero === "function") {
-          animarNumero("countHoy", cruzado.hoyTotal);
-        }
-      }
-
-      var response = panel.tabla || {};
-      if (response.error) {
-        console.error("getUnifiedTableData error:", response.error);
-        Swal.fire({ icon: "warning", title: "Error al cargar datos", text: response.error, confirmButtonColor: "#253150" });
-      }
-
-      var tipoVista = response.tipoVista || 'DIGITAL';
-      if (tipoVista === 'REESTUDIOS') {
-        renderizarTabla(_normalizarFilasReestudios(response.tabla));
-      } else {
-        renderizarTabla(response.tabla);
-      }
-
-      // Notificar reasignaciones recientes por admin (solo una vez por solicitud)
-      if (response.reasignaciones && response.reasignaciones.length > 0) {
-        if (!window._reasignacionesMostradas) window._reasignacionesMostradas = {};
-        var nuevas = response.reasignaciones.filter(function(r) {
-          return !window._reasignacionesMostradas[r.solicitud];
-        });
-        if (nuevas.length > 0) {
-          nuevas.forEach(function(r) { window._reasignacionesMostradas[r.solicitud] = true; });
-          var msgs = nuevas.map(function(r) {
-            return '<b>' + r.solicitud + '</b> (por ' + r.admin.split('@')[0] + ')';
-          }).join('<br>');
-          Swal.fire({
-            icon: 'info',
-            title: 'Caso reasignado por Admin',
-            html: 'Se te asignó manualmente:<br>' + msgs,
-            confirmButtonColor: '#253150',
-            confirmButtonText: 'Entendido',
-            timer: 8000,
-            timerProgressBar: true
-          });
-        }
-      }
-
-      // UX: Update sync time
-      if (typeof UX !== 'undefined') UX.updateSyncTime();
-
-      // Digital: getTableData incluye header row → length - 1
-      // Reestudios: getReestudiosData devuelve solo datos → length directo
-      var registrosPendientes = 0;
-      if (tipoVista === 'REESTUDIOS') {
-        registrosPendientes = response.tabla ? response.tabla.length : 0;
-      } else {
-        registrosPendientes = response.tabla ? Math.max(response.tabla.length - 1, 0) : 0;
-      }
-      
-      if (typeof animarNumero === "function") {
-        animarNumero("countTotal", registrosPendientes > 0 ? registrosPendientes : 0);
-      }
-
-      // Cupos restantes (solo vista unificada)
-      if (window.__IS_UNIFIED_VIEW__ && document.getElementById('countCupos')) {
-        var cuposInfo = panel.cupos;
-        if (cuposInfo && typeof cuposInfo.totalLimite === 'number') {
-          var restantes = cuposInfo.totalLimite - cuposInfo.totalUsado;
-          if (typeof animarNumero === "function") animarNumero("countCupos", restantes > 0 ? restantes : 0);
-          var det = document.getElementById('cuposDetalle');
-          if (det) det.textContent = cuposInfo.totalUsado + ' / ' + cuposInfo.totalLimite + ' usados';
-          if (cuposInfo.cumplido && typeof UX !== 'undefined') {
-            UX.showToast('Has cumplido todos tus cupos del día (' + cuposInfo.totalUsado + '/' + cuposInfo.totalLimite + ')', 'success');
-          }
-        }
-      }
-
-      // Pendientes de validación/evidente
-      if (window.__IS_UNIFIED_VIEW__) {
-        actualizarBannerPendientes(panel.pendientesValidacion || []);
-      }
-
-      const tablaRealmenteVacia = registrosPendientes <= 0;
-      const estadoParaValidar = (typeof estadoGlobalAsesor !== 'undefined' ? estadoGlobalAsesor : ($('#selectEstadoAsesor').val() || "INACTIVO")).toUpperCase();
-
-      if (!tablaRealmenteVacia) _detenerPollingTablaVacia();
-
-      if (tablaRealmenteVacia && !yaSeIntentoAsignar && estadoParaValidar === "ACTIVO") {
-        yaSeIntentoAsignar = true; 
-        console.log("Detectado: Tabla vacía y asesor ACTIVO. Solicitando asignación...");
-
-        google.script.run
-          .withSuccessHandler(function(res) {
-            if (res.success && res.nueva) {
-              Swal.fire({
-                icon: 'info',
-                title: 'Nueva Solicitud',
-                text: res.message || 'Se te ha asignado un nuevo registro.',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 5000,
-                timerProgressBar: true
-              });
-              setTimeout(() => {
-                yaSeIntentoAsignar = false;
-                cargarDatos();
-              }, 3000);
-            } else {
-              yaSeIntentoAsignar = false;
-              _iniciarPollingTablaVacia();
-              console.warn("Asignación omitida: " + res.message);
-              if (res.message && res.message.trim() !== '') {
-                Swal.fire({
-                  icon: 'warning',
-                  title: 'Sin nuevos casos',
-                  text: res.message,
-                  toast: true,
-                  position: 'top-end',
-                  showConfirmButton: false,
-                  timer: 7000,
-                  timerProgressBar: true
-                });
-              }
-            }
-          })
-          .withFailureHandler(function(err) {
-            console.error("Error en autoAsignarAlEntrar:", err);
-            yaSeIntentoAsignar = false;
-            _iniciarPollingTablaVacia();
-          })
-          [window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar']();
-
-      } else {
-        if (!tablaRealmenteVacia) console.log("Asignación omitida: La tabla ya tiene datos.");
-        if (estadoParaValidar !== "ACTIVO") console.log("Asignación omitida: El asesor está en estado " + estadoParaValidar);
-        if (tablaRealmenteVacia && estadoParaValidar === "ACTIVO") _asegurarPollingActivo();
-      }
+      _onPanelRecibido(panel);
     })
     .withFailureHandler(function (e) {
       _cargarDatosEnCurso = false;
@@ -799,6 +873,7 @@ function _normalizarFilasReestudios(filas) {
 }
 
 function renderizarTabla(data) {
+  _PERF.mark('6. renderizarTabla → inicio (' + (Array.isArray(data) ? data.length - 1 : 0) + ' registros)');
   if (!Array.isArray(data)) data = [];
   datosGlobales = data;
 
@@ -815,10 +890,12 @@ function renderizarTabla(data) {
     dt.clear();
     dt.rows.add(registros);
     dt.draw(false);
+    _PERF.mark('7. renderizarTabla → DataTable re-draw completado');
     if (!cargaInicialHecha) { setTimeout(_loaderOcultar, 350); } else { _loaderOcultar(); }
     cargaInicialHecha = true;
     _miniLoader(false);
     _bindClickDetalleTabla();
+    _PERF.resumen();
     return;
   }
 
@@ -892,12 +969,14 @@ function renderizarTabla(data) {
     pageLength: 10,
     responsive: true,
     initComplete: function(settings, json) {
+      _PERF.mark('7. renderizarTabla → DataTable initComplete (primera carga)');
       var api = this.api();
       api.settings()[0].oLanguage.sEmptyTable = '<div class="py-4 text-center"><i class="bi bi-inbox" style="font-size:2rem;color:var(--gris-light);"></i><p class="text-muted mt-2 mb-0 fw-semibold">No tienes solicitudes por gestionar</p><p class="text-muted small mb-0">Vuelve pronto o espera la próxima asignación.</p></div>';
       if (api.rows().count() === 0) { api.draw(false); }
       if (!cargaInicialHecha) { setTimeout(_loaderOcultar, 350); } else { _loaderOcultar(); }
       cargaInicialHecha = true;
       _miniLoader(false);
+      _PERF.resumen();
     }
   });
 
@@ -1129,6 +1208,7 @@ function renderResultadosPorTipo(resultados) {
 }
 
 function manejarGuardarCambios() {
+  _PERF.mark('G1. manejarGuardarCambios() → clic en Guardar (fin de gestión)');
   const btn = $('#btnGuardarCambios');
   const solId = btn.attr('data-solicitud-id'); 
   if (!solId) {
@@ -1203,8 +1283,10 @@ function manejarGuardarCambios() {
     didOpen: () => Swal.showLoading() 
   });
 
+  _PERF.mark('G2. guardarCambiosInternos() → enviando al servidor');
   google.script.run
     .withSuccessHandler(r => {
+      _PERF.mark('G3. guardarCambiosInternos → respuesta recibida (success=' + r.success + ')');
       if (typeof UX !== 'undefined') UX.setBtnLoading(btnGuardar, false);
       
       if (r.success) {
@@ -1217,6 +1299,7 @@ function manejarGuardarCambios() {
         _quitarFilaTabla(datos.solicitudId);
 
         if (r.disparaAsignacion) {
+          _PERF.mark('G4. disparando autoAsignación post-guardado');
           _dispararAutoAsignacion();
         }
 
@@ -1232,6 +1315,7 @@ function manejarGuardarCambios() {
           const modalElement = document.getElementById('modalDetalles');
           const modalInstance = bootstrap.Modal.getInstance(modalElement);
           if (modalInstance) modalInstance.hide();
+          _PERF.mark('G5. post-guardado → llamando cargarDatos()');
           cargarDatos();
         });
       } else {
@@ -1280,6 +1364,7 @@ function animarNumero(id, valorFinal) {
 }
 
 function cambiarMiEstado(nuevoEstado) {
+  _PERF.mark('A1. cambiarMiEstado("' + nuevoEstado + '") → llamando actualizarEstadoPropio()');
   var estadoAnterior = estadoGlobalAsesor;
   estadoGlobalAsesor = nuevoEstado.toUpperCase();
   if (estadoGlobalAsesor === 'ALMUERZO') _yaAlmorzoHoy = true;
@@ -1300,8 +1385,80 @@ function cambiarMiEstado(nuevoEstado) {
     _detenerPollingTablaVacia();
   }
 
+  // Optimización: si el estado es ACTIVO, usar activarYAsignar() que consolida
+  // actualizarEstadoPropio + autoAsignar + cargarPanelAnalista en un solo viaje
+  // de red (~3 viajes eliminados, ahorro de ~10-15s percibidos).
+  if (estadoGlobalAsesor === 'ACTIVO') {
+    _PERF.mark('A1b. usando activarYAsignar() (consolidado)');
+    google.script.run
+      .withSuccessHandler(function(r) {
+        _PERF.mark('A2. activarYAsignar → respuesta recibida');
+        if (!r || !r.activacion) return;
+
+        if (r.activacion.success) {
+          if (typeof UX !== 'undefined') {
+            UX.showToast('Estado actualizado: ACTIVO', 'success');
+          }
+
+          // Si la asignación trajo caso nuevo, notificar
+          if (r.asignacion && r.asignacion.success && r.asignacion.nueva) {
+            Swal.fire({
+              icon: 'info',
+              title: 'Nueva Solicitud',
+              text: r.asignacion.message || 'Se te ha asignado un nuevo registro.',
+              toast: true,
+              position: 'top-end',
+              showConfirmButton: false,
+              timer: 5000,
+              timerProgressBar: true
+            });
+          }
+
+          // Aplicar los datos del panel si vinieron (evita otro cargarDatos)
+          if (r.panel) {
+            _procesarRespuestaPanel(r.panel);
+          } else {
+            cargarDatos();
+          }
+        } else {
+          // Activación falló (turno, permiso, etc.)
+          estadoGlobalAsesor = estadoAnterior;
+          if (statusText.length) statusText.text(estadoAnterior);
+          if (estadoAnterior === 'ACTIVO') {
+            statusDot.css('background-color', '#22c55e').addClass('animate-pulse');
+            card.css('border-color', '#22c55e');
+          } else {
+            statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+            card.css('border-color', '#e2e8f0');
+          }
+          Swal.fire({
+            icon: 'warning',
+            title: 'No permitido',
+            html: r.activacion.message,
+            confirmButtonColor: '#253150'
+          });
+        }
+      })
+      .withFailureHandler(function(e) {
+        estadoGlobalAsesor = estadoAnterior;
+        if (statusText.length) statusText.text(estadoAnterior);
+        statusDot.css('background-color', '#f59e0b').removeClass('animate-pulse');
+        card.css('border-color', '#e2e8f0');
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Error de conexión.',
+          confirmButtonColor: '#BD0F14'
+        });
+      })
+      .activarYAsignar();
+    return;
+  }
+
+  // Para estados distintos a ACTIVO (ALMUERZO, INACTIVO, etc.), flujo normal
   google.script.run
     .withSuccessHandler(function(response) {
+      _PERF.mark('A2. actualizarEstadoPropio → respuesta recibida');
       if (response && response.success) {
         if (typeof UX !== 'undefined') {
           UX.showToast('Estado actualizado: ' + estadoGlobalAsesor, estadoGlobalAsesor === 'ACTIVO' ? 'success' : 'info');
@@ -1314,9 +1471,6 @@ function cambiarMiEstado(nuevoEstado) {
             timer: 2000,
             showConfirmButton: false
           });
-        }
-        if (estadoGlobalAsesor === 'ACTIVO') {
-          cargarDatos();
         }
       } else if (response && !response.success) {
         estadoGlobalAsesor = estadoAnterior;
@@ -1480,6 +1634,7 @@ function abrirModalUnificado(index) {
   var fila = datosGlobales[index];
   _filaActualUnificada = fila;
   tipoSolicitudActual = detectarTipoCaso(fila);
+  _PERF.mark('10. abrirModalUnificado → caso mostrado al analista, inicia gestión (tipo=' + tipoSolicitudActual + ', solicitud=' + (fila[0] || '') + ')');
 
   switch (tipoSolicitudActual) {
     case 'desaplazamiento':
@@ -2008,6 +2163,7 @@ function _validarFormRst() {
 }
 
 function manejarGuardarDigital() {
+  _PERF.mark('G1. manejarGuardarDigital() → clic en Guardar (fin de gestión)');
   var btn = document.getElementById('dig_btnGuardar');
   var solId = btn.getAttribute('data-solicitud-id');
   var estado = document.getElementById('dig_estado_q').value;
@@ -2077,6 +2233,7 @@ function manejarGuardarDigital() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalDigital', true); }
 
+  _PERF.mark('G2. guardarCambiosInternos() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } onGuardarExitoUnificado(r, 'modalDigital', solId); })
     .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
@@ -2084,6 +2241,7 @@ function manejarGuardarDigital() {
 }
 
 function manejarGuardarBiometria() {
+  _PERF.mark('G1. manejarGuardarBiometria() → clic en Guardar (fin de gestión)');
   var btn = document.getElementById('bio_btnGuardar');
   var solId = document.getElementById('bio_solicitudId').value;
   var resFinal = (document.getElementById('bio_resFinal').value || '').toUpperCase();
@@ -2113,6 +2271,7 @@ function manejarGuardarBiometria() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalBiometria', true); }
 
+  _PERF.mark('G2. guardarGestionBiometria() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } onGuardarExitoUnificado(r, 'modalBiometria', solId); })
     .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
@@ -2120,6 +2279,7 @@ function manejarGuardarBiometria() {
 }
 
 function manejarGuardarReestudio() {
+  _PERF.mark('G1. manejarGuardarReestudio() → clic en Guardar (fin de gestión)');
   var btn = document.getElementById('rst_btnGuardar');
   var estadoGestion = document.getElementById('rst_estado_q').value || '';
   var motivoAplazamiento = document.getElementById('rst_motivo_aplazamiento') ? document.getElementById('rst_motivo_aplazamiento').value : '';
@@ -2178,6 +2338,7 @@ function manejarGuardarReestudio() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalReestudio', true); }
 
+  _PERF.mark('G2. guardarGestionReestudio() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
     .withFailureHandler(function(e) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } Swal.fire({ icon: 'error', title: 'Error', text: typeof UX !== 'undefined' ? UX.mensajeError(e) : e.message }); })
@@ -2185,6 +2346,7 @@ function manejarGuardarReestudio() {
 }
 
 function onGuardarExitoUnificado(r, modalId, solicitudId) {
+  _PERF.mark('G3. guardar (' + modalId + ') → respuesta recibida (success=' + !!(r && r.success) + ')');
   if (r && r.success === true) {
     var modalEl = document.getElementById(modalId);
     var inst = bootstrap.Modal.getInstance(modalEl);
@@ -2194,6 +2356,7 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
 
     if (r.disparaAsignacion) {
       yaSeIntentoAsignar = true;
+      _PERF.mark('G4. disparando autoAsignación post-guardado');
       _dispararAutoAsignacion();
     }
 
@@ -2201,11 +2364,13 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
       UX.showSuccessCheck(function() {
         if (typeof UX.showToast === 'function') UX.showToast('Gestión guardada correctamente', 'success');
         if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
+        _PERF.mark('G5. post-guardado → llamando cargarDatos()');
         cargarDatos();
       });
     } else {
       Swal.fire({ icon: 'success', title: 'Guardado', text: r.message || 'Gestión guardada.', timer: 2000, showConfirmButton: false });
       if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
+      _PERF.mark('G5. post-guardado → llamando cargarDatos()');
       cargarDatos();
     }
   } else {
@@ -2216,9 +2381,11 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
 function _dispararAutoAsignacion() {
   if (_pollingEnCurso) return;
   _pollingEnCurso = true;
+  _PERF.mark('AA1. _dispararAutoAsignacion → llamando ' + (window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar'));
   var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
   google.script.run
     .withSuccessHandler(function(res) {
+      _PERF.mark('AA2. autoAsignar → respuesta (nueva=' + !!(res && res.nueva) + ')');
       _pollingEnCurso = false;
       yaSeIntentoAsignar = false;
       if (res && res.success && res.nueva) {
