@@ -102,14 +102,14 @@ function _parseDateUnif(dateStr) {
 // CONTEO DE CARGA Y CUPOS USADOS HOY
 // ============================================================
 
-function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
+function _contarDesdeHojaPrincipal(userEmail, ss, ctx, dataPrecargada) {
   var conteoHoy = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ss.getSheetByName("solicitud");
-  if (!hoja || hoja.getLastRow() < 2) return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente };
+  if (!dataPrecargada && (!hoja || hoja.getLastRow() < 2)) return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente };
 
-  var data = hoja.getRange("A1:BG" + hoja.getLastRow()).getValues();
+  var data = dataPrecargada || hoja.getRange("A1:BG" + hoja.getLastRow()).getValues();
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var asignado = String(row[27]).trim().toLowerCase();
@@ -140,14 +140,14 @@ function _contarDesdeHojaPrincipal(userEmail, ss, ctx) {
   return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, hojaRef: hoja, dataSolicitudes: data };
 }
 
-function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx) {
+function _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx, dataPrecargada) {
   var conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
   var cargaPendiente = 0;
 
   var hoja = ssReestudios.getSheetByName("ORIGEN");
-  if (!hoja || hoja.getLastRow() < 2) return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente };
+  if (!dataPrecargada && (!hoja || hoja.getLastRow() < 2)) return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente };
 
-  var data = hoja.getDataRange().getValues();
+  var data = dataPrecargada || hoja.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var asignado = String(row[6]).trim().toLowerCase();
@@ -304,6 +304,194 @@ function _recolectarPendientesReestudios(dataReestudios, cuotas, conteoHoy) {
     });
   }
   return pendientes;
+}
+
+// ============================================================
+// FUNCIONES FUSIONADAS (conteo + recolección en 1 pasada)
+// ============================================================
+
+/**
+ * Fusión de conteo + recolección para hoja principal.
+ * FUNCIÓN PURA: no realiza I/O, opera solo sobre el arreglo recibido.
+ *
+ * Combina la lógica de _contarDesdeHojaPrincipal (conteo de asignaciones del día
+ * y carga pendiente para el analista) con _recolectarPendientesPrincipal (recolección
+ * de casos disponibles para asignación) en una única iteración sobre dataSolicitudes.
+ *
+ * @param {Array<Array>} dataSolicitudes - Datos completos de la hoja (con header en [0])
+ * @param {string} userEmail - Email del analista normalizado (lowercase, trimmed)
+ * @param {Object} ctx - Contexto de fecha (de _buildFechaHoyFormats)
+ * @param {Object} cuotas - Cupos efectivos del analista
+ * @param {Object} equipo - Configuración del equipo (canonDesde, canonHasta, canonTipos)
+ * @returns {{ conteoHoy: Object, cargaPendiente: number, pendientes: Array }}
+ */
+function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, equipo) {
+  var conteoHoy = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var cargaPendiente = 0;
+  var pendientes = [];
+
+  if (!dataSolicitudes || dataSolicitudes.length < 2) {
+    return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, pendientes: pendientes };
+  }
+
+  var canonDesde = equipo.canonDesde || 0;
+  var canonHasta = equipo.canonHasta || 0;
+  var canonTipos = equipo.canonTipos || [];
+
+  // Límite de liberación para desaplazamiento (mismo cálculo que _recolectarPendientesPrincipal)
+  var limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
+
+  for (var i = 1; i < dataSolicitudes.length; i++) {
+    var row = dataSolicitudes[i];
+    var asignado = String(row[27]).trim();
+    var asignadoLower = asignado.toLowerCase();
+
+    // --- Clasificación de tipo (compartida por conteo y recolección) ---
+    var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    var claseNorm = String(row[20]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    var estadoSinGuion = estadoNorm.replace(/_/g, ' ');
+
+    var esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
+    var esInduccion = claseNorm === "INDUCCION";
+
+    // === RAMA 1: Fila asignada al analista → conteo ===
+    if (asignadoLower === userEmail) {
+      var tipo = 'digital';
+      if (esDesaplazamiento) tipo = 'desaplazamiento';
+      else if (esInduccion) tipo = 'induccion';
+
+      var fechaAsig = row[26];
+      var fechaFin = row[28];
+
+      if (_cumpleHoyUnif(fechaAsig, ctx) || _cumpleHoyUnif(fechaFin, ctx)) conteoHoy[tipo]++;
+
+      var tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
+      var tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
+      if (tieneAsig && !tieneFin) cargaPendiente++;
+
+      continue; // Esta fila ya está asignada, no es candidata
+    }
+
+    // === RAMA 2: Fila NO asignada → posible candidata para pendientes ===
+    if (asignado !== "") continue; // Asignada a otro analista, saltar
+    if (estadoNorm === "") continue;
+
+    // Filtros de exclusión por estado
+    if ((estadoNorm.indexOf("APROB") !== -1 && !esDesaplazamiento) || estadoNorm.indexOf("NEGAD") !== -1 || estadoNorm.indexOf("RECHAZ") !== -1 || estadoNorm.indexOf("APLAZ") !== -1) continue;
+
+    var esNueva = estadoNorm === 'EN_ESTUDIO' || estadoSinGuion === 'EN ESTUDIO';
+    if (!esNueva && !esDesaplazamiento && !esInduccion) continue;
+
+    var tipoPendiente = 'digital';
+    if (esDesaplazamiento) tipoPendiente = 'desaplazamiento';
+    else if (esInduccion) tipoPendiente = 'induccion';
+
+    // Filtro de canon
+    if (canonTipos && canonTipos.indexOf(tipoPendiente) !== -1 && (canonDesde > 0 || canonHasta > 0)) {
+      var canonValor = _parseCanonColombiano(row[9]);
+      if (canonDesde > 0 && canonValor < canonDesde) continue;
+      if (canonHasta > 0 && canonValor > canonHasta) continue;
+    }
+
+    // Filtro de cupo (reasignadas bypasean el cupo)
+    var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
+    if (!reasignada && conteoHoy[tipoPendiente] >= (cuotas[tipoPendiente] || 0)) continue;
+
+    // Filtro de fecha de liberación para desaplazamiento
+    if (esDesaplazamiento && !reasignada) {
+      var fechaResultadoCaseMs = _parseDateUnif(row[18]);
+      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs >= limiteLiberacionDesaplazamiento.getTime()) continue;
+    }
+
+    // Detección de canal externo
+    var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
+    var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';
+
+    pendientes.push({
+      base: 'PRINCIPAL',
+      rowIndex: i + 1,
+      rowData: row,
+      tipo: tipoPendiente,
+      reasignada: reasignada,
+      esExterno: esExterno,
+      polizaKey: _normalizarClaveUnif(row[1]),
+      fechaOrd: _parseDateUnif(tipoPendiente === 'desaplazamiento' ? row[18] : row[17])
+    });
+  }
+
+  return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, pendientes: pendientes };
+}
+
+/**
+ * Fusión de conteo + recolección para hoja ORIGEN (reestudios).
+ * FUNCIÓN PURA: no realiza I/O, opera solo sobre el arreglo recibido.
+ *
+ * Combina la lógica de _contarDesdeHojaReestudios (conteo de asignaciones
+ * del día y carga pendiente del analista) con _recolectarPendientesReestudios
+ * (recolección de casos disponibles para asignar) en una única iteración.
+ *
+ * @param {Array<Array>} dataReestudios - Datos completos de ORIGEN (con header en [0])
+ * @param {string} userEmail - Email del analista normalizado (lowercase, trimmed)
+ * @param {Object} ctx - Contexto de fecha (de _buildFechaHoyFormats)
+ * @param {Object} cuotas - Cupos efectivos del analista
+ * @returns {{ conteoHoy: Object, cargaPendiente: number, pendientes: Array }}
+ */
+function _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas) {
+  var conteoHoy = { reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var cargaPendiente = 0;
+  var pendientes = [];
+
+  if (!dataReestudios || dataReestudios.length < 2) {
+    return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, pendientes: pendientes };
+  }
+
+  for (var i = 1; i < dataReestudios.length; i++) {
+    var row = dataReestudios[i];
+    var asignado = String(row[6]).trim();
+    var asignadoLower = asignado.toLowerCase();
+
+    // --- Clasificación del tipo (compartida por conteo y recolección) ---
+    var origenR = String(row[3]).toUpperCase().trim();
+    var tipoPNorm = String(row[4]).toUpperCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    var tipo = null;
+    if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) tipo = 'biometriaFallida';
+    else if (origenR === "CORREO" && tipoPNorm === "NUEVA") tipo = 'nuevaUar';
+    else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
+    else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
+
+    // --- Rama de CONTEO: filas asignadas al usuario ---
+    if (asignadoLower === userEmail) {
+      if (!tipo) continue;
+      if (_cumpleHoyUnif(row[8], ctx) || _cumpleHoyUnif(row[9], ctx)) conteoHoy[tipo]++;
+      var tieneAsig = row[8] instanceof Date ? true : String(row[8]).trim() !== "";
+      var tieneFin = row[9] instanceof Date ? true : String(row[9]).trim() !== "";
+      if (tieneAsig && !tieneFin) cargaPendiente++;
+      continue;
+    }
+
+    // --- Rama de RECOLECCIÓN: filas no asignadas ---
+    if (asignado !== "") continue;
+
+    var estadoGest = String(row[10]).trim();
+    if (estadoGest !== "") continue;
+    if (String(row[1]).trim() === "") continue;
+    if (!tipo) continue;
+    if (conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
+
+    pendientes.push({
+      base: 'REESTUDIOS',
+      rowIndex: i + 1,
+      rowData: row,
+      tipo: tipo,
+      reasignada: false,
+      esExterno: false,
+      polizaKey: _normalizarClaveUnif(row[1] || row[3]),
+      fechaOrd: _parseDateUnif(row[0])
+    });
+  }
+
+  return { conteoHoy: conteoHoy, cargaPendiente: cargaPendiente, pendientes: pendientes };
 }
 
 // ============================================================
@@ -558,6 +746,28 @@ function RequestLeadUnificado(equipoIdOverride) {
   var equipoId = equipo.id;
   Logger.log('⏱ SPERF RequestLeadUnificado: validaciones previas al lock = ' + (Date.now() - _tRLU0) + 'ms');
 
+  // === PRE-LECTURA FUERA DEL LOCK ===
+  // Las lecturas completas de hojas se realizan ANTES de adquirir el ScriptLock
+  // para reducir la contención entre analistas concurrentes. Dentro del lock solo
+  // se usa la data pre-cargada (sin Viajes_Red de lectura masiva).
+  var _tPreRead0 = Date.now();
+
+  // Pre-lectura hoja "solicitud" (principal)
+  var hojaSolicitud = ss.getSheetByName("solicitud");
+  var dataSolicitudes = hojaSolicitud && hojaSolicitud.getLastRow() >= 2
+    ? hojaSolicitud.getRange("A1:BG" + hojaSolicitud.getLastRow()).getValues()
+    : null;
+
+  // Pre-lectura hoja "ORIGEN" (reestudios)
+  var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
+  var ssReestudios = _abrirSSCacheado(ID_REEST);
+  var hojaOrigen = ssReestudios.getSheetByName("ORIGEN");
+  var dataReestudios = hojaOrigen && hojaOrigen.getLastRow() >= 2
+    ? hojaOrigen.getDataRange().getValues()
+    : null;
+
+  Logger.log('⏱ SPERF RequestLeadUnificado: PRE-LECTURA fuera del lock (solicitud + ORIGEN) = ' + (Date.now() - _tPreRead0) + 'ms');
+
   // === A partir de aquí sí hace falta el lock: cupos/conteo/pendientes deben
   // leerse y escribirse de forma consistente con cualquier otra asignación
   // corriendo en paralelo (evita que dos analistas se lleven el mismo caso). ===
@@ -578,56 +788,46 @@ function RequestLeadUnificado(equipoIdOverride) {
 
     var ctx = _buildFechaHoyFormats();
 
-    // === CONTEO ===
+    // === CONTEO + RECOLECCIÓN FUSIONADOS (1 pasada por hoja) ===
+    var _tFusionado0 = Date.now();
     var conteoHoyTotal = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
     var capPendienteReal = 0;
+    var pendientes = [];
 
-    var refPrincipal = null;
-    var refReestudios = null;
+    // Fusionada principal
+    if (dataSolicitudes) {
+      var resPrincipal = _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, equipo);
+      for (var k in resPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + resPrincipal.conteoHoy[k]; }
+      capPendienteReal += resPrincipal.cargaPendiente;
+      pendientes = pendientes.concat(resPrincipal.pendientes);
+    }
 
-    // Contar desde hoja principal (siempre se necesita para cualquier equipo)
-    var _tContarP0 = Date.now();
-    var cPrincipal = _contarDesdeHojaPrincipal(userEmail, ss, ctx);
-    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): _contarDesdeHojaPrincipal = ' + (Date.now() - _tContarP0) + 'ms');
-    for (var k in cPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + cPrincipal.conteoHoy[k]; }
-    capPendienteReal += cPrincipal.cargaPendiente;
-    refPrincipal = { hoja: cPrincipal.hojaRef, data: cPrincipal.dataSolicitudes };
+    // Fusionada reestudios
+    if (dataReestudios) {
+      var resReestudios = _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas);
+      for (var k2 in resReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + resReestudios.conteoHoy[k2]; }
+      capPendienteReal += resReestudios.cargaPendiente;
+      pendientes = pendientes.concat(resReestudios.pendientes);
+    }
 
-    // Contar desde hoja reestudios
-    var _tContarR0 = Date.now();
-    var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
-    var ssReestudios = _abrirSSCacheado(ID_REEST);
-    var cReestudios = _contarDesdeHojaReestudios(userEmail, ssReestudios, ctx);
-    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): _contarDesdeHojaReestudios = ' + (Date.now() - _tContarR0) + 'ms');
-    for (var k2 in cReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + cReestudios.conteoHoy[k2]; }
-    capPendienteReal += cReestudios.cargaPendiente;
-    refReestudios = { hoja: cReestudios.hojaRef, data: cReestudios.dataReestudios };
-
-    // Suma lo que ya se cerró/asignó hoy vía Historico_Gestiones — de los contadores
-    // incrementales, no de un escaneo completo de la hoja (ver Código.js).
+    // Contadores incrementales: compatibles con las funciones fusionadas. La suma de
+    // conteo-en-hoja (de las fusionadas) + contadores incrementales produce el mismo total
+    // que la implementación pre-optimización. admin_recalcularContadores() los reconstruye
+    // desde cero sin conflicto (lee directamente de Historico_Gestiones).
     var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
     for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
     capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
+
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): conteo+recolección fusionados = ' + (Date.now() - _tFusionado0) + 'ms (' + pendientes.length + ' candidatos)');
+
+    // Referencias a hojas — necesarias para _asignarCasoPrincipal / _asignarCasoReestudios
+    var refPrincipal = { hoja: hojaSolicitud, data: dataSolicitudes };
+    var refReestudios = { hoja: hojaOrigen, data: dataReestudios };
 
     Logger.log("Motor Unificado [" + equipoId + "] | Analista: " + userEmail + " | Cupos: " + JSON.stringify(cuotas) + " | Conteo: " + JSON.stringify(conteoHoyTotal));
 
     var capacidadDisponible = capTotal - capPendienteReal;
     if (capacidadDisponible < 1) return { success: false, message: "No tienes capacidad disponible. Termina casos pendientes primero." };
-
-    // === RECOLECTAR PENDIENTES ===
-    var _tRecolectar0 = Date.now();
-    var pendientes = [];
-
-    if (refPrincipal && refPrincipal.data) {
-      var pPrincipal = _recolectarPendientesPrincipal(refPrincipal.data, cuotas, conteoHoyTotal, equipo.canonDesde || 0, equipo.canonHasta || 0, equipo.canonTipos || []);
-      pendientes = pendientes.concat(pPrincipal);
-    }
-
-    if (refReestudios && refReestudios.data) {
-      var pReestudios = _recolectarPendientesReestudios(refReestudios.data, cuotas, conteoHoyTotal);
-      pendientes = pendientes.concat(pReestudios);
-    }
-    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): recolectar pendientes = ' + (Date.now() - _tRecolectar0) + 'ms (' + pendientes.length + ' candidatos)');
 
     var cuposLlenosHoy = Object.entries(cuotas)
       .filter(function(e) { return e[1] > 0 && conteoHoyTotal[e[0]] >= e[1]; })
@@ -663,6 +863,32 @@ function RequestLeadUnificado(equipoIdOverride) {
     pendientes.forEach(function(p){ _tiposPend[p.tipo] = (_tiposPend[p.tipo]||0)+1; });
     Logger.log("DIAGNÓSTICO | Conteo: " + JSON.stringify(conteoHoyTotal) + " | Cuotas: " + JSON.stringify(cuotas) + " | Pendientes por tipo: " + JSON.stringify(_tiposPend) + " | Reasignadas: " + _reasCount + " | Seleccionados: " + seleccionados.length + " | Orden tipos: " + JSON.stringify(_tiposConPendientes));
 
+    // === RE-VALIDACIÓN: confirmar disponibilidad con lectura mínima de 1 celda por candidato ===
+    var _tRevalidar0 = Date.now();
+    var seleccionadosValidados = [];
+    for (var sv = 0; sv < seleccionados.length; sv++) {
+      var candidato = seleccionados[sv];
+      var celdaAsignado;
+      if (candidato.base === 'PRINCIPAL') {
+        celdaAsignado = String(hojaSolicitud.getRange(candidato.rowIndex, 28).getValue()).trim();
+      } else {
+        celdaAsignado = String(hojaOrigen.getRange(candidato.rowIndex, 7).getValue()).trim();
+      }
+      if (celdaAsignado === '') {
+        // Celda sigue vacía → candidato disponible
+        seleccionadosValidados.push(candidato);
+      } else {
+        // Candidato stale: fue tomado por otro analista entre la pre-lectura y ahora
+        Logger.log('Re-validación: candidato stale en fila ' + candidato.rowIndex + ' (base=' + candidato.base + ', asignado=' + celdaAsignado + ')');
+      }
+    }
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): re-validación = ' + (Date.now() - _tRevalidar0) + 'ms (' + seleccionados.length + ' candidatos, ' + seleccionadosValidados.length + ' válidos)');
+
+    if (seleccionadosValidados.length === 0) {
+      return { success: false, message: "Sin casos disponibles — los candidatos fueron tomados por otros analistas. Intenta de nuevo." };
+    }
+    seleccionados = seleccionadosValidados;
+
     // === ASIGNAR (de mayor a menor rowIndex por hoja, para no invalidar filas al borrar) ===
     var _tAsignar0 = Date.now();
     var principales = seleccionados.filter(function(s) { return s.base === 'PRINCIPAL'; }).sort(function(a, b) { return b.rowIndex - a.rowIndex; });
@@ -682,14 +908,14 @@ function RequestLeadUnificado(equipoIdOverride) {
     Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): SpreadsheetApp.flush() = ' + (Date.now() - _tFlush0) + 'ms');
     Logger.log('⏱ SPERF RequestLeadUnificado: TOTAL dentro del lock = ' + (Date.now() - _tEnLock0) + 'ms | TOTAL función = ' + (Date.now() - _tRLU0) + 'ms');
 
-    // Registrar en pendiente_biometria las biometrías asignadas (tipo 'desaplazamiento').
-    var idsBioAsignadas = principales
+    // Acumular IDs de biometrías asignadas para actualización deferred desde el cliente.
+    // Antes se llamaba _actualizarFaseBiometriaPendiente(ids, "ASIGNADA") aquí directamente,
+    // bloqueando ~4-6s adicionales. Ahora se retornan los IDs como metadata para que el
+    // cliente dispare la actualización de forma no-bloqueante (ver task 7.4).
+    var idsAsignados = principales
       .filter(function(lead) { return lead.tipo === 'desaplazamiento'; })
       .map(function(lead) { return String(lead.rowData[0] || '').trim(); })
       .filter(function(id) { return id; });
-    if (idsBioAsignadas.length > 0) {
-      _actualizarFaseBiometriaPendiente(idsBioAsignadas, "ASIGNADA");
-    }
 
     var _resumenTipos = {};
     seleccionados.forEach(function(s) { _resumenTipos[s.tipo] = (_resumenTipos[s.tipo] || 0) + 1; });
@@ -702,7 +928,7 @@ function RequestLeadUnificado(equipoIdOverride) {
       msgAsignacion += "\nCupos del día completados: " + cuposLlenosHoy.join(', ');
     }
 
-    return { success: true, nueva: true, message: msgAsignacion };
+    return { success: true, nueva: true, message: msgAsignacion, idsAsignados: idsAsignados, faseTarget: "ASIGNADA" };
 
   } catch (err) {
     Logger.log("❌ Error crítico en RequestLeadUnificado: " + err.message);

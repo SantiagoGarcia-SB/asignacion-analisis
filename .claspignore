@@ -1,0 +1,15 @@
+# Archivos de testing (Node.js / Vitest / fast-check) — no se suben a GAS
+tests/**
+node_modules/**
+package.json
+package-lock.json
+vitest.config.js
+
+# Kiro / IDE
+.kiro/**
+.claude/**
+.vscode/**
+.git/**
+
+# Docs
+*.md

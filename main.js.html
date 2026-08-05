@@ -1420,6 +1420,14 @@ function cambiarMiEstado(nuevoEstado) {
           } else {
             cargarDatos();
           }
+
+          // Deferred: actualizar fase de biometría pendiente sin bloquear al analista
+          if (r.asignacion && r.asignacion.idsAsignados && r.asignacion.idsAsignados.length > 0) {
+            google.script.run.actualizarFaseBiometriaPendienteDeferred(
+              r.asignacion.idsAsignados,
+              r.asignacion.faseTarget
+            );
+          }
         } else {
           // Activación falló (turno, permiso, etc.)
           estadoGlobalAsesor = estadoAnterior;

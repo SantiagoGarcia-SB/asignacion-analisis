@@ -400,6 +400,8 @@ function autoAsignarBiometria() {
   }
 }
 
+// Garantía Req 8: este endpoint NO adquiere ScriptLock ni usa funciones del motor de asignación
+// (_contarYRecolectarPrincipal, _contarYRecolectarReestudios, _leerBloqueCasosAbiertos).
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
   // SPERF (temporal): ver instrucciones en cargarPanelAnalista() (Código.js).
   const _tGGB0 = Date.now();
@@ -613,39 +615,72 @@ function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
   var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
 
   try {
-    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var ssBio = _abrirSSCacheado(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
     if (!hojaBio || hojaBio.getLastRow() < 2) return;
 
     var lastRow = hojaBio.getLastRow();
-    var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
-    var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+    var numRows = lastRow - 1;
+    var ids = hojaBio.getRange(2, 1, numRows, 1).getValues();
+    // Leer columnas 76 (fase) y 77 (fecha_actualizacion_fase) juntas en un solo getValues()
+    var faseFechaData = hojaBio.getRange(2, 76, numRows, 2).getValues();
 
     var FASES_TERMINALES = new Set(["RESUELTA", "RESUELTA_EN_COLA", "ASIGNADA", "ARCHIVADA"]);
+    var filasModificadas = []; // índices de filas que se modificaron en el array
     var actualizadas = 0;
 
     for (var i = 0; i < ids.length; i++) {
       var solId = String(ids[i][0]).trim();
       if (!idsSet.has(solId)) continue;
 
-      var faseActual = String(fases[i][0]).trim().toUpperCase();
+      var faseActual = String(faseFechaData[i][0]).trim().toUpperCase();
       if (FASES_TERMINALES.has(faseActual)) continue; // ya cerrada, no sobreescribir
 
-      hojaBio.getRange(i + 2, 76).setValue(nuevaFase);
-      hojaBio.getRange(i + 2, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+      // Modificar en memoria
+      faseFechaData[i][0] = nuevaFase;
+      faseFechaData[i][1] = ahora;
+      filasModificadas.push(i);
       actualizadas++;
 
       idsSet.delete(solId);
       if (idsSet.size === 0) break; // ya encontró todas
     }
 
-    if (actualizadas > 0) {
-      SpreadsheetApp.flush();
-      Logger.log("📝 pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "'.");
+    if (actualizadas === 0) return;
+
+    if (actualizadas === 1) {
+      // Caso de 1 sola fila: escritura directa sin reescribir el bloque completo
+      var rowIdx = filasModificadas[0];
+      hojaBio.getRange(rowIdx + 2, 76, 1, 2).setValues([[nuevaFase, ahora]]);
+    } else {
+      // Caso de N filas: escribir de vuelta el bloque completo de 2 columnas con un solo setValues()
+      hojaBio.getRange(2, 76, numRows, 2).setValues(faseFechaData);
     }
+
+    SpreadsheetApp.flush();
+    Logger.log("📝 pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "' (batch write).");
   } catch (e) {
     // No lanzar: esta operación es de trazabilidad, no debe romper el flujo principal.
     Logger.log("⚠️ Error actualizando fase en pendiente_biometria (" + nuevaFase + "): " + e.message);
+  }
+}
+
+/**
+ * Wrapper público para ejecutar _actualizarFaseBiometriaPendiente de forma deferred
+ * desde el cliente. Se invoca con google.script.run.actualizarFaseBiometriaPendienteDeferred(ids, fase)
+ * en un patrón fire-and-forget: el cliente no espera la respuesta.
+ *
+ * NO adquiere ScriptLock — la trazabilidad de biometría no requiere exclusión mutua.
+ * NO lanza excepciones al cliente — loguea errores internamente y retorna silenciosamente.
+ *
+ * @param {Array<string>} ids - Consecutivos de solicitud a actualizar
+ * @param {string} fase - Nueva fase ("ASIGNADA", "RESUELTA_EN_COLA", "ARCHIVADA", etc.)
+ */
+function actualizarFaseBiometriaPendienteDeferred(ids, fase) {
+  try {
+    _actualizarFaseBiometriaPendiente(ids, fase);
+  } catch (e) {
+    Logger.log('⚠️ actualizarFaseBiometriaPendienteDeferred falló: ' + e.message + ' | IDs: ' + JSON.stringify(ids) + ' | fase: ' + fase);
   }
 }
 

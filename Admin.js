@@ -1674,6 +1674,7 @@ function admin_guardarTurno(turno) {
     }
     SpreadsheetApp.flush();
     _invalidarCacheConfigHoraria();
+    _invalidarCacheTurnos();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1715,6 +1716,7 @@ function admin_desactivarTurno(idTurno) {
 
     SpreadsheetApp.flush();
     _invalidarCacheConfigHoraria();
+    _invalidarCacheTurnos();
     return { success: true, message: 'Turno desactivado.', afectados: afectados };
   } catch (e) {
     return { success: false, message: e.message };
@@ -1754,6 +1756,7 @@ function admin_asignarTurnoAnalista(email, idTurno, desde) {
     hojaAT.getRange(hojaAT.getLastRow(), 3).setNumberFormat('yyyy-MM-dd');
     SpreadsheetApp.flush();
     _invalidarCacheConfigHoraria();
+    _invalidarCacheTurnos();
     return { success: true };
   } catch (e) {
     return { success: false, message: e.message };

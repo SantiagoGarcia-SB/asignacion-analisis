@@ -281,6 +281,30 @@ function _filasFiltradasPorAnalista(hoja, colEmail, colFiltro, predicadoFiltro, 
   });
 }
 
+/**
+ * Lee un bloque contiguo [filaMin:filaMax] de una hoja y devuelve solo las
+ * filas cuyos índices están en `filasDeseadas`.
+ *
+ * Reduce N viajes de red (uno por fila) a 1 solo getRange del bloque completo.
+ * Las filas intermedias que no están en `filasDeseadas` se descartan en memoria.
+ *
+ * @param {Sheet} hoja - Referencia a la hoja de Google Sheets
+ * @param {Array<number>} filasDeseadas - Números de fila (1-indexed) a extraer
+ * @param {number} numCols - Cantidad de columnas a leer
+ * @returns {Array<Array>} Datos de las filas solicitadas, en el mismo orden que filasDeseadas
+ */
+function _leerBloqueCasosAbiertos(hoja, filasDeseadas, numCols) {
+  if (!filasDeseadas || filasDeseadas.length === 0) return [];
+
+  var filaMin = Math.min.apply(null, filasDeseadas);
+  var filaMax = Math.max.apply(null, filasDeseadas);
+  var bloque = hoja.getRange(filaMin, 1, filaMax - filaMin + 1, numCols).getDisplayValues();
+
+  return filasDeseadas.map(function(f) {
+    return bloque[f - filaMin];
+  });
+}
+
 function _derivarTipoReestudio(origenNorm, tipoPNorm) {
   if (tipoPNorm.indexOf("BIOMETRIA FALLIDA") !== -1) return 'biometriaFallida';
   if (origenNorm === "CORREO" && tipoPNorm === "NUEVA") return 'nuevaUar';
@@ -399,6 +423,118 @@ function _invalidarCacheUsuarios() {
       cache.removeAll(keys);
     }
   } catch (e) {}
+}
+
+// ============================================================
+// CACHÉ CORTA DE TURNOS (evita releer Analistas_Turnos + Turnos en cada activación)
+// ============================================================
+// TTL de 60s: los turnos cambian raramente (solo cuando un admin los configura).
+// Mismo patrón de particionado que _getDataUsuarios: CacheService tiene un límite
+// de 100KB por key, y aunque con ~40 analistas y ~10 turnos el payload típico es
+// ~15-30KB, el chunking es defensivo para crecimiento futuro.
+
+const _TURNOS_CACHE_PREFIX = 'TURNOS_DATA_V1_';
+const _TURNOS_CACHE_TTL = 300; // segundos (5 min — turnos cambian rara vez, solo admin)
+const _TURNOS_CACHE_TAM_CHUNK = 90000; // bytes por chunk
+
+// Memoización de ejecución (igual que _datosUsuariosMemo para Usuarios):
+// garantiza que dentro de una sola ejecución nunca se vuelva a pagar el costo
+// de CacheService.get() ni el de releer las hojas completas.
+var _datosTurnosMemo = null;
+
+/**
+ * Lee datos de Analistas_Turnos y Turnos desde CacheService o, en caso de miss,
+ * desde las hojas del spreadsheet. Almacena en caché con TTL=60s.
+ * Usa chunking si el payload excede 90KB por chunk (igual que _getDataUsuarios).
+ *
+ * @param {Spreadsheet} ss - Spreadsheet ya abierta (TARGET_SOLICITUDES_SS_ID)
+ * @returns {{ dataAT: Array, dataTurnos: Array, dispTurnos: Array }}
+ */
+function _getTurnosDataCacheado(ss) {
+  // 1. Memoización de ejecución (más rápido que CacheService)
+  if (_datosTurnosMemo) return _datosTurnosMemo;
+
+  var _tTurnos0 = Date.now();
+  var cache = CacheService.getScriptCache();
+
+  // 2. Intentar leer desde CacheService (chunked)
+  try {
+    var countStr = cache.get(_TURNOS_CACHE_PREFIX + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [];
+      for (var i = 0; i < count; i++) keys.push(_TURNOS_CACHE_PREFIX + i);
+      var partes = cache.getAll(keys);
+      var json = '';
+      var completo = true;
+      for (var j = 0; j < count; j++) {
+        var parte = partes[_TURNOS_CACHE_PREFIX + j];
+        if (parte === null || parte === undefined) { completo = false; break; }
+        json += parte;
+      }
+      if (completo) {
+        Logger.log('⏱ SPERF _getTurnosDataCacheado: cache hit (' + count + ' partes) = ' + (Date.now() - _tTurnos0) + 'ms');
+        _datosTurnosMemo = JSON.parse(json);
+        return _datosTurnosMemo;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Cache miss: leer hojas Analistas_Turnos y Turnos desde el spreadsheet
+  Logger.log('⏱ SPERF _getTurnosDataCacheado: CACHE MISS — leyendo hojas Analistas_Turnos y Turnos');
+  var _tRead0 = Date.now();
+
+  var hojaAT = ss.getSheetByName('Analistas_Turnos');
+  var dataAT = (hojaAT && hojaAT.getLastRow() > 1) ? hojaAT.getDataRange().getValues() : [];
+
+  var hojaTurnos = ss.getSheetByName('Turnos');
+  var dataTurnos = (hojaTurnos && hojaTurnos.getLastRow() > 1) ? hojaTurnos.getDataRange().getValues() : [];
+  var dispTurnos = (hojaTurnos && hojaTurnos.getLastRow() > 1) ? hojaTurnos.getDataRange().getDisplayValues() : [];
+
+  Logger.log('⏱ SPERF _getTurnosDataCacheado: lectura hojas (AT=' + dataAT.length + ' filas, Turnos=' + dataTurnos.length + ' filas) = ' + (Date.now() - _tRead0) + 'ms');
+
+  var datos = { dataAT: dataAT, dataTurnos: dataTurnos, dispTurnos: dispTurnos };
+
+  // 4. Serializar y guardar en CacheService con chunking
+  try {
+    var jsonOut = JSON.stringify(datos);
+    var partesGuardar = {};
+    var n = 0;
+    for (var k = 0; k < jsonOut.length; k += _TURNOS_CACHE_TAM_CHUNK) {
+      partesGuardar[_TURNOS_CACHE_PREFIX + n] = jsonOut.substring(k, k + _TURNOS_CACHE_TAM_CHUNK);
+      n++;
+    }
+    partesGuardar[_TURNOS_CACHE_PREFIX + 'COUNT'] = String(n);
+    cache.putAll(partesGuardar, _TURNOS_CACHE_TTL);
+    Logger.log('⏱ SPERF _getTurnosDataCacheado: cache.putAll OK (' + n + ' partes, ' + jsonOut.length + ' chars)');
+  } catch (e) {
+    Logger.log('⏱ SPERF _getTurnosDataCacheado: cache.putAll falló (' + e.message + ')');
+  }
+
+  Logger.log('⏱ SPERF _getTurnosDataCacheado: total (cache miss) = ' + (Date.now() - _tTurnos0) + 'ms');
+  _datosTurnosMemo = datos;
+  return datos;
+}
+
+/**
+ * Invalida el caché de turnos (CacheService + memoización de ejecución).
+ * Se invoca desde funciones admin que modifican la configuración de turnos
+ * (admin_guardarTurno, admin_desactivarTurno, admin_asignarTurnoAnalista).
+ */
+function _invalidarCacheTurnos() {
+  _datosTurnosMemo = null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var countStr = cache.get(_TURNOS_CACHE_PREFIX + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [_TURNOS_CACHE_PREFIX + 'COUNT'];
+      for (var i = 0; i < count; i++) keys.push(_TURNOS_CACHE_PREFIX + i);
+      cache.removeAll(keys);
+    }
+  } catch (e) {
+    Logger.log('_invalidarCacheTurnos: error al eliminar cache (' + e.message + ')');
+  }
 }
 
 function doGet() {
@@ -558,6 +694,11 @@ function cargarPanelAnalista() {
   }
 
   var resultado = { tabla: null, cupos: null, pendientesValidacion: [], gestionesHoyCruzadas: null };
+
+  // Pre-warm: calentar cache de turnos durante la carga del panel.
+  // Si ya está en cache, cuesta ~0ms. Si no, lo llena para que el próximo
+  // clic en ACTIVO no pague el cold start de ~2900ms.
+  try { _getTurnosDataCacheado(_abrirSSCacheado(TARGET_SOLICITUDES_SS_ID)); } catch(e) {}
 
   var datosPrefetchCupos = null;
   try {
@@ -732,7 +873,7 @@ function _getScoreMapCacheado() {
       n++;
     }
     partesGuardar[_SCORE_CACHE_PREFIX + 'COUNT'] = String(n);
-    cache.putAll(partesGuardar, 90);
+    cache.putAll(partesGuardar, 3600); // 1 hora — score casi nunca cambia
     Logger.log('⏱ SPERF _getScoreMapCacheado: cache.putAll OK (' + n + ' partes, ' + json.length + ' chars)');
   } catch (e) {
     Logger.log('⏱ SPERF _getScoreMapCacheado: cache.putAll falló (' + e.message + ')');
@@ -851,9 +992,7 @@ function getTableData() {
             filasAbiertas.push(fila);
           }
         });
-        const filasHist = filasAbiertas.map(function(fila) {
-          return hojaHist.getRange(fila, 1, 1, colsHist).getDisplayValues()[0];
-        });
+        const filasHist = _leerBloqueCasosAbiertos(hojaHist, filasAbiertas, colsHist);
         agregarDesdeRegistros(filasHist, 'HISTORICO');
       }
     }
@@ -864,6 +1003,8 @@ function getTableData() {
   }
 
   // 2. solicitud — casos legados aún no migrados
+  // Filtrado en memoria: los registros de "solicitud" ya están en el arreglo `registros`,
+  // no se usa createTextFinder — se filtra por email vía recorrido JavaScript directo.
   agregarDesdeRegistros(registros, 'SOLICITUD');
 
   // 3. Reestudios: Historico_Gestiones (nueva lógica) + ORIGEN (legados)
@@ -877,6 +1018,9 @@ function getTableData() {
         const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getDisplayValues();
         Logger.log('⏱ SPERF getTableData: lectura completa "ORIGEN" = ' + (Date.now() - _tOrigenRead0) + 'ms');
         dataReestOrigen = dataReest;
+        // Filtrado en memoria: los datos de "ORIGEN" ya están en el arreglo `dataReest`,
+        // no se usa createTextFinder — se filtra por email vía recorrido JavaScript directo.
+        // createTextFinder se conserva SOLO para Historico_Gestiones (crecimiento ilimitado).
         for (let i = 0; i < dataReest.length; i++) {
           const asignado = String(dataReest[i][6]).trim().toLowerCase();
           if (asignado !== userEmail) continue;
@@ -944,33 +1088,35 @@ function getTableData() {
             filasAbiertasHR.push(fila);
           }
         });
-        filasAbiertasHR.forEach(function(fila) {
-          const dataHistReest = hojaHistReest.getRange(fila, 1, 1, 18).getDisplayValues()[0];
-          const asignado = String(dataHistReest[6]).trim().toLowerCase();
-          const fechaAsigR = String(dataHistReest[8]).trim();
+        if (filasAbiertasHR.length > 0) {
+          const filasHistReest = _leerBloqueCasosAbiertos(hojaHistReest, filasAbiertasHR, 18);
+          filasHistReest.forEach(function(dataHistReest) {
+            const asignado = String(dataHistReest[6]).trim().toLowerCase();
+            const fechaAsigR = String(dataHistReest[8]).trim();
 
-          if (fechaAsigR === "") return;
+            if (fechaAsigR === "") return;
 
-          const tipoProc = String(dataHistReest[4]).trim();
-          const claseR = String(dataHistReest[5]).trim();
-          let filaAdaptada = new Array(numCols).fill("");
-          filaAdaptada[0] = String(dataHistReest[1]).trim();
-          filaAdaptada[1] = String(dataHistReest[3]).trim();
-          filaAdaptada[2] = String(dataHistReest[2]).trim();
-          filaAdaptada[3] = String(dataHistReest[3]).trim();
-          filaAdaptada[4] = tipoProc;
-          filaAdaptada[5] = claseR;
-          filaAdaptada[8] = fechaAsigR;
-          filaAdaptada[16] = "__REESTUDIO__";
-          filaAdaptada[17] = String(dataHistReest[0]).trim();
-          filaAdaptada[20] = tipoProc || claseR;
-          filaAdaptada[26] = fechaAsigR;
-          filaAdaptada[27] = asignado;
-          filaAdaptada[28] = "";
-          filaAdaptada[30] = String(dataHistReest[7]).trim();
-          filaAdaptada.push("");
-          misFilasPendientes.push(filaAdaptada);
-        });
+            const tipoProc = String(dataHistReest[4]).trim();
+            const claseR = String(dataHistReest[5]).trim();
+            let filaAdaptada = new Array(numCols).fill("");
+            filaAdaptada[0] = String(dataHistReest[1]).trim();
+            filaAdaptada[1] = String(dataHistReest[3]).trim();
+            filaAdaptada[2] = String(dataHistReest[2]).trim();
+            filaAdaptada[3] = String(dataHistReest[3]).trim();
+            filaAdaptada[4] = tipoProc;
+            filaAdaptada[5] = claseR;
+            filaAdaptada[8] = fechaAsigR;
+            filaAdaptada[16] = "__REESTUDIO__";
+            filaAdaptada[17] = String(dataHistReest[0]).trim();
+            filaAdaptada[20] = tipoProc || claseR;
+            filaAdaptada[26] = fechaAsigR;
+            filaAdaptada[27] = asignado;
+            filaAdaptada[28] = "";
+            filaAdaptada[30] = String(dataHistReest[7]).trim();
+            filaAdaptada.push("");
+            misFilasPendientes.push(filaAdaptada);
+          });
+        }
       }
     }
     Logger.log('⏱ SPERF getTableData: bloque Historico_Gestiones reestudios completo = ' + (Date.now() - _tHistR0) + 'ms');
@@ -1964,6 +2110,8 @@ function getSetDeIds(sheet) {
 // GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
 // ===================================================================
 
+// Garantía Req 8: este endpoint NO adquiere ScriptLock ni usa funciones del motor de asignación
+// (_contarYRecolectarPrincipal, _contarYRecolectarReestudios, _leerBloqueCasosAbiertos).
 function guardarCambiosInternos(data) {
   if (!data || !data.solicitudId) {
     return { success: false, message: "ID de solicitud no proporcionado." };
@@ -2340,6 +2488,11 @@ function obtenerCasosPendientesAnalista() {
     const lastRowHoja = hoja ? hoja.getLastRow() : 0;
     Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: Historico_Gestiones principal tiene ' + (lastRowHoja - 1) + ' filas');
     if (hoja && lastRowHoja > 1) {
+      // let dataRange = hoja.getRange(2,1,lastRowHoja,60).getDisplayValues();
+      // dataRange = dataRange.filter(data => {
+
+      // })
+
       const ncols = Math.max(60, hoja.getLastColumn());
       const filasCandidatas = _filasFiltradasPorAnalista(
         hoja, 26, 17,
@@ -2600,11 +2753,16 @@ function _verificarTurnoActivoReal(userEmail, ss) {
       return h * 60 + m;
     }
 
-    // 1. Buscar turno vigente del analista
-    const hojaAT = ss.getSheetByName('Analistas_Turnos');
-    if (!hojaAT || hojaAT.getLastRow() <= 1) return { ok: true };
+    // Obtener datos de turnos desde caché (CacheService + memoización de ejecución)
+    // en vez de leer las hojas directamente cada vez.
+    var turnosData = _getTurnosDataCacheado(ss);
+    var dataAT = turnosData.dataAT;
+    var dataTurnos = turnosData.dataTurnos;
+    var dispTurnos = turnosData.dispTurnos;
 
-    const dataAT = hojaAT.getDataRange().getValues();
+    // 1. Buscar turno vigente del analista
+    if (!dataAT || dataAT.length <= 1) return { ok: true };
+
     let idTurnoActivo = null;
     for (let i = 1; i < dataAT.length; i++) {
       const r = dataAT[i];
@@ -2626,17 +2784,14 @@ function _verificarTurnoActivoReal(userEmail, ss) {
       };
     }
 
-    // 2. Leer definición del turno
-    const hojaTurnos = ss.getSheetByName('Turnos');
-    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) {
+    // 2. Leer definición del turno (ya obtenida del caché)
+    if (!dataTurnos || dataTurnos.length <= 1) {
       return {
         ok: false,
         message: '⏰ Tu turno no está correctamente configurado. Contacta a tu administrador.'
       };
     }
 
-    const dataTurnos = hojaTurnos.getDataRange().getValues();
-    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
     // Día ISO: 1=Lun…7=Dom → d_idx 0=Lun…6=Dom
     // bool col: 3+d_idx, Fin col (display): 11+d_idx*2
     const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
@@ -2869,13 +3024,16 @@ function actualizarEstadoPropio(nuevoEstado) {
   Logger.log('⏱ SPERF actualizarEstadoPropio: ESPERA del lock = ' + (Date.now() - _tLockWait0) + 'ms (contención con otros analistas si esto es alto)');
   const _tEnLockAEP0 = Date.now();
 
+  // Variables que se necesitan fuera del lock para Historico_Estados
+  var _estadoTextoPlano = null;
+  var _fechaDiaHoy = null;
+  var _fechaHoraActual = null;
+  var _ahora = null;
+  var _lockExitoso = false;
+
   try {
     const ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
     const hojaUsuarios = ss.getSheetByName("Usuarios");
-    const hojaHistorico = ss.getSheetByName("Historico_Estados");
-
-    const columnaEstado = 5;
-    const columnaHistorial = 11;
 
     // Antes leía "Usuarios" completa (getDataRange().getValues()) y recorría fila
     // por fila para ubicar al analista. Como esta función escribe (col estado +
@@ -2896,19 +3054,88 @@ function actualizarEstadoPropio(nuevoEstado) {
     Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): TextFinder fila usuario = ' + (Date.now() - _tFindUsr0) + 'ms');
 
     if (filaEncontrada !== -1) {
-      const estadoTextoPlano = nuevoEstado.toUpperCase();
+      _estadoTextoPlano = nuevoEstado.toUpperCase();
 
-      const ahora = new Date();
-      const fechaDiaHoy = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd");
-      const fechaHoraActual = Utilities.formatDate(ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+      _ahora = new Date();
+      _fechaDiaHoy = Utilities.formatDate(_ahora, TIMEZONE, "yyyy-MM-dd");
+      _fechaHoraActual = Utilities.formatDate(_ahora, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
 
-      // Cerrar el registro anterior en Historico_Estados (buscar la última fila de este analista con fin "EN CURSO")
+      // Batch write: leer rango F:L (7 columnas), modificar F y L, escribir de vuelta
+      const _tReadFL0 = Date.now();
+      var rangoUsuario = hojaUsuarios.getRange(filaEncontrada, 6, 1, 7); // cols F(6) a L(12)
+      var rangoActual = rangoUsuario.getValues(); // [[F, G, H, I, J, K, L]]
+      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): getValues F:L = ' + (Date.now() - _tReadFL0) + 'ms');
+      const _tWriteUsr0 = Date.now();
+
+      // Posición [0][0] = col F (estado)
+      rangoActual[0][0] = _estadoTextoPlano;
+
+      // Posición [0][6] = col L (historial JSON)
+      let historial = [];
+      try {
+        const contenido = rangoActual[0][6];
+        historial = contenido ? JSON.parse(contenido) : [];
+      } catch (e) { historial = []; }
+
+      // Si el historial es de otro día, limpiarlo
+      if (historial.length > 0) {
+        try {
+          const primerInicio = historial[0].inicio;
+          const fechaPrimer = primerInicio.includes("T") ? primerInicio.split("T")[0] : primerInicio.split(' ')[0];
+          if (fechaPrimer !== _fechaDiaHoy) historial = [];
+        } catch(e) { historial = []; }
+      }
+
+      // Cerrar último estado en JSON local
+      if (historial.length > 0) {
+        let ultimo = historial[historial.length - 1];
+        ultimo.fin = _ahora.toISOString();
+        const inicioMs = new Date(ultimo.inicio).getTime();
+        if (!isNaN(inicioMs)) ultimo.duracion_min = Math.round((_ahora.getTime() - inicioMs) / 60000);
+      }
+
+      historial.push({
+        estado: _estadoTextoPlano,
+        inicio: _ahora.toISOString(),
+        fin: "EN CURSO",
+        duracion_min: 0
+      });
+
+      rangoActual[0][6] = JSON.stringify(historial);
+
+      // Escritura batch: un solo setValues() en lugar de 2 setValue() individuales
+      rangoUsuario.setValues(rangoActual);
+      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): setValues F:L (write) = ' + (Date.now() - _tWriteUsr0) + 'ms');
+      const _tFlushAEP0 = Date.now();
+      SpreadsheetApp.flush();
+      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): SpreadsheetApp.flush() = ' + (Date.now() - _tFlushAEP0) + 'ms');
+      Logger.log('⏱ SPERF actualizarEstadoPropio: TOTAL dentro del lock = ' + (Date.now() - _tEnLockAEP0) + 'ms | TOTAL función (hasta release) = ' + (Date.now() - _tAEP0) + 'ms');
+      _lockExitoso = true;
+
+    } else {
+      return { success: false, message: "Usuario no encontrado." };
+    }
+  } catch (e) {
+    return { success: false, message: "Error: " + e.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+
+  // ─── Historico_Estados: FUERA del ScriptLock ───────────────────────────────
+  // Cada analista escribe su propio registro — no requiere exclusión mutua.
+  // Si falla, el estado ya se guardó correctamente en Usuarios; solo se pierde
+  // auditoría temporal. Se loguea el error pero se retorna success al analista.
+  if (_lockExitoso) {
+    try {
       const _tHistEst0 = Date.now();
+      const ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
+      const hojaHistorico = ss.getSheetByName("Historico_Estados");
+
       if (hojaHistorico) {
         const lastRowH = hojaHistorico.getLastRow();
-        Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): Historico_Estados tiene ' + (lastRowH - 1) + ' filas');
+        Logger.log('⏱ SPERF actualizarEstadoPropio (fuera del lock): Historico_Estados tiene ' + (lastRowH - 1) + ' filas');
         if (lastRowH > 1) {
-          // Buscar de abajo hacia arriba para eficiencia
+          // Buscar de abajo hacia arriba para eficiencia: cerrar registro anterior
           const rango = Math.min(lastRowH - 1, 200); // revisar últimas 200 filas
           const dataH = hojaHistorico.getRange(lastRowH - rango + 1, 1, rango, 6).getValues();
           for (let j = dataH.length - 1; j >= 0; j--) {
@@ -2921,80 +3148,35 @@ function actualizarEstadoPropio(nuevoEstado) {
               try {
                 const inicioDate = inicioRaw instanceof Date ? inicioRaw : new Date(String(inicioRaw).replace(' ', 'T'));
                 if (!isNaN(inicioDate.getTime())) {
-                  duracion = Math.round((ahora.getTime() - inicioDate.getTime()) / 60000);
+                  duracion = Math.round((_ahora.getTime() - inicioDate.getTime()) / 60000);
                 }
               } catch(e) {}
-              hojaHistorico.getRange(filaH, 5).setValue(fechaHoraActual); // col E = fecha+hora fin
-              hojaHistorico.getRange(filaH, 6).setValue(duracion);         // col F = duración min
+              hojaHistorico.getRange(filaH, 5).setValue(_fechaHoraActual); // col E = fecha+hora fin
+              hojaHistorico.getRange(filaH, 6).setValue(duracion);          // col F = duración min
               break;
             }
           }
         }
 
-        // Escribir nuevo registro directamente en Historico_Estados
+        // Escribir nuevo registro en Historico_Estados
         hojaHistorico.appendRow([
-          fechaDiaHoy,
+          _fechaDiaHoy,
           correoAnalista,
-          estadoTextoPlano,
-          fechaHoraActual,
+          _estadoTextoPlano,
+          _fechaHoraActual,
           "EN CURSO",
           0
         ]);
       }
-      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): bloque Historico_Estados (scan+appendRow) = ' + (Date.now() - _tHistEst0) + 'ms');
-
-      // Actualizar estado actual en hoja Usuarios (col F)
-      const _tWriteUsr0 = Date.now();
-      hojaUsuarios.getRange(filaEncontrada, columnaEstado + 1).setValue(estadoTextoPlano);
-
-      // Actualizar col L con JSON mínimo para compatibilidad con UI del analista
-      const celdaHistorial = hojaUsuarios.getRange(filaEncontrada, columnaHistorial + 1);
-      let historial = [];
-      try {
-        const contenido = celdaHistorial.getValue();
-        historial = contenido ? JSON.parse(contenido) : [];
-      } catch (e) { historial = []; }
-
-      // Si el historial es de otro día, limpiarlo
-      if (historial.length > 0) {
-        try {
-          const primerInicio = historial[0].inicio;
-          const fechaPrimer = primerInicio.includes("T") ? primerInicio.split("T")[0] : primerInicio.split(' ')[0];
-          if (fechaPrimer !== fechaDiaHoy) historial = [];
-        } catch(e) { historial = []; }
-      }
-
-      // Cerrar último estado en JSON local
-      if (historial.length > 0) {
-        let ultimo = historial[historial.length - 1];
-        ultimo.fin = ahora.toISOString();
-        const inicioMs = new Date(ultimo.inicio).getTime();
-        if (!isNaN(inicioMs)) ultimo.duracion_min = Math.round((ahora.getTime() - inicioMs) / 60000);
-      }
-
-      historial.push({
-        estado: estadoTextoPlano,
-        inicio: ahora.toISOString(),
-        fin: "EN CURSO",
-        duracion_min: 0
-      });
-
-      celdaHistorial.setValue(JSON.stringify(historial));
-      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): escrituras hoja Usuarios (estado+historial) = ' + (Date.now() - _tWriteUsr0) + 'ms');
-      const _tFlushAEP0 = Date.now();
-      SpreadsheetApp.flush();
-      Logger.log('⏱ SPERF actualizarEstadoPropio (dentro del lock): SpreadsheetApp.flush() = ' + (Date.now() - _tFlushAEP0) + 'ms');
-      Logger.log('⏱ SPERF actualizarEstadoPropio: TOTAL dentro del lock = ' + (Date.now() - _tEnLockAEP0) + 'ms | TOTAL función = ' + (Date.now() - _tAEP0) + 'ms');
-      return { success: true, message: "Estado actualizado y sincronizado." };
-
-    } else {
-      return { success: false, message: "Usuario no encontrado." };
+      Logger.log('⏱ SPERF actualizarEstadoPropio (fuera del lock): bloque Historico_Estados (scan+appendRow) = ' + (Date.now() - _tHistEst0) + 'ms');
+    } catch (eHist) {
+      // El estado ya fue guardado en Usuarios — la auditoría falla sin afectar al analista
+      Logger.log('⚠️ actualizarEstadoPropio: Historico_Estados falló (no afecta resultado): ' + eHist.toString());
     }
-  } catch (e) {
-    return { success: false, message: "Error: " + e.toString() };
-  } finally {
-    lock.releaseLock();
   }
+
+  Logger.log('⏱ SPERF actualizarEstadoPropio: TOTAL función completa = ' + (Date.now() - _tAEP0) + 'ms');
+  return { success: true, message: "Estado actualizado y sincronizado." };
 }
 
 // ============================================================
@@ -3010,28 +3192,41 @@ function actualizarEstadoPropio(nuevoEstado) {
 // Si la activación falla (turno, permiso, etc.), devuelve el error sin intentar
 // asignar ni cargar panel — el cliente maneja eso igual que antes.
 function activarYAsignar() {
+  var _tActivarYAsignar0 = Date.now();
   var resultado = { activacion: null, asignacion: null, panel: null };
 
-  // Paso 1: activar
+  // Paso 1: activar (incluye verificarTurnoActivo con cache + ScriptLock + Historico_Estados)
   resultado.activacion = actualizarEstadoPropio('ACTIVO');
+  Logger.log('⏱ SPERF activarYAsignar: actualizarEstadoPropio = ' + (Date.now() - _tActivarYAsignar0) + 'ms');
   if (!resultado.activacion || !resultado.activacion.success) {
+    Logger.log('⏱ SPERF activarYAsignar: ABORTADO (activación fallida) TOTAL = ' + (Date.now() - _tActivarYAsignar0) + 'ms');
     return resultado;
   }
 
   // Paso 2: asignar (solo si la activación fue exitosa)
+  // La respuesta de autoAsignarDesdeEquipo() (vía RequestLeadUnificado) incluye
+  // idsAsignados y faseTarget cuando hay biometrías asignadas. El cliente usa
+  // estos campos para disparar actualizarFaseBiometriaPendienteDeferred() de
+  // forma no-bloqueante (fire-and-forget), evitando ~4-6s de espera adicional.
+  // Interfaz esperada: {success, message, nueva, idsAsignados, faseTarget}
+  var _tAutoAsignar0 = Date.now();
   try {
     resultado.asignacion = autoAsignarDesdeEquipo();
   } catch (e) {
-    resultado.asignacion = { success: false, message: e.message };
+    resultado.asignacion = { success: false, message: e.message, idsAsignados: [], faseTarget: null };
   }
+  Logger.log('⏱ SPERF activarYAsignar: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
 
   // Paso 3: cargar panel (siempre, para que el cliente tenga datos frescos)
+  var _tCargarPanel0 = Date.now();
   try {
     resultado.panel = cargarPanelAnalista();
   } catch (e) {
     resultado.panel = null;
   }
+  Logger.log('⏱ SPERF activarYAsignar: cargarPanelAnalista = ' + (Date.now() - _tCargarPanel0) + 'ms');
 
+  Logger.log('⏱ SPERF activarYAsignar: TOTAL = ' + (Date.now() - _tActivarYAsignar0) + 'ms');
   return resultado;
 }
 

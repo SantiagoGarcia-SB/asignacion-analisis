@@ -261,6 +261,11 @@ function getReestudiosData() {
  * Guarda la gestión de un caso de reestudio.
  * Después de guardar, intenta auto-asignar un nuevo caso (via MotorAsignacion.js).
  * 
+ * Garantía Req 8: la ruta HISTORICO de este endpoint NO adquiere ScriptLock ni usa
+ * funciones del motor de asignación (_contarYRecolectarPrincipal,
+ * _contarYRecolectarReestudios, _leerBloqueCasosAbiertos). La ruta ORIGEN (legado)
+ * sí usa ScriptLock porque ejecuta deleteRow() — no es afectada por las optimizaciones.
+ * 
  * @param {Object} datos - { filaReal, estadoGestion, motivoAplazamiento, motivoNegacion, observaciones }
  */
 function guardarGestionReestudio(datos) {
