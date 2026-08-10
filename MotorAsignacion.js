@@ -248,7 +248,7 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
       // si no pudo parsear fecha (fechaResultado vacía). No se filtra ese caso: bloquearlo
       // para siempre sería peor que la prioridad baja que ya le daba el orden existente.
       var fechaResultadoCaseMs = _parseDateUnif(row[18]);
-      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs >= limiteLiberacionDesaplazamiento.getTime()) continue;
+      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs > limiteLiberacionDesaplazamiento.getTime()) continue;
     }
 
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
@@ -400,7 +400,7 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
     // Filtro de fecha de liberación para desaplazamiento
     if (esDesaplazamiento && !reasignada) {
       var fechaResultadoCaseMs = _parseDateUnif(row[18]);
-      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs >= limiteLiberacionDesaplazamiento.getTime()) continue;
+      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs > limiteLiberacionDesaplazamiento.getTime()) continue;
     }
 
     // Detección de canal externo

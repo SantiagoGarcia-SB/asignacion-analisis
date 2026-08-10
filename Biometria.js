@@ -250,7 +250,11 @@ function autoAsignarBiometria() {
   try {
     const userEmail = Session.getActiveUser().getEmail().toLowerCase().trim();
 
-    const ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+    // Bug 3 fix: "solicitud" es la fuente única tanto para escritura (escalación vía
+    // procesarYGuardarLote en Código.js) como para lectura (asignación aquí).
+    // Se unifica en TARGET_SOLICITUDES_SS_ID para eliminar acoplamiento frágil con
+    // ID_WAREHOUSE_USUARIOS (que hoy comparte el mismo valor por coincidencia).
+    const ssWarehouse = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
     const hojaUsuarios = ssWarehouse.getSheetByName("Usuarios");
     const dataUsuarios = hojaUsuarios.getDataRange().getValues();
     const usuario = dataUsuarios.find(u => String(u[2]).trim().toLowerCase() === userEmail);
@@ -337,7 +341,8 @@ function autoAsignarBiometria() {
       // _parseDateUnif devuelve un NÚMERO (ms desde epoch), no un Date — y 9999999999999
       // si no pudo parsear fecha; ese caso no se filtra, para no bloquearlo para siempre.
       const fechaOrdCandidato = _parseDateUnif(row[18]);
-      if (fechaOrdCandidato !== 9999999999999 && fechaOrdCandidato >= limiteLiberacionDesaplazamiento.getTime()) continue;
+      // Bug 4 fix: usa > (no >=) para incluir casos exactamente en la frontera del corte
+      if (fechaOrdCandidato !== 9999999999999 && fechaOrdCandidato > limiteLiberacionDesaplazamiento.getTime()) continue;
 
       candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: fechaOrdCandidato });
       idsEnGestion.add(id);
@@ -597,6 +602,10 @@ function getDatosBiometria() {
 // cada vez que fase_seguimiento_biometria cambia de valor. Requiere correr una vez
 // agregarColumnaFechaActualizacionFase() para crear el encabezado en la hoja.
 var COL_FECHA_ACTUALIZACION_FASE = 77;
+// Columna 78: contador de intentos consecutivos en que SAI respondió null para un caso
+// en WA_ENVIADO. Cuando alcanza el umbral configurable (MAX_INTENTOS_SAI_NULL), el caso
+// se escala con flag SAI_NO_CONFIRMO en vez de quedarse atascado indefinidamente.
+var COL_INTENTOS_SAI_NULL = 78;
 
 /**
  * Actualiza la fase final en pendiente_biometria para una lista de consecutivos.
@@ -1705,7 +1714,14 @@ function _procesarCortePendientes() {
   var lastRow = hojaBio.getLastRow();
   if (lastRow < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
 
-  var datos = hojaBio.getRange(2, 1, lastRow - 1, COL_FECHA_ACTUALIZACION_FASE).getValues();
+  var datos = hojaBio.getRange(2, 1, lastRow - 1, COL_INTENTOS_SAI_NULL).getValues();
+
+  // Umbral configurable: tras este número de cortes consecutivos con SAI null, el caso
+  // se escala con flag SAI_NO_CONFIRMO. Default 3 cortes ≈ 36h (cortes a las 8am y 12pm).
+  var maxIntentosSaiNull = parseInt(
+    PropertiesService.getScriptProperties().getProperty("MAX_INTENTOS_SAI_NULL") || "3", 10
+  );
+  if (isNaN(maxIntentosSaiNull) || maxIntentosSaiNull < 1) maxIntentosSaiNull = 3;
 
   var pendientes = [];
   for (var i = 0; i < datos.length; i++) {
@@ -1714,7 +1730,8 @@ function _procesarCortePendientes() {
     var consecutivo = String(datos[i][0]).trim();
     if (!consecutivo) continue;
     var fechaFase = _parseFechaGAS(datos[i][COL_FECHA_ACTUALIZACION_FASE - 1]);
-    pendientes.push({ fila: i + 2, consecutivo: consecutivo, ts: fechaFase ? fechaFase.getTime() : 0 });
+    var intentosSaiNull = parseInt(datos[i][COL_INTENTOS_SAI_NULL - 1], 10) || 0;
+    pendientes.push({ fila: i + 2, consecutivo: consecutivo, ts: fechaFase ? fechaFase.getTime() : 0, intentosSaiNull: intentosSaiNull });
   }
 
   if (pendientes.length === 0) {
@@ -1774,6 +1791,10 @@ function _procesarCortePendientes() {
         hojaBio.getRange(u.fila, 63).setValue(u.estadoSai); // nuevo_estado_sai
         hojaBio.getRange(u.fila, 76).setValue(u.fase);
         hojaBio.getRange(u.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(u.fecha);
+        // Persistir el contador de intentos SAI null (columna 78)
+        if (u.intentosSaiNull !== undefined) {
+          hojaBio.getRange(u.fila, COL_INTENTOS_SAI_NULL).setValue(u.intentosSaiNull);
+        }
       });
       SpreadsheetApp.flush();
     } finally {
@@ -1797,19 +1818,45 @@ function _procesarCortePendientes() {
 
     if (!datosApi) {
       sinRespuesta++;
-      Logger.log("⚠️ Sin respuesta API para " + item.consecutivo);
-      continue; // se queda en WA_ENVIADO, se reintenta en un próximo corte
+      var nuevosIntentos = item.intentosSaiNull + 1;
+      var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+      if (nuevosIntentos >= maxIntentosSaiNull) {
+        // Umbral alcanzado: escalar con flag SAI_NO_CONFIRMO.
+        // Construimos un registro mínimo desde los datos conocidos de pendiente_biometria
+        // ya que no tenemos respuesta de SAI para llamar _homologarDatosApi().
+        Logger.log("🚨 " + item.consecutivo + " alcanzó " + nuevosIntentos + " intentos SAI null (umbral: " + maxIntentosSaiNull + ") → escalando con SAI_NO_CONFIRMO");
+        solicitudesParaAsignar.push({
+          solicitud: item.consecutivo,
+          poliza: "", identificacionInquilino: "", tipoIdentificacion: "",
+          nombreInquilino: "", correoInquilino: "", telefonoInquilino: "",
+          ingresos: "", fechaExpedicion: "", canon: "", cuota: "",
+          direccionInmueble: "", destinoInmueble: "", ciudadInmueble: "",
+          nombreAsesor: "", correoAsesor: "",
+          estadoGeneral: "SAI_NO_CONFIRMO",
+          fechaRadicacion: "", fechaResultado: "",
+          clase: "", digitalUar: "No", canal: "",
+          codeudores: [], resultCode: ""
+        });
+        actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: "SAI_NO_CONFIRMO", intentosSaiNull: nuevosIntentos });
+        escaladas++;
+      } else {
+        // Aún por debajo del umbral: persistir counter incrementado, dejar en WA_ENVIADO
+        Logger.log("⚠️ Sin respuesta API para " + item.consecutivo + " (intento " + nuevosIntentos + "/" + maxIntentosSaiNull + ")");
+        actualizaciones.push({ fila: item.fila, fase: "WA_ENVIADO", fecha: ahora, estadoSai: "", intentosSaiNull: nuevosIntentos });
+      }
+      continue;
     }
 
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
     var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
 
     if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
-      actualizaciones.push({ fila: item.fila, fase: "RESUELTA", fecha: ahora, estadoSai: statusActual });
+      actualizaciones.push({ fila: item.fila, fase: "RESUELTA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
       resueltas++;
     } else {
       solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
-      actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: statusActual });
+      actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
       escaladas++;
     }
 
@@ -2040,22 +2087,43 @@ function admin_desarchivarBiometrias(cantidad) {
       Utilities.sleep(1000);
     }
 
+    // --- FIX Bug 2: Atomic mark-on-success ---
+    // Patrón idéntico al de _volcarBloque() en _procesarCortePendientes():
+    // Escribir en "solicitud" PRIMERO; solo marcar ESCALADA si tiene éxito.
+    // Las RESUELTA no dependen de procesarYGuardarLote y se confirman siempre.
+
+    var falloEscrituraSolicitud = false;
+    var restauradas = paraReponer.length;
+
+    if (paraReponer.length > 0) {
+      try {
+        procesarYGuardarLote(paraReponer);
+      } catch (e) {
+        falloEscrituraSolicitud = true;
+        restauradas = 0;
+        Logger.log("❌ procesarYGuardarLote falló en admin_desarchivarBiometrias: " + e.message
+          + " — los " + paraReponer.length + " caso(s) que iban a ESCALADA se dejan en ARCHIVADA para reintento futuro.");
+      }
+    }
+
+    // Separar: RESUELTA siempre se confirma; ESCALADA solo si la escritura tuvo éxito
+    var filasParaEscribir = falloEscrituraSolicitud
+      ? filasAActualizar.filter(function(item) { return item.nuevaFase !== "ESCALADA"; })
+      : filasAActualizar;
+
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-    filasAActualizar.forEach(function(item) {
+    filasParaEscribir.forEach(function(item) {
       hojaBio.getRange(item.fila, 76).setValue(item.nuevaFase);
       hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
     });
-    if (filasAActualizar.length > 0) SpreadsheetApp.flush();
+    if (filasParaEscribir.length > 0) SpreadsheetApp.flush();
 
-    if (paraReponer.length > 0) {
-      procesarYGuardarLote(paraReponer);
-    }
-
-    var msg = paraReponer.length + " biometría(s) repuestas en la cola de llamada.";
+    var msg = restauradas + " biometría(s) repuestas en la cola de llamada.";
     if (yaResueltas > 0) msg += " " + yaResueltas + " ya se habían resuelto en SAI (se dejaron cerradas).";
     if (sinRespuestaSai > 0) msg += " " + sinRespuestaSai + " sin respuesta de SAI (se dejaron archivadas, reintentar luego).";
+    if (falloEscrituraSolicitud) msg += " ⚠️ " + paraReponer.length + " caso(s) no se pudieron escribir en solicitud (se dejaron archivadas, reintentar luego).";
 
-    return { success: true, message: msg, restauradas: paraReponer.length, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
+    return { success: !falloEscrituraSolicitud || yaResueltas > 0, message: msg, restauradas: restauradas, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
   } catch (e) {
     return { success: false, message: e.message };
   }
