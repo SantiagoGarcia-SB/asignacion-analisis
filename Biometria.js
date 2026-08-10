@@ -702,7 +702,9 @@ function consultarBiometriasPeriodicaAPI() {
 // escalación para que el WA salga apenas se cumple la ventana, sin esperar al corte fijo
 // siguiente — así casos de un día quedan con WA_ENVIADO listos para escalar desde el
 // primer corte del día siguiente (8am).
-var VENTANA_HORAS_WA_BIOMETRIA = 4;
+// OBSOLETA — ventanaHoras ahora se lee dinámicamente de _getConfigWaBiometria().
+// Se conserva comentada como referencia del valor histórico.
+// var VENTANA_HORAS_WA_BIOMETRIA = 4;
 function cicloPrimerContactoBiometria() {
   Logger.log("=== INICIO cicloPrimerContactoBiometria ===");
   _enviarPrimerContactoBiometria();
@@ -1351,21 +1353,65 @@ function _esDiaNoHabilOperacion(fecha) {
   return false;
 }
 
-// Ley 2300 de 2023: las comunicaciones de cobranza (incluye WhatsApp) solo se pueden
-// enviar lunes a viernes 7:00-19:00 y sábados 8:00-15:00. Domingos y festivos, prohibido.
-// Se valida aquí (y no solo confiando en el horario del trigger en GAS) para que el
-// envío quede protegido aunque el trigger quede mal configurado o corra fuera de horario.
+// Ley 2300 de 2023: evalúa si el momento actual está dentro de la ventana configurada
+// para envío de WhatsApp. Lee config dinámica de Script Properties en cada invocación
+// (sin caché) para que cambios del admin se apliquen inmediatamente sin redeploy.
+// Reemplaza la lógica hardcodeada anterior por lectura de _getConfigWaBiometria().
 function _dentroDeVentanaLey2300() {
   var ahora = new Date();
-  if (_esDiaNoHabilOperacion(ahora)) return false;
+  var config = _getConfigWaBiometria();
+
+  var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
+  var dow = new Date(fechaStr + "T12:00:00").getDay(); // 0=dom, 1=lun ... 6=sáb
+  var nombreDia = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'][dow];
+  var diaConfig = config.dias[nombreDia];
+
+  if (!diaConfig || !diaConfig.habilitado) {
+    // Si el día está deshabilitado, verificar si es festivo para log informativo
+    _verificarFestivoParaLog(fechaStr);
+    return false;
+  }
 
   var horaStr = Utilities.formatDate(ahora, "GMT-5", "HH:mm");
-  var horaNum = parseInt(horaStr.split(':')[0], 10) + parseInt(horaStr.split(':')[1], 10) / 60;
-  var fechaStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd");
-  var dow = new Date(fechaStr + "T12:00:00").getDay();
+  var horaNum = _horaANumero(horaStr);
+  var inicioNum = _horaANumero(diaConfig.horaInicio);
+  var finNum = _horaANumero(diaConfig.horaFin);
 
-  if (dow === 6) return horaNum >= 8 && horaNum < 15;
-  return horaNum >= 7 && horaNum < 19;
+  return horaNum >= inicioNum && horaNum < finNum;
+}
+
+/**
+ * Convierte "HH:MM" a número decimal (ej: "08:30" → 8.5).
+ * @param {string} horaStr - Hora en formato "HH:MM"
+ * @returns {number} Representación decimal de la hora
+ */
+function _horaANumero(horaStr) {
+  var partes = horaStr.split(':');
+  return parseInt(partes[0], 10) + parseInt(partes[1], 10) / 60;
+}
+
+/**
+ * Loguea si la fecha proporcionada corresponde a un festivo colombiano.
+ * Usado para registro informativo cuando un día está deshabilitado en la config.
+ * @param {string} fechaStr - Fecha en formato "yyyy-MM-dd"
+ */
+function _verificarFestivoParaLog(fechaStr) {
+  try {
+    var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    var hojaFestivos = ss.getSheetByName("Festivos");
+    if (!hojaFestivos) return;
+    var valores = hojaFestivos.getDataRange().getValues();
+    for (var i = 0; i < valores.length; i++) {
+      var celda = valores[i][0];
+      var fFestivo = celda instanceof Date ? celda : new Date(celda);
+      if (!isNaN(fFestivo.getTime()) && Utilities.formatDate(fFestivo, "GMT-5", "yyyy-MM-dd") === fechaStr) {
+        Logger.log("ℹ️ " + fechaStr + " es festivo colombiano — día deshabilitado para envío WA.");
+        return;
+      }
+    }
+  } catch (e) {
+    // No-op: la verificación de festivos es solo informativa
+  }
 }
 
 // Ventana de liberación para asignar desaplazamiento/biometría, según la regla real de
@@ -1391,14 +1437,18 @@ const MAX_CANDIDATOS_PRIMER_CONTACTO = 500;
 const TIEMPO_MAXIMO_PRIMER_CONTACTO_MS = 20 * 60 * 1000;
 
 // Primer contacto: evalúa pendientes en fase vacía, envía WhatsApp a los que ya
-// cumplieron la ventana de 4h desde fecha_resultado y siguen pendientes en SAI.
+// cumplieron la ventana dinámica (config.ventanaHoras) desde fecha_resultado y siguen pendientes en SAI.
 function _enviarPrimerContactoBiometria() {
   Logger.log("--- Primer contacto: evaluación de pendientes en fase vacía ---");
 
   if (!_dentroDeVentanaLey2300()) {
-    Logger.log("⏸️ Fuera del horario permitido por Ley 2300 (L-V 7:00-19:00, Sáb 8:00-15:00, no domingos/festivos). Envío de WA pospuesto al próximo corte hábil.");
+    Logger.log("⏸️ Fuera del horario permitido por configuración de ventana Ley 2300. Envío de WA pospuesto al próximo corte hábil.");
     return;
   }
+
+  var config = _getConfigWaBiometria();
+  var ventanaHoras = config.ventanaHoras;
+  Logger.log("📋 Ventana de horas configurada para primer contacto: " + ventanaHoras + "h");
 
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
@@ -1423,7 +1473,7 @@ function _enviarPrimerContactoBiometria() {
 
     var fechaResultado = _parseFechaGAS(datos[i][18]); // fecha_resultado
     var horasDesdeResultado = fechaResultado ? (Date.now() - fechaResultado.getTime()) / 3600000 : null;
-    if (fechaResultado !== null && horasDesdeResultado < VENTANA_HORAS_WA_BIOMETRIA) continue; // aún no cumple ventana
+    if (fechaResultado !== null && horasDesdeResultado < ventanaHoras) continue; // aún no cumple ventana
 
     candidatos.push({ fila: i + 2, consecutivo: consecutivo, datosFila: datos[i] });
   }
@@ -1489,7 +1539,7 @@ function _enviarPrimerContactoBiometria() {
       item.datosFila[75] = "WA_ENVIADO";
       item.datosFila[76] = ahora;
       enviadosWaPC++;
-      Logger.log("📲 " + item.consecutivo + " cumple ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h y sigue pendiente → primer contacto (WhatsApp).");
+      Logger.log("📲 " + item.consecutivo + " cumple ventana de " + ventanaHoras + "h y sigue pendiente → primer contacto (WhatsApp).");
     }
 
     // Una sola escritura en bloque (toda la hoja leída al inicio, mutada en memoria) en
@@ -1520,7 +1570,7 @@ function _enviarPrimerContactoBiometria() {
 // ===================================================================
 // UTILIDAD MANUAL — correr a demanda desde el editor de Apps Script cuando se
 // necesite destrabar biometrías 02/500 o 02/503 que están en fase vacía
-// esperando la ventana normal de VENTANA_HORAS_WA_BIOMETRIA horas (p.ej. un
+// esperando la ventana normal de config.ventanaHoras (p.ej. un
 // pico de solicitudes que no puede esperar el ciclo horario normal). Envía el
 // WhatsApp ya mismo, sin esperar la ventana, y marca WA_ENVIADO. No es un
 // trigger automático: alguien tiene que ejecutarla a mano cada vez.
@@ -1564,7 +1614,7 @@ function forzarPrimerContactoBiometriaManual() {
     return;
   }
 
-  Logger.log(candidatos.length + " candidatos a forzar primer contacto (sin esperar ventana de " + VENTANA_HORAS_WA_BIOMETRIA + "h).");
+  Logger.log(candidatos.length + " candidatos a forzar primer contacto (sin esperar ventana de " + _getConfigWaBiometria().ventanaHoras + "h).");
 
   var resultados = [];
   for (var p = 0; p < candidatos.length; p++) {

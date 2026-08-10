@@ -3300,3 +3300,184 @@ function admin_verificarDesaplazamientos() {
     return { success: false, message: e.message || e.toString() };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WA BIOMETRÍA — CONFIGURACIÓN DE HORARIOS DE ENVÍO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Valores por defecto: L-V 7-19, Sáb 8-15, Dom deshabilitado, ventanaHoras 4 */
+var CONFIG_WA_BIOMETRIA_DEFAULTS = {
+  dias: {
+    lunes:     { habilitado: true,  horaInicio: "07:00", horaFin: "19:00" },
+    martes:    { habilitado: true,  horaInicio: "07:00", horaFin: "19:00" },
+    miercoles: { habilitado: true,  horaInicio: "07:00", horaFin: "19:00" },
+    jueves:    { habilitado: true,  horaInicio: "07:00", horaFin: "19:00" },
+    viernes:   { habilitado: true,  horaInicio: "07:00", horaFin: "19:00" },
+    sabado:    { habilitado: true,  horaInicio: "08:00", horaFin: "15:00" },
+    domingo:   { habilitado: false, horaInicio: "08:00", horaFin: "12:00" }
+  },
+  ventanaHoras: 4
+};
+
+/** Días válidos como claves del objeto config.dias */
+var DIAS_VALIDOS_WA_BIO = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+
+/**
+ * Lee y parsea CONFIG_WA_BIOMETRIA desde Script Properties. Retorna defaults
+ * si no existe o es inválido. Usada tanto por admin_get como por Biometria.js.
+ * @returns {Object} ConfigWaBiometria válida o defaults.
+ */
+function _getConfigWaBiometria() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var raw = props.getProperty('CONFIG_WA_BIOMETRIA');
+    if (!raw) return JSON.parse(JSON.stringify(CONFIG_WA_BIOMETRIA_DEFAULTS));
+    var parsed = JSON.parse(raw);
+    if (!_validarEstructuraConfig(parsed)) {
+      Logger.log("WARNING _getConfigWaBiometria: estructura JSON inválida, usando defaults.");
+      return JSON.parse(JSON.stringify(CONFIG_WA_BIOMETRIA_DEFAULTS));
+    }
+    return parsed;
+  } catch (e) {
+    Logger.log("WARNING _getConfigWaBiometria: " + e.message + ", usando defaults.");
+    return JSON.parse(JSON.stringify(CONFIG_WA_BIOMETRIA_DEFAULTS));
+  }
+}
+
+/**
+ * Verifica que un objeto parsed tenga la estructura esperada de ConfigWaBiometria.
+ * No valida reglas de negocio (como horaFin > horaInicio), solo estructura y tipos.
+ * @param {Object} obj - Objeto a validar.
+ * @returns {boolean} true si la estructura es válida.
+ */
+function _validarEstructuraConfig(obj) {
+  if (!obj || typeof obj !== 'object') return false;
+  if (!obj.dias || typeof obj.dias !== 'object') return false;
+
+  // Verificar ventanaHoras: entero entre 1 y 48
+  if (typeof obj.ventanaHoras !== 'number') return false;
+  if (obj.ventanaHoras !== Math.floor(obj.ventanaHoras)) return false;
+  if (obj.ventanaHoras < 1 || obj.ventanaHoras > 48) return false;
+
+  // Verificar que existan los 7 días con estructura correcta
+  for (var i = 0; i < DIAS_VALIDOS_WA_BIO.length; i++) {
+    var dia = DIAS_VALIDOS_WA_BIO[i];
+    var diaConfig = obj.dias[dia];
+    if (!diaConfig || typeof diaConfig !== 'object') return false;
+    if (typeof diaConfig.habilitado !== 'boolean') return false;
+    if (typeof diaConfig.horaInicio !== 'string') return false;
+    if (typeof diaConfig.horaFin !== 'string') return false;
+    // Verificar formato HH:MM válido (00:00 a 23:30, incrementos de 30 min)
+    if (!diaConfig.horaInicio.match(/^([01]\d|2[0-3]):(00|30)$/)) return false;
+    if (!diaConfig.horaFin.match(/^([01]\d|2[0-3]):(00|30)$/)) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Validación server-side completa de un objeto ConfigWaBiometria recibido del cliente.
+ * Verifica estructura + regla de negocio: horaFin > horaInicio para días habilitados.
+ * @param {Object} config - Objeto de configuración a validar.
+ * @returns {{ok: boolean, config?: Object, error?: string}}
+ */
+function _validarConfigWaBiometria(config) {
+  // Validar estructura base
+  if (!config || typeof config !== 'object') {
+    return { ok: false, error: "La configuración no tiene el formato esperado." };
+  }
+
+  if (!config.dias || typeof config.dias !== 'object') {
+    return { ok: false, error: "La configuración debe incluir la propiedad 'dias'." };
+  }
+
+  // Validar ventanaHoras
+  if (typeof config.ventanaHoras !== 'number' || config.ventanaHoras !== Math.floor(config.ventanaHoras)) {
+    return { ok: false, error: "La ventana de horas debe ser un número entero." };
+  }
+  if (config.ventanaHoras < 1 || config.ventanaHoras > 48) {
+    return { ok: false, error: "La ventana de horas debe estar entre 1 y 48." };
+  }
+
+  // Validar cada día
+  for (var i = 0; i < DIAS_VALIDOS_WA_BIO.length; i++) {
+    var dia = DIAS_VALIDOS_WA_BIO[i];
+    var diaConfig = config.dias[dia];
+
+    if (!diaConfig || typeof diaConfig !== 'object') {
+      return { ok: false, error: "Falta la configuración para el día '" + dia + "'." };
+    }
+    if (typeof diaConfig.habilitado !== 'boolean') {
+      return { ok: false, error: "El campo 'habilitado' del día '" + dia + "' debe ser booleano." };
+    }
+    if (typeof diaConfig.horaInicio !== 'string' || !diaConfig.horaInicio.match(/^([01]\d|2[0-3]):(00|30)$/)) {
+      return { ok: false, error: "La hora de inicio del día '" + dia + "' no tiene formato válido (HH:00 o HH:30)." };
+    }
+    if (typeof diaConfig.horaFin !== 'string' || !diaConfig.horaFin.match(/^([01]\d|2[0-3]):(00|30)$/)) {
+      return { ok: false, error: "La hora de fin del día '" + dia + "' no tiene formato válido (HH:00 o HH:30)." };
+    }
+
+    // Regla de negocio: horaFin > horaInicio para días habilitados
+    if (diaConfig.habilitado) {
+      var partesInicio = diaConfig.horaInicio.split(':');
+      var partesFin = diaConfig.horaFin.split(':');
+      var inicioNum = parseInt(partesInicio[0], 10) + parseInt(partesInicio[1], 10) / 60;
+      var finNum = parseInt(partesFin[0], 10) + parseInt(partesFin[1], 10) / 60;
+      if (finNum <= inicioNum) {
+        return { ok: false, error: "La hora de fin debe ser posterior a la hora de inicio para " + dia + "." };
+      }
+    }
+  }
+
+  // Sanitizar y retornar config válida (solo las propiedades esperadas)
+  var sanitized = {
+    dias: {},
+    ventanaHoras: config.ventanaHoras
+  };
+  for (var j = 0; j < DIAS_VALIDOS_WA_BIO.length; j++) {
+    var d = DIAS_VALIDOS_WA_BIO[j];
+    sanitized.dias[d] = {
+      habilitado: config.dias[d].habilitado,
+      horaInicio: config.dias[d].horaInicio,
+      horaFin: config.dias[d].horaFin
+    };
+  }
+
+  return { ok: true, config: sanitized };
+}
+
+/**
+ * Lee la configuración de envío WA Biometría desde Script Properties.
+ * Expuesta a google.script.run para el panel admin.
+ * @returns {Object} ConfigWaBiometria actual o defaults si no existe.
+ * @throws {Error} Si el usuario no tiene permiso ADMIN.
+ */
+function admin_getConfigWaBiometria() {
+  verificarPermisoAdmin();
+  return _getConfigWaBiometria();
+}
+
+/**
+ * Persiste la configuración de envío WA Biometría en Script Properties.
+ * Expuesta a google.script.run para el panel admin.
+ * @param {Object} config - Objeto ConfigWaBiometria enviado desde el cliente.
+ * @returns {{success: boolean, message: string}}
+ */
+function admin_setConfigWaBiometria(config) {
+  try {
+    verificarPermisoAdmin();
+
+    var validado = _validarConfigWaBiometria(config);
+    if (!validado.ok) {
+      return { success: false, message: validado.error };
+    }
+
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('CONFIG_WA_BIOMETRIA', JSON.stringify(validado.config));
+
+    return { success: true, message: "Configuración de envío WA Biometría actualizada correctamente." };
+  } catch (e) {
+    Logger.log("ERROR admin_setConfigWaBiometria: " + e.message);
+    return { success: false, message: "No se pudo guardar la configuración. Intente de nuevo." };
+  }
+}

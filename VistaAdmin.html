@@ -972,6 +972,9 @@ html { scroll-behavior: smooth; }
         <a href="#" id="link-catalogo" class="nav-link-admin" onclick="mostrarSeccion('catalogo', event)">
             <i class="bi bi-collection-fill"></i><span class="nav-text">Catálogo</span>
         </a>
+        <a href="#" id="link-wabiometria" class="nav-link-admin" onclick="mostrarSeccion('wabiometria', event)">
+            <i class="bi bi-whatsapp"></i><span class="nav-text">WA Biometría</span>
+        </a>
         <a href="https://script.google.com/a/macros/ellibertador.co/s/AKfycbxzfQWwoYKXraR6gAJZjw_SjOslTOf5zT_neWxT7WprclkqvA_MnIzY3kIxXOFIP8V8eQ/exec" target="_blank" id="link-metricas" class="nav-link-admin" title="Abre una herramienta distinta en una pestaña nueva">
             <i class="bi bi-bar-chart-line-fill"></i><span class="nav-text">Métricas</span>
             <i class="bi bi-box-arrow-up-right nav-external-icon"></i>
@@ -1761,6 +1764,117 @@ html { scroll-behavior: smooth; }
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ===== SECCIÓN WA BIOMETRÍA ===== -->
+    <div id="seccion-wabiometria" class="seccion-admin" style="display:none;">
+        <div class="mb-4">
+            <h1 class="page-title"><i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>Configuración de envío WA Biometría</h1>
+            <p class="page-sub">Define los días y horarios en los que el sistema puede enviar WhatsApp de biometría a los clientes.</p>
+        </div>
+
+        <!-- Nota informativa Ley 2300 -->
+        <div class="p-3 rounded-3 mb-4" style="background:#fffbeb;border:1.5px solid #f59e0b;">
+            <div class="d-flex align-items-start gap-2">
+                <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:1.1rem;flex-shrink:0;margin-top:2px;"></i>
+                <div>
+                    <strong style="font-size:0.85rem;color:#92400e;">Referencia Ley 2300 de 2023</strong>
+                    <p class="mb-0 mt-1" style="font-size:0.8rem;color:#78350f;">
+                        Límites recomendados: <strong>Lunes a Viernes 7:00–19:00</strong>, <strong>Sábados 8:00–15:00</strong>, <strong>Domingos no recomendado</strong>. 
+                        Si configura horarios fuera de estos rangos, se mostrará una advertencia antes de guardar.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grid de configuración por día -->
+        <div class="table-container mb-4">
+            <div class="table-header">
+                <div>
+                    <div class="table-title">Horarios de envío por día</div>
+                    <div class="table-sub">Seleccione los días habilitados y defina la ventana horaria de envío</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle" id="tabla-config-wa-bio">
+                    <thead>
+                        <tr>
+                            <th style="width:50px;">Activo</th>
+                            <th>Día</th>
+                            <th>Hora inicio</th>
+                            <th>Hora fin</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-lunes-check" checked></td>
+                            <td><strong>Lunes</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-lunes-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-lunes-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-martes-check" checked></td>
+                            <td><strong>Martes</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-martes-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-martes-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-miercoles-check" checked></td>
+                            <td><strong>Miércoles</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-miercoles-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-miercoles-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-jueves-check" checked></td>
+                            <td><strong>Jueves</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-jueves-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-jueves-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-viernes-check" checked></td>
+                            <td><strong>Viernes</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-viernes-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-viernes-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-sabado-check" checked></td>
+                            <td><strong>Sábado</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-sabado-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-sabado-fin" style="width:120px;"></select></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" id="wa-bio-domingo-check"></td>
+                            <td><strong>Domingo</strong></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-domingo-inicio" style="width:120px;"></select></td>
+                            <td><select class="form-select form-select-sm" id="wa-bio-domingo-fin" style="width:120px;"></select></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Ventana de horas -->
+        <div class="table-container mb-4">
+            <div class="table-header">
+                <div>
+                    <div class="table-title">Ventana mínima de horas</div>
+                    <div class="table-sub">Horas mínimas que deben transcurrir desde la fecha del resultado antes de enviar el primer WhatsApp</div>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-3 p-3">
+                <label for="wa-bio-ventana-horas" class="fw-bold" style="font-size:0.85rem;white-space:nowrap;">Ventana (horas):</label>
+                <input type="number" class="form-control" id="wa-bio-ventana-horas" min="1" max="48" value="4" style="width:100px;text-align:center;">
+                <span class="text-muted" style="font-size:0.78rem;">Mínimo 1, máximo 48 horas</span>
+            </div>
+        </div>
+
+        <!-- Botón guardar -->
+        <div class="text-end">
+            <button class="btn-primary-brand" id="btn-guardar-wa-bio" onclick="guardarConfigWaBiometria()">
+                <span class="spinner-border spinner-border-sm d-none me-2" id="spinner-guardar-wa-bio" role="status"></span>
+                <i class="bi bi-save me-2"></i> Guardar Configuración
+            </button>
         </div>
     </div>
 
@@ -2837,6 +2951,7 @@ function mostrarSeccion(id, e, forzar) {
     if (id === 'turnos') cargarTurnos();
     if (id === 'equipos') cargarKanbanEquipos();
     if (id === 'catalogo') cargarCatalogo();
+    if (id === 'wabiometria') cargarConfigWaBiometria();
 }
 
 function _renderFromCache(id, data) {
@@ -6239,6 +6354,285 @@ function actualizarCategoriaScore(fila) {
     }).withFailureHandler(function(e) {
         Swal.fire({ icon: 'error', text: mensajeErrorAmigable(e) });
     }).admin_actualizarCategoriaPoliza(fila, nuevaCat);
+}
+
+// ============================================================
+// WA BIOMETRÍA — Inicialización de selects de hora
+// ============================================================
+
+(function inicializarSelectsWaBiometria() {
+    var dias = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+    var opciones = '';
+    for (var h = 0; h < 24; h++) {
+        for (var m = 0; m < 60; m += 30) {
+            var val = (h < 10 ? '0' + h : h) + ':' + (m === 0 ? '00' : '30');
+            opciones += '<option value="' + val + '">' + val + '</option>';
+        }
+    }
+    dias.forEach(function(dia) {
+        var selInicio = document.getElementById('wa-bio-' + dia + '-inicio');
+        var selFin = document.getElementById('wa-bio-' + dia + '-fin');
+        if (selInicio) selInicio.innerHTML = opciones;
+        if (selFin) selFin.innerHTML = opciones;
+    });
+})();
+
+// ============================================================
+// WA BIOMETRÍA — Funciones del formulario
+// ============================================================
+
+/**
+ * Carga la configuración actual del servidor y renderiza el formulario.
+ */
+function cargarConfigWaBiometria() {
+    google.script.run
+        .withSuccessHandler(function(config) {
+            _renderFormWaBiometria(config);
+        })
+        .withFailureHandler(function(err) {
+            Swal.fire({ icon: 'error', title: 'Error al cargar', text: mensajeErrorAmigable(err) });
+        })
+        .admin_getConfigWaBiometria();
+}
+
+/**
+ * Renderiza los valores de config en los controles del formulario.
+ * @param {Object} config - ConfigWaBiometria
+ */
+function _renderFormWaBiometria(config) {
+    if (!config || !config.dias) return;
+    var dias = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+    dias.forEach(function(dia) {
+        var diaConf = config.dias[dia];
+        if (!diaConf) return;
+        var chk = document.getElementById('wa-bio-' + dia + '-check');
+        var selInicio = document.getElementById('wa-bio-' + dia + '-inicio');
+        var selFin = document.getElementById('wa-bio-' + dia + '-fin');
+        if (chk) chk.checked = diaConf.habilitado;
+        if (selInicio) selInicio.value = diaConf.horaInicio;
+        if (selFin) selFin.value = diaConf.horaFin;
+    });
+    var ventanaInput = document.getElementById('wa-bio-ventana-horas');
+    if (ventanaInput) ventanaInput.value = config.ventanaHoras || 4;
+}
+
+/**
+ * Recolecta valores del formulario en un objeto ConfigWaBiometria.
+ * @returns {Object} ConfigWaBiometria
+ */
+function _recolectarFormWaBiometria() {
+    var dias = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+    var config = { dias: {}, ventanaHoras: 4 };
+    dias.forEach(function(dia) {
+        var chk = document.getElementById('wa-bio-' + dia + '-check');
+        var selInicio = document.getElementById('wa-bio-' + dia + '-inicio');
+        var selFin = document.getElementById('wa-bio-' + dia + '-fin');
+        config.dias[dia] = {
+            habilitado: chk ? chk.checked : false,
+            horaInicio: selInicio ? selInicio.value : '07:00',
+            horaFin: selFin ? selFin.value : '19:00'
+        };
+    });
+    var ventanaInput = document.getElementById('wa-bio-ventana-horas');
+    var ventanaVal = ventanaInput ? parseInt(ventanaInput.value, 10) : 4;
+    config.ventanaHoras = (isNaN(ventanaVal) || ventanaVal < 1 || ventanaVal > 48) ? 4 : ventanaVal;
+    return config;
+}
+
+/**
+ * Convierte "HH:MM" a número decimal.
+ * @param {string} horaStr
+ * @returns {number}
+ */
+function _horaANumeroClient(horaStr) {
+    var partes = horaStr.split(':');
+    return parseInt(partes[0], 10) + parseInt(partes[1], 10) / 60;
+}
+
+/**
+ * Valida que horaFin > horaInicio para cada día habilitado.
+ * @param {Object} config - ConfigWaBiometria
+ * @returns {{valido: boolean, errores: string[]}}
+ */
+function _validarHorariosWaBiometria(config) {
+    var errores = [];
+    var dias = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+    dias.forEach(function(dia) {
+        var diaConf = config.dias[dia];
+        if (!diaConf || !diaConf.habilitado) return;
+        var inicio = _horaANumeroClient(diaConf.horaInicio);
+        var fin = _horaANumeroClient(diaConf.horaFin);
+        if (fin <= inicio) {
+            errores.push('La hora de fin debe ser posterior a la hora de inicio para ' + dia + '.');
+        }
+    });
+    return { valido: errores.length === 0, errores: errores };
+}
+
+/**
+ * Evalúa desviaciones contra los límites de referencia Ley 2300.
+ * Condiciones: weekday fuera de 7-19, sábado fuera de 8-15, domingo habilitado.
+ * @param {Object} config - ConfigWaBiometria
+ * @returns {string[]} Lista de desviaciones detectadas
+ */
+function _evaluarDesviacionesLey2300(config) {
+    var desviaciones = [];
+    if (!config || !config.dias) return desviaciones;
+
+    var diasWeekday = ['lunes','martes','miercoles','jueves','viernes'];
+
+    // Evaluar weekdays (L-V): límite 7:00–19:00
+    diasWeekday.forEach(function(dia) {
+        var diaConf = config.dias[dia];
+        if (!diaConf) return;
+        var inicioNum = _horaANumeroClient(diaConf.horaInicio);
+        var finNum = _horaANumeroClient(diaConf.horaFin);
+        if (inicioNum < 7) {
+            desviaciones.push(dia + ': hora de inicio (' + diaConf.horaInicio + ') es anterior a 07:00 (Ley 2300).');
+        }
+        if (finNum > 19) {
+            desviaciones.push(dia + ': hora de fin (' + diaConf.horaFin + ') es posterior a 19:00 (Ley 2300).');
+        }
+    });
+
+    // Evaluar sábado: límite 8:00–15:00
+    var sabConf = config.dias.sabado;
+    if (sabConf) {
+        var sabInicioNum = _horaANumeroClient(sabConf.horaInicio);
+        var sabFinNum = _horaANumeroClient(sabConf.horaFin);
+        if (sabInicioNum < 8) {
+            desviaciones.push('sabado: hora de inicio (' + sabConf.horaInicio + ') es anterior a 08:00 (Ley 2300).');
+        }
+        if (sabFinNum > 15) {
+            desviaciones.push('sabado: hora de fin (' + sabConf.horaFin + ') es posterior a 15:00 (Ley 2300).');
+        }
+    }
+
+    // Evaluar domingo: no recomendado
+    var domConf = config.dias.domingo;
+    if (domConf && domConf.habilitado === true) {
+        desviaciones.push('domingo: envío habilitado (Ley 2300 no recomienda envíos en domingos y festivos).');
+    }
+
+    return desviaciones;
+}
+
+/**
+ * Orquesta el flujo de guardado:
+ * validar → evaluar Ley 2300 → confirmar si aplica → enviar con spinner + timeout 30s.
+ */
+function guardarConfigWaBiometria() {
+    var config = _recolectarFormWaBiometria();
+
+    // 1. Validar horarios
+    var validacion = _validarHorariosWaBiometria(config);
+    if (!validacion.valido) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Error de validación',
+            html: '<ul style="text-align:left;font-size:0.85rem;">' +
+                  validacion.errores.map(function(e) { return '<li>' + e + '</li>'; }).join('') +
+                  '</ul>'
+        });
+        return;
+    }
+
+    // 2. Evaluar desviaciones Ley 2300
+    var desviaciones = _evaluarDesviacionesLey2300(config);
+
+    if (desviaciones.length > 0) {
+        // Mostrar warning y pedir confirmación
+        Swal.fire({
+            icon: 'warning',
+            title: 'Desviación de Ley 2300',
+            html: '<p style="font-size:0.85rem;margin-bottom:12px;">La configuración presenta las siguientes desviaciones respecto a los límites de la Ley 2300 de 2023:</p>' +
+                  '<ul style="text-align:left;font-size:0.82rem;">' +
+                  desviaciones.map(function(d) { return '<li>' + d + '</li>'; }).join('') +
+                  '</ul>',
+            showCancelButton: true,
+            confirmButtonText: 'Guardar de todas formas',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#253150'
+        }).then(function(result) {
+            if (result.isConfirmed) {
+                _enviarConfigWaBiometria(config);
+            }
+        });
+    } else {
+        // Sin desviaciones: enviar directamente
+        _enviarConfigWaBiometria(config);
+    }
+}
+
+/**
+ * Envía la configuración al servidor con spinner y timeout de 30s.
+ * @param {Object} config - ConfigWaBiometria validada
+ */
+function _enviarConfigWaBiometria(config) {
+    var btn = document.getElementById('btn-guardar-wa-bio');
+    var spinner = document.getElementById('spinner-guardar-wa-bio');
+    var respondido = false;
+
+    // Deshabilitar botón y mostrar spinner
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.classList.remove('d-none');
+
+    // Timeout de 30 segundos
+    var timeoutId = setTimeout(function() {
+        if (respondido) return;
+        respondido = true;
+        _rehabilitarBtnWaBio();
+        Swal.fire({
+            icon: 'error',
+            title: 'Sin respuesta',
+            text: 'No se recibió respuesta del servidor en 30 segundos. Intente de nuevo.'
+        });
+    }, 30000);
+
+    google.script.run
+        .withSuccessHandler(function(res) {
+            if (respondido) return;
+            respondido = true;
+            clearTimeout(timeoutId);
+            _rehabilitarBtnWaBio();
+            if (res && res.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Configuración guardada',
+                    text: res.message || 'Configuración actualizada correctamente.',
+                    timer: 3000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error al guardar',
+                    text: (res && res.message) || 'No se pudo guardar la configuración.'
+                });
+            }
+        })
+        .withFailureHandler(function(err) {
+            if (respondido) return;
+            respondido = true;
+            clearTimeout(timeoutId);
+            _rehabilitarBtnWaBio();
+            Swal.fire({
+                icon: 'error',
+                title: 'Error de comunicación',
+                text: mensajeErrorAmigable(err)
+            });
+        })
+        .admin_setConfigWaBiometria(config);
+}
+
+/**
+ * Rehabilita el botón guardar y oculta el spinner.
+ */
+function _rehabilitarBtnWaBio() {
+    var btn = document.getElementById('btn-guardar-wa-bio');
+    var spinner = document.getElementById('spinner-guardar-wa-bio');
+    if (btn) btn.disabled = false;
+    if (spinner) spinner.classList.add('d-none');
 }
 </script>
 
