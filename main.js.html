@@ -96,6 +96,101 @@ var _pollingEnCurso = false;
 var _cargarDatosEnCurso = false;
 var _cargarDatosPendiente = false;
 
+// ═══════════════════════════════════════════════════════════════
+// LRU CACHE — Datos de modal (getDataUniqueForSolicitud)
+// Solo en memoria. Se descarta al recargar la página/cerrar pestaña.
+// Deduplicates peticiones en vuelo (inflight) para el mismo solicitudId.
+// Req 4.1, 4.2, 4.3, 4.4, 4.6, 4.8, 7.4
+// ═══════════════════════════════════════════════════════════════
+var _cacheSolicitudes = {
+  _map: new Map(),       // solicitudId → { data: Object, lastAccess: Number }
+  _inflight: new Map(),  // solicitudId → [callback, callback, ...]
+  MAX_SIZE: 50,
+
+  /**
+   * Obtiene datos para un solicitudId. Si están en cache, invoca callback
+   * de inmediato sin round-trip. Si hay petición en vuelo, encola callback.
+   * Si no, lanza google.script.run.getDataUniqueForSolicitud.
+   * @param {string} solicitudId
+   * @param {function} callback - recibe (result) donde result tiene .success
+   */
+  get: function(solicitudId, callback) {
+    // 1) Cache hit: retornar datos inmediatamente
+    if (this._map.has(solicitudId)) {
+      var entry = this._map.get(solicitudId);
+      entry.lastAccess = Date.now();
+      callback(entry.data);
+      return;
+    }
+
+    // 2) Inflight: agregar callback a pendientes
+    if (this._inflight.has(solicitudId)) {
+      this._inflight.get(solicitudId).push(callback);
+      return;
+    }
+
+    // 3) Cache miss: crear inflight y lanzar petición al servidor
+    var self = this;
+    this._inflight.set(solicitudId, [callback]);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        var pendientes = self._inflight.get(solicitudId) || [];
+        self._inflight.delete(solicitudId);
+
+        if (result && result.success === true) {
+          // Almacenar en cache
+          self._evictLRU();
+          self._map.set(solicitudId, { data: result, lastAccess: Date.now() });
+        }
+        // Invocar todos los callbacks (exitosos o fallidos)
+        for (var i = 0; i < pendientes.length; i++) {
+          pendientes[i](result);
+        }
+      })
+      .withFailureHandler(function(err) {
+        var pendientes = self._inflight.get(solicitudId) || [];
+        self._inflight.delete(solicitudId);
+
+        // Invocar callbacks con objeto de error para que el caller pueda detectar el fallo
+        var errorResult = { success: false, _networkError: true, message: err ? err.message || String(err) : 'Error de red' };
+        for (var i = 0; i < pendientes.length; i++) {
+          pendientes[i](errorResult);
+        }
+      })
+      .getDataUniqueForSolicitud(solicitudId);
+  },
+
+  /**
+   * Elimina una entrada del cache (post-guardado exitoso).
+   * @param {string} solicitudId
+   */
+  invalidate: function(solicitudId) {
+    this._map.delete(solicitudId);
+  },
+
+  /**
+   * Evicta la entrada menos recientemente accedida si el cache está lleno.
+   * Se invoca ANTES de insertar una nueva entrada.
+   */
+  _evictLRU: function() {
+    if (this._map.size < this.MAX_SIZE) return;
+
+    var oldestKey = null;
+    var oldestTime = Infinity;
+    this._map.forEach(function(entry, key) {
+      if (entry.lastAccess < oldestTime) {
+        oldestTime = entry.lastAccess;
+        oldestKey = key;
+      }
+    });
+
+    if (oldestKey !== null) {
+      this._map.delete(oldestKey);
+    }
+  }
+};
+
 // +/- 20s: evita que todos los analistas con bandeja vacía pregunten al servidor
 // en el mismo segundo exacto (eso generaba ráfagas cada 2 minutos en punto).
 function _pollingJitterMs() {
@@ -197,34 +292,62 @@ function _ejecutarPoll() {
 
   _pollingEnCurso = true;
   _actualizarHoraPolling();
-  var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
+  _PERF.mark('P1. _ejecutarPoll → llamando autoAsignarConPanel()');
   google.script.run
-    .withSuccessHandler(function(res) {
+    .withSuccessHandler(function(resp) {
+      _PERF.mark('P2. autoAsignarConPanel (polling) → respuesta recibida');
       _pollingEnCurso = false;
       _actualizarHoraPolling();
 
-      var estabaOcupado = !!(res && res.success === false && res.message && res.message.toLowerCase().indexOf('ocupado') !== -1);
+      var asignacion = resp && resp.asignacion;
+      var panel = resp && resp.panel;
+
+      // Ajuste de backoff según respuesta del servidor
+      var estabaOcupado = !!(asignacion && asignacion.success === false && asignacion.message && asignacion.message.toLowerCase().indexOf('ocupado') !== -1);
       _pollingDelayActualMs = estabaOcupado
         ? Math.min(_POLLING_INTERVALO_MAX_MS, Math.round(_pollingDelayActualMs * 1.5))
         : _POLLING_INTERVALO_MS;
 
-      if (res && res.success && res.nueva) {
-        var msgEl = document.getElementById('pollingMensaje');
-        if (msgEl) msgEl.textContent = '¡Caso encontrado! Cargando solicitud...';
-        Swal.fire({ icon: 'success', title: '¡Nuevo caso asignado!', text: res.message || 'Cargando solicitud...', toast: true, position: 'top-end', showConfirmButton: false, timer: 6000, timerProgressBar: true });
+      // Caso 1: Asignación exitosa con caso nuevo
+      if (asignacion && asignacion.nueva === true) {
         yaSeIntentoAsignar = false;
-        setTimeout(function() { cargarDatos(); }, 2000);
+
+        // Panel válido (no nulo, sin _error): renderizar directamente sin delay
+        if (panel && !panel._error) {
+          var msgEl = document.getElementById('pollingMensaje');
+          if (msgEl) msgEl.textContent = '¡Caso encontrado! Cargando solicitud...';
+          Swal.fire({ icon: 'info', title: 'Nueva Solicitud', text: asignacion.message || 'Se te ha asignado un nuevo registro.', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000, timerProgressBar: true });
+          _procesarRespuestaPanel(panel);
+          // Detener polling si la tabla tiene casos después de renderizar
+          if (datosGlobales && datosGlobales.length > 0) {
+            _detenerPollingTablaVacia();
+          }
+        } else {
+          // Panel nulo o con error: cargarDatos() sin delay artificial
+          cargarDatos();
+        }
+
+        // Routing de biometría: fire-and-forget si el servidor NO la ejecutó
+        _dispararBiometriaFallback(asignacion);
+
+        _PERF.mark('P3. _ejecutarPoll → flujo completado (nueva=true)');
         return;
       }
+
+      // Caso 2: Sin caso nuevo o asignación fallida → continuar ciclo de polling
       _programarSiguientePoll();
+      _PERF.mark('P3. _ejecutarPoll → continúa polling (nueva=false o success=false)');
     })
-    .withFailureHandler(function() {
+    .withFailureHandler(function(err) {
       _pollingEnCurso = false;
       _actualizarHoraPolling();
+      console.error('[Polling] Error al invocar autoAsignarConPanel:', err);
+      // Backoff exponencial: multiplicar delay actual por 1.5, máximo 360s
       _pollingDelayActualMs = Math.min(_POLLING_INTERVALO_MAX_MS, Math.round(_pollingDelayActualMs * 1.5));
       _programarSiguientePoll();
     })
-    [fnName]();
+    .autoAsignarConPanel();
+  _PERF.mark('P1b. _ejecutarPoll → solicitud enviada');
 }
 
 function _detenerPollingTablaVacia() {
@@ -614,6 +737,12 @@ function _aplicarEstadoUI(estado) {
 // Panel pre-cargado por activarYAsignar() — si tiene valor, cargarDatos() lo
 // usa directamente sin hacer la llamada al servidor (ahorra 1 viaje de red).
 var _panelPrecargado = null;
+
+// Último objeto de datos enviado a guardarCambiosInternos/guardarGestionReestudio.
+// Se usa en onGuardarExitoUnificado() para re-enviar al servidor en la llamada
+// consolidada guardarYAsignarSiguiente() (vista unificada). El guardado es
+// idempotente, así que re-ejecutarlo es inocuo y permite reutilizar el SS cache.
+var _ultimosDatosGuardado = null;
 
 // Atajo para que activarYAsignar() inyecte el panel y dispare la renderización
 // sin hacer un viaje de red adicional.
@@ -1421,13 +1550,8 @@ function cambiarMiEstado(nuevoEstado) {
             cargarDatos();
           }
 
-          // Deferred: actualizar fase de biometría pendiente sin bloquear al analista
-          if (r.asignacion && r.asignacion.idsAsignados && r.asignacion.idsAsignados.length > 0) {
-            google.script.run.actualizarFaseBiometriaPendienteDeferred(
-              r.asignacion.idsAsignados,
-              r.asignacion.faseTarget
-            );
-          }
+          // Deferred: actualizar fase de biometría solo si el servidor NO la ejecutó (Req 5.7, 5.8)
+          _dispararBiometriaFallback(r.asignacion);
         } else {
           // Activación falló (turno, permiso, etc.)
           estadoGlobalAsesor = estadoAnterior;
@@ -1906,13 +2030,14 @@ function poblarModalDig(fila) {
   if (solId) {
     var accEl = document.getElementById('dig_accordionResultados');
     if (accEl) accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Cargando...</p></div>';
-    google.script.run.withSuccessHandler(function(res) {
+    _cacheSolicitudes.get(solId, function(res) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('dig_accordionResultados', res.resultados);
       } else {
-        if (accEl) accEl.innerHTML = '<p class="text-muted text-center py-3">Sin resultados disponibles.</p>';
+        var el = document.getElementById('dig_accordionResultados');
+        if (el) el.innerHTML = '<p class="text-muted text-center py-3">Sin resultados disponibles.</p>';
       }
-    }).getDataUniqueForSolicitud(solId);
+    });
   }
 }
 
@@ -1965,13 +2090,14 @@ function poblarModalBio(fila) {
   var accEl = document.getElementById('bio_accordionResultados');
   if (accEl && solId) {
     accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Consultando deudores...</p></div>';
-    google.script.run.withSuccessHandler(function(res) {
+    _cacheSolicitudes.get(solId, function(res) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('bio_accordionResultados', res.resultados);
       } else {
-        accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
+        var el = document.getElementById('bio_accordionResultados');
+        if (el) el.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
       }
-    }).getDataUniqueForSolicitud(solId);
+    });
   }
 }
 
@@ -2023,13 +2149,14 @@ function poblarModalRst(fila) {
   if (accEl && solicitudId) {
     var solIdLimpio = solicitudId.replace(/\*/g, '').trim();
     accEl.innerHTML = '<div class="text-center py-5"><div class="spinner-border" role="status"></div><p class="mt-3 text-muted">Consultando historial...</p></div>';
-    google.script.run.withSuccessHandler(function(res) {
+    _cacheSolicitudes.get(solIdLimpio, function(res) {
       if (res && res.success && res.resultados) {
         renderResultadosUnificados('rst_accordionResultados', res.resultados);
       } else {
-        if (accEl) accEl.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
+        var el = document.getElementById('rst_accordionResultados');
+        if (el) el.innerHTML = '<div class="text-center py-4"><i class="bi bi-inbox" style="font-size:2rem;color:#A3A2A2;"></i><p class="text-muted mt-2 mb-0">No se encontró historial de deudores para esta solicitud.</p></div>';
       }
-    }).getDataUniqueForSolicitud(solIdLimpio);
+    });
   }
 }
 
@@ -2241,6 +2368,7 @@ function manejarGuardarDigital() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalDigital', true); }
 
+  _ultimosDatosGuardado = datos;
   _PERF.mark('G2. guardarCambiosInternos() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalDigital', false); } onGuardarExitoUnificado(r, 'modalDigital', solId); })
@@ -2279,6 +2407,7 @@ function manejarGuardarBiometria() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalBiometria', true); }
 
+  _ultimosDatosGuardado = { solicitudId: solId, estado_q: resFinal, motivo_aplazamiento: motivoAplaz, motivo_negacion: motivoNeg, biometria: '', comentarios_gestion: '', tipoSolicitudActual: 'biometria', fecha_radicacion_sai: '' };
   _PERF.mark('G2. guardarGestionBiometria() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalBiometria', false); } onGuardarExitoUnificado(r, 'modalBiometria', solId); })
@@ -2346,6 +2475,7 @@ function manejarGuardarReestudio() {
 
   if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, true); UX.showModalOverlay('modalReestudio', true); }
 
+  _ultimosDatosGuardado = datos;
   _PERF.mark('G2. guardarGestionReestudio() → enviando al servidor');
   google.script.run
     .withSuccessHandler(function(r) { if (typeof UX !== 'undefined') { UX.setBtnLoading(btn, false); UX.showModalOverlay('modalReestudio', false); } onGuardarExitoUnificado(r, 'modalReestudio', datos.solicitudId); })
@@ -2353,33 +2483,256 @@ function manejarGuardarReestudio() {
     .guardarGestionReestudio(datos);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// BIOMETRÍA DEFERRED — Routing client-side (Req 5.5, 5.7, 5.8)
+// Si el servidor ya ejecutó la biometría deferred (_biometriaEjecutada=true),
+// el cliente la omite. Si no (_biometriaEjecutada ausente o false) y hay IDs
+// asignados, el cliente la dispara como fire-and-forget (fallback).
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Dispara biometría deferred como fire-and-forget SOLO si el servidor
+ * no la ejecutó ya (resp.asignacion._biometriaEjecutada !== true).
+ * Centraliza la lógica usada por guardarYAsignarSiguiente, autoAsignarConPanel
+ * y activarYAsignar.
+ *
+ * @param {Object|null} asignacion - Objeto asignacion de la respuesta del servidor
+ */
+function _dispararBiometriaFallback(asignacion) {
+  if (!asignacion) return;
+  // Si el servidor ya ejecutó la biometría server-side, no repetir desde el cliente
+  if (asignacion._biometriaEjecutada === true) return;
+  // Solo disparar si hay IDs asignados pendientes de actualización de fase
+  if (asignacion.idsAsignados && asignacion.idsAsignados.length > 0) {
+    google.script.run.actualizarFaseBiometriaPendienteDeferred(
+      asignacion.idsAsignados,
+      asignacion.faseTarget
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FLUJO CONSOLIDADO POST-GUARDADO (Vista Unificada)
+// Reemplaza _dispararAutoAsignacion() + cargarDatos() por una
+// sola llamada guardarYAsignarSiguiente() que ejecuta guardado +
+// asignación + panel en el servidor, ahorrando 2 round-trips.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Invoca guardarYAsignarSiguiente(data) en el servidor y maneja la respuesta
+ * consolidada: renderiza panel, muestra toasts por resultado de asignación,
+ * y dispara biometría deferred si aplica.
+ * 
+ * @param {Object} data - Mismos datos que recibe guardarCambiosInternos()
+ */
+function _guardarYAsignarConsolidado(data) {
+  _PERF.mark('GC1. _guardarYAsignarConsolidado → llamando guardarYAsignarSiguiente()');
+  google.script.run
+    .withSuccessHandler(function(resp) {
+      _PERF.mark('GC2. guardarYAsignarSiguiente → respuesta recibida');
+      yaSeIntentoAsignar = false;
+
+      // Si el panel vino nulo o con error, usar cargarDatos() como recuperación
+      if (!resp.panel || resp.panel._error) {
+        console.warn('guardarYAsignarConsolidado: panel ausente o con error, fallback a cargarDatos()', resp.panel && resp.panel._error);
+        cargarDatos();
+      } else {
+        // Renderizar panel directamente con los datos recibidos (sin round-trip adicional)
+        _procesarRespuestaPanel(resp.panel);
+      }
+
+      // Toasts por resultado de asignación (Req 4.1, 4.2, 4.3, 4.4)
+      if (resp.asignacion) {
+        if (resp.asignacion.success === true && resp.asignacion.nueva === true) {
+          // Asignación exitosa con caso nuevo → toast info 5000ms
+          Swal.fire({
+            icon: 'info',
+            title: 'Nueva Solicitud',
+            text: resp.asignacion.message || 'Se te ha asignado un nuevo registro.',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 5000,
+            timerProgressBar: true
+          });
+        } else if (resp.asignacion.success === false) {
+          // Asignación fallida → toast warning 5000ms
+          Swal.fire({
+            icon: 'warning',
+            title: 'Asignación',
+            text: resp.asignacion.message || 'No se pudo asignar un nuevo caso.',
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 5000,
+            timerProgressBar: true
+          });
+        }
+        // asignacion.success=true && nueva=false → sin toast adicional
+      }
+      // asignacion=null → sin toast adicional (solo el de guardado)
+
+      // Biometría deferred: fire-and-forget solo si el servidor NO la ejecutó (Req 5.5, 5.8)
+      _dispararBiometriaFallback(resp.asignacion);
+    })
+    .withFailureHandler(function(e) {
+      _PERF.mark('GC2. guardarYAsignarSiguiente → ERROR');
+      yaSeIntentoAsignar = false;
+      console.error('Error en guardarYAsignarSiguiente:', e);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error post-guardado',
+        text: typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Error de conexión. Recargando panel...',
+        confirmButtonColor: '#253150'
+      });
+      // Fallback: recargar panel con el flujo normal
+      cargarDatos();
+    })
+    .guardarYAsignarSiguiente(data);
+}
+
 function onGuardarExitoUnificado(r, modalId, solicitudId) {
   _PERF.mark('G3. guardar (' + modalId + ') → respuesta recibida (success=' + !!(r && r.success) + ')');
   if (r && r.success === true) {
+    // Req 4.5: Invalidar cache del modal para forzar fresh request en próxima apertura
+    if (solicitudId) _cacheSolicitudes.invalidate(solicitudId);
+
     var modalEl = document.getElementById(modalId);
     var inst = bootstrap.Modal.getInstance(modalEl);
     if (inst) inst.hide();
 
     if (solicitudId) _quitarFilaTabla(solicitudId);
 
-    if (r.disparaAsignacion) {
-      yaSeIntentoAsignar = true;
-      _PERF.mark('G4. disparando autoAsignación post-guardado');
-      _dispararAutoAsignacion();
-    }
+    // --- Routing por vista (Req 7.1, 7.2, 7.3, 7.4) ---
+    if (window.__IS_UNIFIED_VIEW__ === true) {
+      // Vista Unificada: flujo consolidado
+      // Lanzar animación de éxito de forma CONCURRENTE (no esperar respuesta servidor)
+      if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
+        UX.showSuccessCheck();
+      }
+      if (typeof UX !== 'undefined' && UX.showToast) UX.showToast('Gestión guardada correctamente', 'success');
 
-    if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
-      UX.showSuccessCheck(function() {
-        if (typeof UX.showToast === 'function') UX.showToast('Gestión guardada correctamente', 'success');
-        if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
-        _PERF.mark('G5. post-guardado → llamando cargarDatos()');
-        cargarDatos();
-      });
+      if (r.disparaAsignacion) {
+        // Req 3.1, 7.3: usar función consolidada en lugar de _dispararAutoAsignacion + cargarDatos
+        yaSeIntentoAsignar = true;
+        _PERF.mark('G4. vista unificada + disparaAsignacion → _guardarYAsignarConsolidado()');
+        _guardarYAsignarConsolidado(_ultimosDatosGuardado);
+      } else {
+        // Req 3.2: solo recargar panel (1 round-trip directo a cargarPanelAnalista)
+        yaSeIntentoAsignar = false;
+        _PERF.mark('G4. vista unificada + NO disparaAsignacion → cargarPanelAnalista() directo');
+        google.script.run
+          .withSuccessHandler(function(panel) {
+            _PERF.mark('G5. cargarPanelAnalista directo → respuesta recibida');
+            _procesarRespuestaPanel(panel);
+          })
+          .withFailureHandler(function(e) {
+            console.error('Error en cargarPanelAnalista directo:', e);
+            cargarDatos();
+          })
+          .cargarPanelAnalista();
+      }
     } else {
-      Swal.fire({ icon: 'success', title: 'Guardado', text: r.message || 'Gestión guardada.', timer: 2000, showConfirmButton: false });
-      if (!r.disparaAsignacion) yaSeIntentoAsignar = false;
-      _PERF.mark('G5. post-guardado → llamando cargarDatos()');
-      cargarDatos();
+      // Vista NO Unificada: flujo consolidado (Req 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 8.1)
+      if (r.disparaAsignacion) {
+        // Req 1.1: usar guardarYAsignarSiguiente en lugar de _dispararAutoAsignacion + cargarDatos
+        yaSeIntentoAsignar = true;
+        _PERF.mark('G4. vista NO unificada + disparaAsignacion → guardarYAsignarSiguiente()');
+
+        // Lanzar animación de éxito de forma CONCURRENTE (no esperar respuesta servidor)
+        if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
+          UX.showSuccessCheck();
+        }
+
+        google.script.run
+          .withSuccessHandler(function(resp) {
+            _PERF.mark('G5. vista NO unificada guardarYAsignarSiguiente → respuesta recibida');
+            yaSeIntentoAsignar = false;
+
+            // Req 1.2, 1.3: Panel rendering o fallback
+            if (!resp.panel || resp.panel._error) {
+              console.warn('onGuardarExitoUnificado (no-unificada): panel ausente o con error, fallback a cargarDatos()', resp.panel && resp.panel._error);
+              cargarDatos();
+            } else {
+              _procesarRespuestaPanel(resp.panel);
+            }
+
+            // Req 1.5: Toasts por resultado de asignación
+            if (resp.asignacion) {
+              if (resp.asignacion.success === true && resp.asignacion.nueva === true) {
+                Swal.fire({
+                  icon: 'info',
+                  title: 'Nueva Solicitud',
+                  text: resp.asignacion.message || 'Se te ha asignado un nuevo registro.',
+                  toast: true,
+                  position: 'top-end',
+                  showConfirmButton: false,
+                  timer: 5000,
+                  timerProgressBar: true
+                });
+              } else if (resp.asignacion.success === false) {
+                Swal.fire({
+                  icon: 'warning',
+                  title: 'Asignación',
+                  text: resp.asignacion.message || 'No se pudo asignar un nuevo caso.',
+                  toast: true,
+                  position: 'top-end',
+                  showConfirmButton: false,
+                  timer: 5000,
+                  timerProgressBar: true
+                });
+              }
+              // asignacion.success=true && nueva=false → sin toast
+            }
+            // asignacion=null → sin toast de asignación
+
+            // Biometría deferred: fire-and-forget solo si el servidor NO la ejecutó (Req 5.5, 5.8)
+            _dispararBiometriaFallback(resp.asignacion);
+
+            _PERF.mark('G6. vista NO unificada guardarYAsignarSiguiente → flujo completado');
+          })
+          .withFailureHandler(function(e) {
+            _PERF.mark('G5. vista NO unificada guardarYAsignarSiguiente → ERROR');
+            yaSeIntentoAsignar = false;
+            console.error('Error en guardarYAsignarSiguiente (no-unificada):', e);
+            Swal.fire({
+              icon: 'error',
+              title: 'Error post-guardado',
+              text: typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Error de conexión. Recargando panel...',
+              toast: true,
+              position: 'top-end',
+              showConfirmButton: false,
+              timer: 5000,
+              timerProgressBar: true
+            });
+            // Req 1.6: fallback a cargarDatos()
+            cargarDatos();
+          })
+          .guardarYAsignarSiguiente(_ultimosDatosGuardado);
+
+      } else {
+        // Req 1.4: sin asignación → cargarPanelAnalista() directo como único round-trip
+        yaSeIntentoAsignar = false;
+        _PERF.mark('G4. vista NO unificada + NO disparaAsignacion → cargarPanelAnalista() directo');
+
+        if (typeof UX !== 'undefined' && UX.showSuccessCheck) {
+          UX.showSuccessCheck();
+        }
+        if (typeof UX !== 'undefined' && UX.showToast) UX.showToast('Gestión guardada correctamente', 'success');
+
+        google.script.run
+          .withSuccessHandler(function(panel) {
+            _PERF.mark('G5. vista NO unificada cargarPanelAnalista directo → respuesta recibida');
+            _procesarRespuestaPanel(panel);
+          })
+          .withFailureHandler(function(e) {
+            console.error('Error en cargarPanelAnalista directo (no-unificada):', e);
+            cargarDatos();
+          })
+          .cargarPanelAnalista();
+      }
+
+      _PERF.mark('G4b. vista NO unificada → round-trip lanzado (esperando respuesta)');
     }
   } else {
     Swal.fire({ icon: 'error', title: 'Error', text: (r && r.message) || 'Error al guardar.' });
@@ -2389,20 +2742,52 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
 function _dispararAutoAsignacion() {
   if (_pollingEnCurso) return;
   _pollingEnCurso = true;
-  _PERF.mark('AA1. _dispararAutoAsignacion → llamando ' + (window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar'));
-  var fnName = window.__IS_UNIFIED_VIEW__ ? 'autoAsignarDesdeEquipo' : 'autoAsignarAlEntrar';
+  _PERF.mark('AA1. _dispararAutoAsignacion → autoAsignarConPanel()');
+
   google.script.run
-    .withSuccessHandler(function(res) {
-      _PERF.mark('AA2. autoAsignar → respuesta (nueva=' + !!(res && res.nueva) + ')');
+    .withSuccessHandler(function(resp) {
+      _PERF.mark('AA2. autoAsignarConPanel → respuesta recibida (nueva=' + !!(resp && resp.asignacion && resp.asignacion.nueva) + ')');
       _pollingEnCurso = false;
       yaSeIntentoAsignar = false;
-      if (res && res.success && res.nueva) {
-        if (typeof UX !== 'undefined' && UX.showToast) UX.showToast(res.message || 'Nuevo caso asignado', 'info');
-        cargarDatos();
+
+      // Req 7.1: Toast de información cuando asignacion.nueva=true
+      if (resp && resp.asignacion && resp.asignacion.success === true && resp.asignacion.nueva === true) {
+        if (typeof UX !== 'undefined' && UX.showToast) UX.showToast(resp.asignacion.message || 'Nuevo caso asignado', 'info');
       }
+
+      // Req 3.6: Renderizar panel directamente si es válido, sino fallback a cargarDatos()
+      if (resp && resp.asignacion && resp.asignacion.nueva) {
+        if (resp.panel && !resp.panel._error) {
+          _procesarRespuestaPanel(resp.panel);
+        } else {
+          cargarDatos();
+        }
+      }
+
+      // Req 5.5, 5.8: Biometría deferred fallback client-side
+      _dispararBiometriaFallback(resp ? resp.asignacion : null);
+
+      _PERF.mark('AA3. _dispararAutoAsignacion → flujo completado');
     })
-    .withFailureHandler(function() { _pollingEnCurso = false; yaSeIntentoAsignar = false; })
-    [fnName]();
+    .withFailureHandler(function(e) {
+      _PERF.mark('AA2. autoAsignarConPanel → ERROR');
+      _pollingEnCurso = false;
+      yaSeIntentoAsignar = false;
+      console.error('Error en _dispararAutoAsignacion (autoAsignarConPanel):', e);
+      // Req 7.5: fallback a cargarDatos() + mensaje de error genérico
+      Swal.fire({
+        icon: 'error',
+        title: 'Error de asignación',
+        text: typeof UX !== 'undefined' ? UX.mensajeError(e) : 'Error de conexión. Recargando panel...',
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 5000,
+        timerProgressBar: true
+      });
+      cargarDatos();
+    })
+    .autoAsignarConPanel();
 }
 
 // ============================================================

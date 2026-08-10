@@ -474,7 +474,15 @@ function _getTurnosDataCacheado(ss) {
       }
       if (completo) {
         Logger.log('⏱ SPERF _getTurnosDataCacheado: cache hit (' + count + ' partes) = ' + (Date.now() - _tTurnos0) + 'ms');
-        _datosTurnosMemo = JSON.parse(json);
+        // Reviver: JSON.stringify convierte los Date (desde/hasta de Analistas_Turnos)
+        // en strings ISO; sin esto, `instanceof Date` en _verificarTurnoActivoReal falla
+        // en cada cache hit y descarta al analista como si no tuviera turno vigente.
+        _datosTurnosMemo = JSON.parse(json, function(key, value) {
+          if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
+            return new Date(value);
+          }
+          return value;
+        });
         return _datosTurnosMemo;
       }
     }
@@ -535,6 +543,138 @@ function _invalidarCacheTurnos() {
   } catch (e) {
     Logger.log('_invalidarCacheTurnos: error al eliminar cache (' + e.message + ')');
   }
+}
+
+// ============================================================
+// MEMOIZACIÓN DE HISTORICO_GESTIONES (por ejecución)
+// ============================================================
+// Mismo patrón que _datosTurnosMemo y _datosUsuariosMemo: se llena en la
+// primera lectura dentro de cargarPanelAnalista() y se reutiliza por todas
+// las sub-funciones que necesitan datos de Historico_Gestiones. Se resetea
+// automáticamente al finalizar la ejecución del servidor.
+
+/** @type {Array<Array<string>>|null} Todas las filas (row 2..lastRow) × todas las columnas de Historico_Gestiones principal */
+var _histGestionesPrincipalMemo = null;
+
+/** @type {Array<Array<string>>|null} Todas las filas (row 2..lastRow) × todas las columnas de Historico_Gestiones reestudios */
+var _histGestionesReestMemo = null;
+
+/**
+ * Obtiene los datos de Historico_Gestiones del spreadsheet principal.
+ * Primera llamada: lee toda la hoja (row 2 .. lastRow, col 1 .. lastCol) con getDisplayValues().
+ * Llamadas posteriores: devuelve el memo sin network round-trip.
+ *
+ * @returns {Array<Array<string>>} 2D array con todas las filas (sin header) y columnas, o [] si falla.
+ */
+function _getHistGestionesPrincipal() {
+  if (_histGestionesPrincipalMemo !== null) {
+    if (!Array.isArray(_histGestionesPrincipalMemo)) {
+      Logger.log('⏱ SPERF _getHistGestionesPrincipal: memo inválido (no es Array) — descartando');
+      _histGestionesPrincipalMemo = null;
+    } else {
+      Logger.log('⏱ SPERF _getHistGestionesPrincipal: memo hit (' + _histGestionesPrincipalMemo.length + ' filas)');
+      return _histGestionesPrincipalMemo;
+    }
+  }
+
+  var _t0 = Date.now();
+  try {
+    var hoja = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID).getSheetByName("Historico_Gestiones");
+    if (!hoja || hoja.getLastRow() < 2) {
+      _histGestionesPrincipalMemo = [];
+      Logger.log('⏱ SPERF _getHistGestionesPrincipal: hoja vacía o no encontrada — memo = []');
+      return _histGestionesPrincipalMemo;
+    }
+    var lastRow = hoja.getLastRow();
+    var lastCol = Math.max(hoja.getLastColumn(), 61);
+    _histGestionesPrincipalMemo = hoja.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+    Logger.log('⏱ SPERF _getHistGestionesPrincipal: fresh read = ' + (Date.now() - _t0) + 'ms (' + _histGestionesPrincipalMemo.length + ' filas × ' + lastCol + ' cols)');
+  } catch (e) {
+    Logger.log('⏱ SPERF _getHistGestionesPrincipal: primer intento falló (' + e.message + ') — reintentando');
+    try {
+      var hoja2 = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID).getSheetByName("Historico_Gestiones");
+      if (hoja2 && hoja2.getLastRow() >= 2) {
+        var lastRow2 = hoja2.getLastRow();
+        var lastCol2 = Math.max(hoja2.getLastColumn(), 61);
+        _histGestionesPrincipalMemo = hoja2.getRange(2, 1, lastRow2 - 1, lastCol2).getDisplayValues();
+        Logger.log('⏱ SPERF _getHistGestionesPrincipal: retry OK = ' + (Date.now() - _t0) + 'ms');
+      } else {
+        _histGestionesPrincipalMemo = [];
+      }
+    } catch (e2) {
+      Logger.log('⏱ SPERF _getHistGestionesPrincipal: retry TAMBIÉN falló (' + e2.message + ') — devolviendo []');
+      _histGestionesPrincipalMemo = null;
+      return [];
+    }
+  }
+  return _histGestionesPrincipalMemo || [];
+}
+
+/**
+ * Obtiene los datos de Historico_Gestiones del spreadsheet de reestudios.
+ * Primera llamada: lee toda la hoja (row 2 .. lastRow, col 1 .. lastCol) con getDisplayValues().
+ * Llamadas posteriores: devuelve el memo sin network round-trip.
+ *
+ * @returns {Array<Array<string>>} 2D array con todas las filas (sin header) y columnas, o [] si falla.
+ */
+function _getHistGestionesReest() {
+  if (_histGestionesReestMemo !== null) {
+    if (!Array.isArray(_histGestionesReestMemo)) {
+      Logger.log('⏱ SPERF _getHistGestionesReest: memo inválido (no es Array) — descartando');
+      _histGestionesReestMemo = null;
+    } else {
+      Logger.log('⏱ SPERF _getHistGestionesReest: memo hit (' + _histGestionesReestMemo.length + ' filas)');
+      return _histGestionesReestMemo;
+    }
+  }
+
+  var _t0 = Date.now();
+  try {
+    var hoja = _abrirSSCacheado(ID_HOJA_REESTUDIOS).getSheetByName("Historico_Gestiones");
+    if (!hoja || hoja.getLastRow() < 2) {
+      _histGestionesReestMemo = [];
+      Logger.log('⏱ SPERF _getHistGestionesReest: hoja vacía o no encontrada — memo = []');
+      return _histGestionesReestMemo;
+    }
+    var lastRow = hoja.getLastRow();
+    var lastCol = Math.max(hoja.getLastColumn(), 14);
+    _histGestionesReestMemo = hoja.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
+    Logger.log('⏱ SPERF _getHistGestionesReest: fresh read = ' + (Date.now() - _t0) + 'ms (' + _histGestionesReestMemo.length + ' filas × ' + lastCol + ' cols)');
+  } catch (e) {
+    Logger.log('⏱ SPERF _getHistGestionesReest: primer intento falló (' + e.message + ') — reintentando');
+    try {
+      var hoja2 = _abrirSSCacheado(ID_HOJA_REESTUDIOS).getSheetByName("Historico_Gestiones");
+      if (hoja2 && hoja2.getLastRow() >= 2) {
+        var lastRow2 = hoja2.getLastRow();
+        var lastCol2 = Math.max(hoja2.getLastColumn(), 14);
+        _histGestionesReestMemo = hoja2.getRange(2, 1, lastRow2 - 1, lastCol2).getDisplayValues();
+        Logger.log('⏱ SPERF _getHistGestionesReest: retry OK = ' + (Date.now() - _t0) + 'ms');
+      } else {
+        _histGestionesReestMemo = [];
+      }
+    } catch (e2) {
+      Logger.log('⏱ SPERF _getHistGestionesReest: retry TAMBIÉN falló (' + e2.message + ') — devolviendo []');
+      _histGestionesReestMemo = null;
+      return [];
+    }
+  }
+  return _histGestionesReestMemo || [];
+}
+
+/** Invalida el memo de Historico_Gestiones principal. Mismo patrón que _invalidarCacheTurnos(). */
+function _invalidarMemoHistPrincipal() {
+  _histGestionesPrincipalMemo = null;
+}
+
+/** Invalida el memo de Historico_Gestiones reestudios. */
+function _invalidarMemoHistReest() {
+  _histGestionesReestMemo = null;
+}
+
+/** Invalida ambos memos de Historico_Gestiones. */
+function _invalidarMemoHistGestiones() {
+  _histGestionesPrincipalMemo = null;
+  _histGestionesReestMemo = null;
 }
 
 function doGet() {
@@ -962,39 +1102,28 @@ function getTableData() {
   }
 
   // 1. Historico_Gestiones — casos ya movidos al asignar (nueva lógica)
-  // Antes leía TODA la hoja (crece sin límite) en cada carga de panel. Ahora se
-  // salta la lectura si el contador de carga pendiente dice que este analista
-  // no tiene nada abierto, y si sí tiene, ubica sus filas con TextFinder
-  // acotado a la columna de asignado en vez de traer todo a memoria.
+  // Usa el memo _getHistGestionesPrincipal() para evitar network round-trips
+  // redundantes: filtra en memoria por col 25 (email del analista, 0-indexed para col 26).
   try {
     const _tHist0 = Date.now();
-    const hojaHist = ss.getSheetByName("Historico_Gestiones");
-    const lastRowHist = hojaHist ? hojaHist.getLastRow() : 0;
-    Logger.log('⏱ SPERF getTableData: Historico_Gestiones principal tiene ' + (lastRowHist - 1) + ' filas, cargaPendiente=' + _obtenerCargaPendienteAnalista(userEmail));
-    if (hojaHist && lastRowHist > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-      const colsHist = Math.max(numCols, 60);
-      const filasMatch = _getFilasAnalista(hojaHist, 26, userEmail);
-      Logger.log('⏱ SPERF getTableData: TextFinder Historico_Gestiones principal = ' + (Date.now() - _tHist0) + 'ms (' + filasMatch.length + ' matches)');
-      if (filasMatch.length > 0) {
-        const filaMin = Math.min.apply(null, filasMatch);
-        const filaMax = Math.max.apply(null, filasMatch);
-        // Una sola lectura en bloque de fechaFin para todas las coincidencias: sirve
-        // tanto para el conteo de gestionadas (hoy/total) como para descartar las
-        // cerradas sin traer la fila completa (60 cols) de cada una.
-        const fechaFinBloque = hojaHist.getRange(filaMin, 27, filaMax - filaMin + 1, 1).getDisplayValues();
-        const filasAbiertas = [];
-        filasMatch.forEach(function(fila) {
-          const fechaFin = String(fechaFinBloque[fila - filaMin][0]).trim();
+    const dataHist = _getHistGestionesPrincipal();
+    Logger.log('⏱ SPERF getTableData: Historico_Gestiones principal memo (' + dataHist.length + ' filas), cargaPendiente=' + _obtenerCargaPendienteAnalista(userEmail));
+    if (dataHist.length > 0 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
+      // Filtrar filas del analista in-memory (col 26 = idx 25)
+      const filasAbiertas = [];
+      for (var i = 0; i < dataHist.length; i++) {
+        if (String(dataHist[i][25]).trim().toLowerCase() === userEmail) {
+          var fechaFin = String(dataHist[i][26]).trim(); // col 27 = idx 26
           if (fechaFin !== '') {
             gestionadasTotal++;
             if (fechaFin.includes(hoyStr)) gestionadasHoy++;
           } else {
-            filasAbiertas.push(fila);
+            filasAbiertas.push(dataHist[i]);
           }
-        });
-        const filasHist = _leerBloqueCasosAbiertos(hojaHist, filasAbiertas, colsHist);
-        agregarDesdeRegistros(filasHist, 'HISTORICO');
+        }
       }
+      Logger.log('⏱ SPERF getTableData: filtro in-memory Hist principal = ' + (Date.now() - _tHist0) + 'ms (' + filasAbiertas.length + ' abiertas)');
+      agregarDesdeRegistros(filasAbiertas, 'HISTORICO');
     }
     Logger.log('⏱ SPERF getTableData: bloque Historico_Gestiones principal completo = ' + (Date.now() - _tHist0) + 'ms');
   } catch(e) {
@@ -1061,63 +1190,44 @@ function getTableData() {
   }
 
   // 4. Historico_Gestiones de reestudios (casos movidos al asignar)
-  // Mismo cambio: se salta si no hay carga pendiente, y si hay, ubica la fila
-  // con TextFinder en vez de leer toda la hoja.
+  // Usa _getHistGestionesReest() (memo) + filtro in-memory por col 6 (email).
   try {
     const _tHistR0 = Date.now();
-    const hojaHistReest = ssReest.getSheetByName("Historico_Gestiones");
-    const lastRowHistReest = hojaHistReest ? hojaHistReest.getLastRow() : 0;
-    Logger.log('⏱ SPERF getTableData: Historico_Gestiones reestudios tiene ' + (lastRowHistReest - 1) + ' filas');
-    if (hojaHistReest && lastRowHistReest > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-      const filasMatchHR = _getFilasAnalista(hojaHistReest, 7, userEmail);
-      Logger.log('⏱ SPERF getTableData: TextFinder Historico_Gestiones reestudios = ' + (Date.now() - _tHistR0) + 'ms (' + filasMatchHR.length + ' matches)');
-      if (filasMatchHR.length > 0) {
-        const filaMinHR = Math.min.apply(null, filasMatchHR);
-        const filaMaxHR = Math.max.apply(null, filasMatchHR);
-        // Misma idea que el bloque de Historico principal: una sola lectura en bloque
-        // de fechaFin (col 10) sirve para contar gestionadas y para descartar cerradas
-        // sin traer la fila completa de cada coincidencia histórica.
-        const fechaFinBloqueHR = hojaHistReest.getRange(filaMinHR, 10, filaMaxHR - filaMinHR + 1, 1).getDisplayValues();
-        const filasAbiertasHR = [];
-        filasMatchHR.forEach(function(fila) {
-          const fechaFinR = String(fechaFinBloqueHR[fila - filaMinHR][0]).trim();
-          if (fechaFinR !== '') {
-            gestionadasTotal++;
-            if (fechaFinR.includes(hoyStr)) gestionadasHoy++;
-          } else {
-            filasAbiertasHR.push(fila);
-          }
-        });
-        if (filasAbiertasHR.length > 0) {
-          const filasHistReest = _leerBloqueCasosAbiertos(hojaHistReest, filasAbiertasHR, 18);
-          filasHistReest.forEach(function(dataHistReest) {
-            const asignado = String(dataHistReest[6]).trim().toLowerCase();
-            const fechaAsigR = String(dataHistReest[8]).trim();
+    const dataHistReestMemo = _getHistGestionesReest();
+    Logger.log('⏱ SPERF getTableData: _getHistGestionesReest() devolvió ' + dataHistReestMemo.length + ' filas');
+    for (var iHR = 0; iHR < dataHistReestMemo.length; iHR++) {
+      var asignadoHR = String(dataHistReestMemo[iHR][6]).trim().toLowerCase();
+      if (asignadoHR !== userEmail) continue;
 
-            if (fechaAsigR === "") return;
-
-            const tipoProc = String(dataHistReest[4]).trim();
-            const claseR = String(dataHistReest[5]).trim();
-            let filaAdaptada = new Array(numCols).fill("");
-            filaAdaptada[0] = String(dataHistReest[1]).trim();
-            filaAdaptada[1] = String(dataHistReest[3]).trim();
-            filaAdaptada[2] = String(dataHistReest[2]).trim();
-            filaAdaptada[3] = String(dataHistReest[3]).trim();
-            filaAdaptada[4] = tipoProc;
-            filaAdaptada[5] = claseR;
-            filaAdaptada[8] = fechaAsigR;
-            filaAdaptada[16] = "__REESTUDIO__";
-            filaAdaptada[17] = String(dataHistReest[0]).trim();
-            filaAdaptada[20] = tipoProc || claseR;
-            filaAdaptada[26] = fechaAsigR;
-            filaAdaptada[27] = asignado;
-            filaAdaptada[28] = "";
-            filaAdaptada[30] = String(dataHistReest[7]).trim();
-            filaAdaptada.push("");
-            misFilasPendientes.push(filaAdaptada);
-          });
-        }
+      var fechaFinHR = String(dataHistReestMemo[iHR][9]).trim();
+      if (fechaFinHR !== '') {
+        gestionadasTotal++;
+        if (fechaFinHR.includes(hoyStr)) gestionadasHoy++;
+        continue;
       }
+
+      var fechaAsigHR = String(dataHistReestMemo[iHR][8]).trim();
+      if (fechaAsigHR === "") continue;
+
+      var tipoProcHR = String(dataHistReestMemo[iHR][4]).trim();
+      var claseHR = String(dataHistReestMemo[iHR][5]).trim();
+      let filaAdaptada = new Array(numCols).fill("");
+      filaAdaptada[0] = String(dataHistReestMemo[iHR][1]).trim();
+      filaAdaptada[1] = String(dataHistReestMemo[iHR][3]).trim();
+      filaAdaptada[2] = String(dataHistReestMemo[iHR][2]).trim();
+      filaAdaptada[3] = String(dataHistReestMemo[iHR][3]).trim();
+      filaAdaptada[4] = tipoProcHR;
+      filaAdaptada[5] = claseHR;
+      filaAdaptada[8] = fechaAsigHR;
+      filaAdaptada[16] = "__REESTUDIO__";
+      filaAdaptada[17] = String(dataHistReestMemo[iHR][0]).trim();
+      filaAdaptada[20] = tipoProcHR || claseHR;
+      filaAdaptada[26] = fechaAsigHR;
+      filaAdaptada[27] = asignadoHR;
+      filaAdaptada[28] = "";
+      filaAdaptada[30] = String(dataHistReestMemo[iHR][7]).trim();
+      filaAdaptada.push("");
+      misFilasPendientes.push(filaAdaptada);
     }
     Logger.log('⏱ SPERF getTableData: bloque Historico_Gestiones reestudios completo = ' + (Date.now() - _tHistR0) + 'ms');
   } catch(e) {
@@ -1126,57 +1236,42 @@ function getTableData() {
   }
 
   // Detectar reasignaciones recientes por admin (últimos 30 min)
-  // Solo tiene sentido buscar si el analista tiene algo asignado ahora mismo;
-  // se ubica con TextFinder en vez de leer las hojas completas.
+  // Usa los memos in-memory para filtrar por email y marca "ADMIN:" sin network round-trip.
   var _tReasig0 = Date.now();
   var reasignaciones = [];
   try {
     var ahora = new Date();
     var hace30 = new Date(ahora.getTime() - 30 * 60 * 1000);
     if (_obtenerCargaPendienteAnalista(userEmail) > 0) {
-      // Principal: col 38 (idx 37) — pre-filtrado por la marca "ADMIN:" en bloque,
-      // en vez de traer la fila completa de cada coincidencia histórica del analista.
-      var hojaHistCheck = ss.getSheetByName("Historico_Gestiones");
-      var lastRowCheck = hojaHistCheck ? hojaHistCheck.getLastRow() : 0;
-      if (hojaHistCheck && lastRowCheck > 1) {
-        var lastCol = Math.max(38, hojaHistCheck.getLastColumn());
-        var candidatasCheck = _filasFiltradasPorAnalista(
-          hojaHistCheck, 26, 38,
-          function(marca) { return marca.trim().startsWith("ADMIN:"); },
-          userEmail, lastCol
-        );
-        candidatasCheck.forEach(function(c) {
-          var filaCheck = c.valores;
-          var marca = String(filaCheck[37] || "").trim();
-          var partes = marca.split("|");
-          if (partes.length >= 2) {
-            var fechaMarca = new Date(partes[1].trim());
-            if (!isNaN(fechaMarca.getTime()) && fechaMarca >= hace30) {
-              reasignaciones.push({ solicitud: String(filaCheck[0]).trim(), admin: partes[0].replace("ADMIN:","") });
-            }
+      // Principal: col 38 (idx 37) — usa memo para filtrar por email (col 25)
+      // y marca "ADMIN:" (col 37) en memoria sin network round-trip adicional.
+      var dataHistReasig = _getHistGestionesPrincipal();
+      for (var ri = 0; ri < dataHistReasig.length; ri++) {
+        if (String(dataHistReasig[ri][25]).trim().toLowerCase() !== userEmail) continue;
+        var marca = String(dataHistReasig[ri][37] || "").trim();
+        if (!marca.startsWith("ADMIN:")) continue;
+        var partes = marca.split("|");
+        if (partes.length >= 2) {
+          var fechaMarca = new Date(partes[1].trim());
+          if (!isNaN(fechaMarca.getTime()) && fechaMarca >= hace30) {
+            reasignaciones.push({ solicitud: String(dataHistReasig[ri][0]).trim(), admin: partes[0].replace("ADMIN:","") });
           }
-        });
+        }
       }
-      // Reestudios: col 20 (idx 19)
-      var hojaHistRCheck = ssReest.getSheetByName("Historico_Gestiones");
-      var lastRowRCheck = hojaHistRCheck ? hojaHistRCheck.getLastRow() : 0;
-      if (hojaHistRCheck && lastRowRCheck > 1) {
-        var candidatasRCheck = _filasFiltradasPorAnalista(
-          hojaHistRCheck, 7, 20,
-          function(marcaR) { return marcaR.trim().startsWith("ADMIN:"); },
-          userEmail, 20
-        );
-        candidatasRCheck.forEach(function(c) {
-          var filaRCheck = c.valores;
-          var marcaR = String(filaRCheck[19] || "").trim();
-          var partesR = marcaR.split("|");
-          if (partesR.length >= 2) {
-            var fechaMarcaR = new Date(partesR[1].trim());
-            if (!isNaN(fechaMarcaR.getTime()) && fechaMarcaR >= hace30) {
-              reasignaciones.push({ solicitud: String(filaRCheck[1]).trim(), admin: partesR[0].replace("ADMIN:","") });
-            }
+      // Reestudios: col 20 (idx 19) — usa _getHistGestionesReest() + filtro in-memory
+      var dataHistReestReasig = _getHistGestionesReest();
+      for (var iRR = 0; iRR < dataHistReestReasig.length; iRR++) {
+        var asigRR = String(dataHistReestReasig[iRR][6]).trim().toLowerCase();
+        if (asigRR !== userEmail) continue;
+        var marcaR = String(dataHistReestReasig[iRR][19] || "").trim();
+        if (!marcaR.startsWith("ADMIN:")) continue;
+        var partesR = marcaR.split("|");
+        if (partesR.length >= 2) {
+          var fechaMarcaR = new Date(partesR[1].trim());
+          if (!isNaN(fechaMarcaR.getTime()) && fechaMarcaR >= hace30) {
+            reasignaciones.push({ solicitud: String(dataHistReestReasig[iRR][1]).trim(), admin: partesR[0].replace("ADMIN:","") });
           }
-        });
+        }
       }
     }
   } catch(eR) { Logger.log("Detección reasignación: " + eR.message); }
@@ -2480,25 +2575,21 @@ function obtenerCasosPendientesAnalista() {
   // escanear ninguna de las dos hojas de Historico_Gestiones.
   if (_obtenerCargaPendienteAnalista(userEmail) === 0) return resultado;
 
-  // Digital: Historico_Gestiones principal — TextFinder acotado a la columna de asignado
-  // (26) en vez de traer todas las filas a memoria (mismo patrón que getTableData).
+  // Digital: Historico_Gestiones principal — filtro in-memory sobre memo cacheado
+  // (reemplaza TextFinder en col 26 por _getHistGestionesPrincipal + filtro en memoria)
   try {
     const _tPend1_0 = Date.now();
-    const hoja = _abrirSSCacheado(TARGET_SS_ID).getSheetByName('Historico_Gestiones');
-    const lastRowHoja = hoja ? hoja.getLastRow() : 0;
-    Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: Historico_Gestiones principal tiene ' + (lastRowHoja - 1) + ' filas');
-    if (hoja && lastRowHoja > 1) {
-      // let dataRange = hoja.getRange(2,1,lastRowHoja,60).getDisplayValues();
-      // dataRange = dataRange.filter(data => {
-
-      // })
-
-      const ncols = Math.max(60, hoja.getLastColumn());
-      const filasCandidatas = _filasFiltradasPorAnalista(
-        hoja, 26, 17,
-        function(estadoQ) { return ESTADOS_PEND.includes(estadoQ.trim().toUpperCase()); },
-        userEmail, ncols
-      );
+    const dataHist = _getHistGestionesPrincipal();
+    Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: Historico_Gestiones principal tiene ' + dataHist.length + ' filas (memo)');
+    if (dataHist.length > 0) {
+      const filasCandidatas = [];
+      for (var i = 0; i < dataHist.length; i++) {
+        var asignado = String(dataHist[i][25]).trim().toLowerCase();
+        var estadoQ = String(dataHist[i][16]).trim().toUpperCase();
+        if (asignado === userEmail && ESTADOS_PEND.includes(estadoQ)) {
+          filasCandidatas.push({ fila: i + 2, valores: dataHist[i] });
+        }
+      }
       Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: bloque digital = ' + (Date.now() - _tPend1_0) + 'ms (' + filasCandidatas.length + ' candidatas)');
       for (let m = 0; m < filasCandidatas.length; m++) {
         const h = filasCandidatas[m].valores;
@@ -2526,19 +2617,21 @@ function obtenerCasosPendientesAnalista() {
     }
   } catch(e) { Logger.log('obtenerCasosPendientes digital: ' + e.message); }
 
-  // Reestudio: Historico_Gestiones de la hoja de reestudios — mismo patrón de TextFinder,
-  // acotado a la columna de asignado (7).
+  // Reestudio: Historico_Gestiones de la hoja de reestudios — filtro in-memory
+  // sobre el memo cacheado (elimina TextFinder / network round-trip redundante).
   try {
     const _tPend2_0 = Date.now();
-    const hojaR = _abrirSSCacheado(REEST_SS_ID).getSheetByName('Historico_Gestiones');
-    const lastRowR = hojaR ? hojaR.getLastRow() : 0;
-    Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: Historico_Gestiones reestudios tiene ' + (lastRowR - 1) + ' filas');
-    if (hojaR && lastRowR > 1) {
-      const filasCandidatasR = _filasFiltradasPorAnalista(
-        hojaR, 7, 11,
-        function(estadoQ) { return ESTADOS_PEND.includes(estadoQ.trim().toUpperCase()); },
-        userEmail, 18
-      );
+    const dataReest = _getHistGestionesReest();
+    Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: Historico_Gestiones reestudios tiene ' + dataReest.length + ' filas (memo)');
+    if (dataReest.length > 0) {
+      const filasCandidatasR = [];
+      for (var i = 0; i < dataReest.length; i++) {
+        var asignado = String(dataReest[i][6]).trim().toLowerCase();
+        var estadoQ  = String(dataReest[i][10]).trim().toUpperCase();
+        if (asignado === userEmail && ESTADOS_PEND.includes(estadoQ)) {
+          filasCandidatasR.push({ fila: i + 2, valores: dataReest[i] });
+        }
+      }
       Logger.log('⏱ SPERF obtenerCasosPendientesAnalista: bloque reestudio = ' + (Date.now() - _tPend2_0) + 'ms (' + filasCandidatasR.length + ' candidatas)');
       for (let m = 0; m < filasCandidatasR.length; m++) {
         const fila    = filasCandidatasR[m].valores;
@@ -3193,6 +3286,7 @@ function actualizarEstadoPropio(nuevoEstado) {
 // asignar ni cargar panel — el cliente maneja eso igual que antes.
 function activarYAsignar() {
   var _tActivarYAsignar0 = Date.now();
+  var _deadline = _tActivarYAsignar0 + 300000; // 300 segundos = safety deadline
   var resultado = { activacion: null, asignacion: null, panel: null };
 
   // Paso 1: activar (incluye verificarTurnoActivo con cache + ScriptLock + Historico_Estados)
@@ -3205,9 +3299,7 @@ function activarYAsignar() {
 
   // Paso 2: asignar (solo si la activación fue exitosa)
   // La respuesta de autoAsignarDesdeEquipo() (vía RequestLeadUnificado) incluye
-  // idsAsignados y faseTarget cuando hay biometrías asignadas. El cliente usa
-  // estos campos para disparar actualizarFaseBiometriaPendienteDeferred() de
-  // forma no-bloqueante (fire-and-forget), evitando ~4-6s de espera adicional.
+  // idsAsignados y faseTarget cuando hay biometrías asignadas.
   // Interfaz esperada: {success, message, nueva, idsAsignados, faseTarget}
   var _tAutoAsignar0 = Date.now();
   try {
@@ -3217,7 +3309,37 @@ function activarYAsignar() {
   }
   Logger.log('⏱ SPERF activarYAsignar: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
 
+  // Paso 2.5: biometría deferred server-side (Req 5.6, 5.3, 5.4)
+  // Si hay IDs asignados, ejecutar actualización de fase de biometría en esta misma invocación.
+  // Esto evita un round-trip adicional desde el cliente.
+  if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
+    if (Date.now() < _deadline) {
+      var _tBio0 = Date.now();
+      try {
+        actualizarFaseBiometriaPendienteDeferred(resultado.asignacion.idsAsignados, resultado.asignacion.faseTarget);
+        resultado.asignacion._biometriaEjecutada = true;
+      } catch (e) {
+        Logger.log('⚠ activarYAsignar: biometría deferred falló: ' + e.message);
+        resultado.asignacion._biometriaEjecutada = false;
+      }
+      Logger.log('⏱ SPERF activarYAsignar: biometriaDeferred = ' + (Date.now() - _tBio0) + 'ms');
+    } else {
+      Logger.log('⏱ SPERF activarYAsignar: DEADLINE pre-biometría, omitida');
+      resultado.asignacion._biometriaEjecutada = false;
+    }
+  } else {
+    if (resultado.asignacion) {
+      resultado.asignacion._biometriaEjecutada = false;
+    }
+  }
+
   // Paso 3: cargar panel (siempre, para que el cliente tenga datos frescos)
+  // Verificar deadline antes de cargar panel (Req 5.4)
+  if (Date.now() >= _deadline) {
+    Logger.log('⏱ SPERF activarYAsignar: DEADLINE pre-panel TOTAL = ' + (Date.now() - _tActivarYAsignar0) + 'ms');
+    return resultado; // panel queda null
+  }
+
   var _tCargarPanel0 = Date.now();
   try {
     resultado.panel = cargarPanelAnalista();
@@ -3227,6 +3349,197 @@ function activarYAsignar() {
   Logger.log('⏱ SPERF activarYAsignar: cargarPanelAnalista = ' + (Date.now() - _tCargarPanel0) + 'ms');
 
   Logger.log('⏱ SPERF activarYAsignar: TOTAL = ' + (Date.now() - _tActivarYAsignar0) + 'ms');
+  return resultado;
+}
+
+// ============================================================
+// AUTO-ASIGNAR + PANEL EN UN SOLO VIAJE (optimización de latencia)
+// ============================================================
+// Consolida: auto-asignación + biometría deferred + carga de panel.
+// Patrón idéntico a activarYAsignar() pero sin el paso de activación
+// (actualizarEstadoPropio). Usado por polling y _dispararAutoAsignacion().
+// Reutiliza _abrirSSCacheado() automáticamente (misma ejecución = mismo cache).
+// Safety deadline de 300s para retornar resultado parcial antes del timeout de GAS (6min).
+/**
+ * Consolida: auto-asignación + biometría deferred + carga de panel.
+ * Patrón idéntico a activarYAsignar() pero sin el paso de activación.
+ *
+ * @returns {{ asignacion: Object, panel: Object|null }}
+ *   asignacion: { success, message, nueva, idsAsignados, faseTarget, _biometriaEjecutada }
+ *   panel: resultado de cargarPanelAnalista() o { _error, tabla:null, cupos:null, ... }
+ */
+function autoAsignarConPanel() {
+  var _t0 = Date.now();
+  var _deadline = _t0 + 300000; // 300 segundos = safety deadline
+  var asignacion = null;
+
+  // --- Paso 1: Auto-asignar ---
+  var _tAutoAsignar0 = Date.now();
+  try {
+    asignacion = autoAsignarDesdeEquipo();
+  } catch (e) {
+    asignacion = { success: false, message: e.message, nueva: false, idsAsignados: [], faseTarget: null, _biometriaEjecutada: false };
+  }
+  Logger.log('⏱ SPERF autoAsignarConPanel: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
+
+  // --- Paso 1.5: Biometría deferred server-side (Req 5.1, 5.3, 5.4) ---
+  if (asignacion && asignacion.idsAsignados && asignacion.idsAsignados.length > 0) {
+    if (Date.now() < _deadline) {
+      var _tBio0 = Date.now();
+      try {
+        actualizarFaseBiometriaPendienteDeferred(asignacion.idsAsignados, asignacion.faseTarget);
+        asignacion._biometriaEjecutada = true;
+      } catch (e) {
+        Logger.log('⚠ autoAsignarConPanel: biometría deferred falló: ' + e.message);
+        asignacion._biometriaEjecutada = false;
+      }
+      Logger.log('⏱ SPERF autoAsignarConPanel: biometriaDeferred = ' + (Date.now() - _tBio0) + 'ms');
+    } else {
+      Logger.log('⏱ SPERF autoAsignarConPanel: DEADLINE pre-biometría, omitida');
+      asignacion._biometriaEjecutada = false;
+    }
+  } else {
+    if (asignacion) {
+      asignacion._biometriaEjecutada = false;
+    }
+  }
+
+  // --- Paso 2: Cargar panel ---
+  // Verificar deadline (280s) antes de cargar panel para dejar margen de retorno
+  if (Date.now() - _t0 >= 280000) {
+    Logger.log('⏱ SPERF autoAsignarConPanel: DEADLINE pre-panel (280s) TOTAL = ' + (Date.now() - _t0) + 'ms');
+    return { asignacion: asignacion, panel: null };
+  }
+
+  var panel = null;
+  var _tCargarPanel0 = Date.now();
+  try {
+    panel = cargarPanelAnalista();
+  } catch (e) {
+    panel = {
+      _error: e.message,
+      tabla: null,
+      cupos: null,
+      pendientesValidacion: [],
+      gestionesHoyCruzadas: null
+    };
+  }
+  Logger.log('⏱ SPERF autoAsignarConPanel: cargarPanelAnalista = ' + (Date.now() - _tCargarPanel0) + 'ms');
+
+  Logger.log('⏱ SPERF autoAsignarConPanel: total = ' + (Date.now() - _t0) + 'ms');
+  return { asignacion: asignacion, panel: panel };
+}
+
+// ============================================================
+// GUARDAR + ASIGNAR + PANEL EN UN SOLO VIAJE (optimización de latencia)
+// ============================================================
+// Cuando el analista guarda una gestión con estado de cierre (APROBADO/NEGADO/
+// RECHAZADO/APLAZADO), antes se ejecutaban 3 viajes de red en secuencia:
+// guardarCambiosInternos → autoAsignarDesdeEquipo → cargarPanelAnalista.
+// Esta función los consolida en un solo round-trip:
+// 1. Guarda la gestión (guardarCambiosInternos)
+// 2. Si el guardado fue exitoso y disparaAsignacion=true, intenta asignar (autoAsignarDesdeEquipo)
+// 3. Devuelve los datos del panel (cargarPanelAnalista) para que el cliente
+//    pueda renderizar inmediatamente sin un viaje adicional.
+// Si el guardado falla, devuelve el error sin intentar asignar ni cargar panel.
+// Safety deadline de 300s para retornar resultado parcial antes del timeout de GAS (6min).
+/**
+ * Consolida: guardar gestión + auto-asignar siguiente + cargar panel.
+ * Patrón idéntico a activarYAsignar() pero reemplazando activación por guardado.
+ *
+ * @param {Object} data - Mismos datos que recibe guardarCambiosInternos()
+ * @returns {{guardado: Object, asignacion: Object|null, panel: Object|null}}
+ */
+function guardarYAsignarSiguiente(data) {
+  var _tGYA0 = Date.now();
+  var _deadline = _tGYA0 + 300000; // 300 segundos = safety deadline
+  var resultado = { guardado: null, asignacion: null, panel: null };
+
+  // --- Validación de input: solicitudId requerido ---
+  if (!data || !data.solicitudId || String(data.solicitudId).trim() === '') {
+    resultado.guardado = { success: false, message: 'ID de solicitud no proporcionado.', disparaAsignacion: false };
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: ABORTADO (solicitudId vacío) TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+    return resultado;
+  }
+
+  // --- Paso 1: Guardar gestión ---
+  // Verificar deadline antes de guardar
+  if (Date.now() >= _deadline) {
+    resultado.guardado = { success: false, message: 'Tiempo límite superado antes de iniciar guardado.', disparaAsignacion: false };
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: ABORTADO (deadline pre-guardado) TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+    return resultado;
+  }
+
+  try {
+    resultado.guardado = guardarCambiosInternos(data);
+  } catch (e) {
+    resultado.guardado = { success: false, message: 'Error de servidor: ' + e.message, disparaAsignacion: false };
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: EXCEPCIÓN en guardado TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+    return resultado;
+  }
+  Logger.log('⏱ SPERF guardarYAsignarSiguiente: guardarCambiosInternos = ' + (Date.now() - _tGYA0) + 'ms');
+
+  // Early exit si guardado falla (Req 1.4, 1.6)
+  if (!resultado.guardado || !resultado.guardado.success) {
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: ABORTADO (guardado fallido) TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+    return resultado;
+  }
+
+  // --- Paso 2: Asignar siguiente caso (solo si disparaAsignacion=true) ---
+  // La respuesta de autoAsignarDesdeEquipo() (vía RequestLeadUnificado) incluye
+  // idsAsignados y faseTarget cuando hay biometrías asignadas. El cliente usa
+  // estos campos para disparar actualizarFaseBiometriaPendienteDeferred() de
+  // forma no-bloqueante (fire-and-forget).
+  // Interfaz esperada: {success, message, nueva, idsAsignados, faseTarget}
+  if (resultado.guardado.disparaAsignacion) {
+    // Verificar deadline antes de asignar (Req 5.4)
+    if (Date.now() >= _deadline) {
+      Logger.log('⏱ SPERF guardarYAsignarSiguiente: DEADLINE pre-asignación TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+      return resultado; // asignacion y panel quedan null
+    }
+
+    var _tAutoAsignar0 = Date.now();
+    try {
+      resultado.asignacion = autoAsignarDesdeEquipo();
+    } catch (e) {
+      resultado.asignacion = { success: false, message: e.message, idsAsignados: [], faseTarget: null };
+    }
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
+
+    // --- Paso 2.5: Biometría deferred server-side (Req 5.2, 5.3, 5.4) ---
+    if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
+      try {
+        actualizarFaseBiometriaPendienteDeferred(resultado.asignacion.idsAsignados, resultado.asignacion.faseTarget);
+        resultado.asignacion._biometriaEjecutada = true;
+      } catch (e) {
+        Logger.log('⚠️ guardarYAsignarSiguiente: biometría deferred falló: ' + e.message);
+        resultado.asignacion._biometriaEjecutada = false;
+      }
+    }
+  }
+
+  // --- Paso 3: Cargar panel (siempre que el guardado fue exitoso) ---
+  // Verificar deadline antes de cargar panel (Req 5.4)
+  if (Date.now() >= _deadline) {
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: DEADLINE pre-panel TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+    return resultado; // panel queda null
+  }
+
+  var _tCargarPanel0 = Date.now();
+  try {
+    resultado.panel = cargarPanelAnalista();
+  } catch (e) {
+    resultado.panel = {
+      _error: e.message,
+      tabla: null,
+      cupos: null,
+      pendientesValidacion: [],
+      gestionesHoyCruzadas: null
+    };
+  }
+  Logger.log('⏱ SPERF guardarYAsignarSiguiente: cargarPanelAnalista = ' + (Date.now() - _tCargarPanel0) + 'ms');
+
+  Logger.log('⏱ SPERF guardarYAsignarSiguiente: TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
   return resultado;
 }
 
@@ -3774,39 +4087,28 @@ function _calcularGestionesHoyTodos(hoyStr) {
   }
 
   // 1. Contar desde Historico_Gestiones del warehouse (digitales, biometría, inducciones)
-  // SPERF: este bloque lee la hoja COMPLETA (crece sin límite, nunca se archiva —
-  // ver CLAUDE.md) cada vez que el caché de 60s de obtenerGestionesHoyCruzadas()
-  // expira. Se instrumenta para confirmar/descartar si es el cuello de botella real.
+  // Usa memo _getHistGestionesPrincipal() — evita network round-trip si ya se leyó
   try {
     const _tScanHistG0 = Date.now();
-    const hojaHistG = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID)
-                        .getSheetByName("Historico_Gestiones");
-    if (hojaHistG && hojaHistG.getLastRow() > 1) {
-      Logger.log('⏱ SPERF _calcularGestionesHoyTodos: Historico_Gestiones principal tiene ' + (hojaHistG.getLastRow() - 1) + ' filas');
-      const dataHistG = hojaHistG.getRange(2, 26, hojaHistG.getLastRow() - 1, 2).getDisplayValues(); // cols 26-27
-      Logger.log('⏱ SPERF _calcularGestionesHoyTodos: lectura Historico_Gestiones principal = ' + (Date.now() - _tScanHistG0) + 'ms');
-      for (let i = 0; i < dataHistG.length; i++) {
-        const asignado = String(dataHistG[i][0]).trim().toLowerCase(); // col 26
-        const fechaFin = String(dataHistG[i][1]).trim();               // col 27
-        if (fechaFin.includes(hoyStr)) sumar(asignado, 'digital');
-      }
+    const dataHistG = _getHistGestionesPrincipal();
+    Logger.log('⏱ SPERF _calcularGestionesHoyTodos: Historico_Gestiones principal (' + dataHistG.length + ' filas) obtenido en ' + (Date.now() - _tScanHistG0) + 'ms');
+    for (let i = 0; i < dataHistG.length; i++) {
+      const asignado = String(dataHistG[i][25]).trim().toLowerCase(); // col 26 (idx 25)
+      const fechaFin = String(dataHistG[i][26]).trim();               // col 27 (idx 26)
+      if (fechaFin.includes(hoyStr)) sumar(asignado, 'digital');
     }
   } catch(e) { Logger.log("_calcularGestionesHoyTodos Hist: " + e.message); }
 
   // 2. Contar desde Historico_Gestiones de ssReestudios
+  // Usa memo _getHistGestionesReest() — evita network round-trip si ya se leyó
   try {
     const _tScanHistR0 = Date.now();
-    const hojaHistReest = _abrirSSCacheado(ID_HOJA_REESTUDIOS)
-                            .getSheetByName("Historico_Gestiones");
-    if (hojaHistReest && hojaHistReest.getLastRow() > 1) {
-      Logger.log('⏱ SPERF _calcularGestionesHoyTodos: Historico_Gestiones reestudios tiene ' + (hojaHistReest.getLastRow() - 1) + ' filas');
-      const dataReest = hojaHistReest.getRange(2, 7, hojaHistReest.getLastRow() - 1, 4).getDisplayValues(); // cols G(7)..J(10)
-      Logger.log('⏱ SPERF _calcularGestionesHoyTodos: lectura Historico_Gestiones reestudios = ' + (Date.now() - _tScanHistR0) + 'ms');
-      for (let i = 0; i < dataReest.length; i++) {
-        const asignado = String(dataReest[i][0]).trim().toLowerCase(); // col G
-        const fechaFin = String(dataReest[i][3]).trim();               // col J
-        if (fechaFin.includes(hoyStr)) sumar(asignado, 'reestudios');
-      }
+    const dataReest = _getHistGestionesReest();
+    Logger.log('⏱ SPERF _calcularGestionesHoyTodos: Historico_Gestiones reestudios (' + dataReest.length + ' filas) obtenido en ' + (Date.now() - _tScanHistR0) + 'ms');
+    for (let i = 0; i < dataReest.length; i++) {
+      const asignado = String(dataReest[i][6]).trim().toLowerCase(); // col G (idx 6)
+      const fechaFin = String(dataReest[i][9]).trim();               // col J (idx 9)
+      if (fechaFin.includes(hoyStr)) sumar(asignado, 'reestudios');
     }
   } catch (e) {
     Logger.log("_calcularGestionesHoyTodos Reest: " + e.message);
