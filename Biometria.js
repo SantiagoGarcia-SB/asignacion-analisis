@@ -1155,7 +1155,7 @@ function enviarBroadcastInfobipConFilas(filasBiometria, hojaBio, filasSheet) {
 
       var templateData = {
         body: { placeholders: [nombre, solicitudId] },
-        buttons: [{ type: "QUICK_REPLY", parameter: solicitudId }]
+        buttons: [{ type: "QUICK_REPLY", parameter: "Necesito ayuda" }]
       };
       if (headerImageUrl) {
         templateData.header = { type: "IMAGE", mediaUrl: headerImageUrl };
@@ -2670,7 +2670,7 @@ function testEnviarWhatsApp() {
 
   var templateData = {
     body: { placeholders: [nombre, solicitud] },
-    buttons: [{ type: "QUICK_REPLY", parameter: solicitud }]
+    buttons: [{ type: "QUICK_REPLY", parameter: "Necesito ayuda" }]
   };
   if (headerImageUrl) {
     templateData.header = { type: "IMAGE", mediaUrl: headerImageUrl };
@@ -2715,7 +2715,7 @@ function testEnviarWhatsAppDuplicado() {
   var templateData = {
     body: { placeholders: [nombre, solicitud] },
     header: { type: "IMAGE", mediaUrl: "https://image.experienciasbolivar.segurosbolivar.com/lib/fe3511747364047b751475/m/1/58814996-8fab-4e04-a605-9d60ff14d81a.png" },
-    buttons: [{ type: "QUICK_REPLY", parameter: solicitud }]
+    buttons: [{ type: "QUICK_REPLY", parameter: "Necesito ayuda" }]
   };
 
   var url = "https://" + baseUrl + "/whatsapp/1/message/template";
