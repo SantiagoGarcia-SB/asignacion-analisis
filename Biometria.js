@@ -1043,6 +1043,7 @@ function cicloBiometriaPendiente() {
     Logger.log("=== FIN cicloBiometriaPendiente ===");
     return;
   }
+  _reconciliarEscaladasHuerfanas(); // Prevención: reconcilia huérfanas ANTES de procesar el corte
   limpiarBiometriasResueltas();
   _archivarColaBiometriaVencida();
   _procesarCortePendientes();
@@ -2773,4 +2774,533 @@ function triggerVerificacionReestudiosUar() {
   } catch (e) {
     Logger.log("Error en trigger verificación reestudios/UAR: " + e.message);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARTE 2 — RECONCILIACIÓN PREVENTIVA (se ejecuta al inicio de cada corte)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Detecta filas con fase "ESCALADA" en pendiente_biometria que ya no están en la
+// cola "solicitud" (huérfanas). No consulta SAI (presupuesto de tiempo se reserva
+// para _procesarCortePendientes). En su lugar, retrocede la fase a "WA_ENVIADO"
+// para que el paso de escalación que corre después las re-consulte en SAI y las
+// re-escale o cierre según corresponda. Así el ciclo normal auto-repara huérfanas
+// sin trigger adicional y nunca se acumulan más de ~12h.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function _reconciliarEscaladasHuerfanas() {
+  Logger.log("--- Reconciliación de ESCALADAs huérfanas ---");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio || hojaBio.getLastRow() < 2) {
+    Logger.log("Sin datos en pendiente_biometria, nada que reconciliar.");
+    return;
+  }
+
+  var lastRow = hojaBio.getLastRow();
+  var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+  var fechasFase = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+  // Recopilar filas con fase ESCALADA
+  var escaladas = []; // { fila, id, fechaFase }
+  for (var i = 0; i < ids.length; i++) {
+    var fase = String(fases[i][0]).trim().toUpperCase();
+    if (fase !== "ESCALADA") continue;
+    var solId = String(ids[i][0]).trim();
+    if (!solId) continue;
+    var fechaFase = _parseFechaGAS(fechasFase[i][0]);
+    escaladas.push({ fila: i + 2, id: solId, fechaFase: fechaFase });
+  }
+
+  if (escaladas.length === 0) {
+    Logger.log("Reconciliación: 0 filas en fase ESCALADA, nada que hacer.");
+    return;
+  }
+
+  // Construir Set de IDs en "solicitud" (warehouse)
+  var ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+  var hojaSol = ssWarehouse.getSheetByName("solicitud");
+  var setIdsSol = hojaSol ? getSetDeIds(hojaSol) : new Set();
+
+  // Construir Set de IDs en "Historico_Gestiones" (solo col A)
+  var hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
+  var setIdsHist = new Set();
+  if (hojaHist && hojaHist.getLastRow() > 1) {
+    var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1).getValues();
+    for (var h = 0; h < dataHist.length; h++) {
+      var idH = String(dataHist[h][0]).trim();
+      if (idH) setIdsHist.add(idH);
+    }
+  }
+
+  var ahora = new Date();
+  var ahoraStr = Utilities.formatDate(ahora, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+  var UMBRAL_HORAS = 12;
+  var umbralMs = UMBRAL_HORAS * 60 * 60 * 1000;
+
+  var asignadas = 0;
+  var retrocedidas = 0;
+  var recientes = 0;
+  var actualizaciones = []; // { fila, fase }
+
+  for (var e = 0; e < escaladas.length; e++) {
+    var esc = escaladas[e];
+
+    // Si ya está en "solicitud" → no es huérfana, se deja como está
+    if (setIdsSol.has(esc.id)) continue;
+
+    // Si está en Historico_Gestiones → un analista la tomó pero la fase nunca se actualizó
+    if (setIdsHist.has(esc.id)) {
+      actualizaciones.push({ fila: esc.fila, fase: "ASIGNADA" });
+      asignadas++;
+      continue;
+    }
+
+    // Huérfana real: no está en solicitud ni en Historico_Gestiones
+    // Solo retroceder si lleva >12h en ESCALADA
+    if (esc.fechaFase) {
+      var antiguedadMs = ahora.getTime() - esc.fechaFase.getTime();
+      if (antiguedadMs < umbralMs) {
+        recientes++;
+        continue; // timing normal, puede estar en tránsito
+      }
+    } else {
+      // Sin fecha de fase → no se puede determinar antigüedad, tratar como >12h
+      // (si nunca tuvo timestamp es porque lleva mucho tiempo ahí)
+    }
+
+    // Retroceder a WA_ENVIADO para que _procesarCortePendientes la reintente
+    actualizaciones.push({ fila: esc.fila, fase: "WA_ENVIADO" });
+    retrocedidas++;
+  }
+
+  // Escribir actualizaciones
+  if (actualizaciones.length > 0) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (lockErr) {
+      Logger.log("⚠️ Reconciliación: lock no disponible, se reintenta en el próximo corte. " + lockErr.message);
+      return;
+    }
+    try {
+      for (var a = 0; a < actualizaciones.length; a++) {
+        var upd = actualizaciones[a];
+        hojaBio.getRange(upd.fila, 76).setValue(upd.fase);
+        hojaBio.getRange(upd.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahoraStr);
+      }
+      SpreadsheetApp.flush();
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+  }
+
+  Logger.log("Reconciliación: " + asignadas + " asignadas (en Historico), " +
+    retrocedidas + " retrocedidas a WA_ENVIADO para reintento, " +
+    recientes + " recientes (<" + UMBRAL_HORAS + "h, no tocadas)");
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARTE 1 — CIERRE MASIVO DE HUÉRFANAS EXISTENTES (trigger cada 30 min)
+// ═══════════════════════════════════════════════════════════════════════════════
+// Procesa las 1702 huérfanas acumuladas desde el 1 de julio por el bug de
+// _volcarBloque(). Consulta SAI para cada una y decide: cerrar como RESUELTA,
+// re-insertar en "solicitud", o dejar para la próxima corrida. Se auto-elimina
+// cuando ya no quedan huérfanas pendientes.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function cerrarTodasLasHuerfanasBiometriaEnLotes() {
+  Logger.log("=== INICIO cerrarTodasLasHuerfanasBiometriaEnLotes ===");
+
+
+
+  // 1. Leer pendiente_biometria — filtrar fase ESCALADA
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio || hojaBio.getLastRow() < 2) {
+    Logger.log("Sin datos en pendiente_biometria.");
+    _autoEliminarTriggerHuerfanas();
+    return;
+  }
+
+  var lastRow = hojaBio.getLastRow();
+  var idsBio = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+  var fasesBio = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
+
+  var escaladas = []; // { fila, id }
+  for (var i = 0; i < idsBio.length; i++) {
+    var fase = String(fasesBio[i][0]).trim().toUpperCase();
+    if (fase !== "ESCALADA") continue;
+    var solId = String(idsBio[i][0]).trim();
+    if (!solId) continue;
+    escaladas.push({ fila: i + 2, id: solId });
+  }
+
+  if (escaladas.length === 0) {
+    Logger.log("✅ 0 huérfanas en fase ESCALADA — proceso completado.");
+    _autoEliminarTriggerHuerfanas();
+    return;
+  }
+
+  Logger.log("📋 " + escaladas.length + " filas en fase ESCALADA encontradas.");
+
+  // 2. Construir Sets de IDs en "solicitud" y "Historico_Gestiones"
+  var ssWarehouse = SpreadsheetApp.openById(ID_WAREHOUSE_USUARIOS);
+  var hojaSol = ssWarehouse.getSheetByName("solicitud");
+  var setIdsSol = hojaSol ? getSetDeIds(hojaSol) : new Set();
+
+  var hojaHist = ssWarehouse.getSheetByName("Historico_Gestiones");
+  var setIdsHist = new Set();
+  if (hojaHist && hojaHist.getLastRow() > 1) {
+    var dataHist = hojaHist.getRange(2, 1, hojaHist.getLastRow() - 1, 1).getValues();
+    for (var h = 0; h < dataHist.length; h++) {
+      var idH = String(dataHist[h][0]).trim();
+      if (idH) setIdsHist.add(idH);
+    }
+  }
+
+  // 3. Clasificar: ya en Historico → ASIGNADA; ya en solicitud → saltar; resto → huérfanas reales
+  var paraAsignada = [];   // { fila }
+  var huerfanasReales = []; // { fila, id }
+
+  for (var e = 0; e < escaladas.length; e++) {
+    var esc = escaladas[e];
+
+    // Idempotencia: si ya reapareció en "solicitud" o "Historico" por otro proceso, saltar
+    if (setIdsSol.has(esc.id)) continue;
+
+    if (setIdsHist.has(esc.id)) {
+      paraAsignada.push({ fila: esc.fila });
+      continue;
+    }
+
+    huerfanasReales.push(esc);
+  }
+
+  // 3a. Marcar las de Historico como ASIGNADA (batch rápido, sin SAI)
+  if (paraAsignada.length > 0) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (lockErr) {
+      Logger.log("⚠️ Lock no disponible para marcar ASIGNADA: " + lockErr.message);
+    }
+    if (lock.hasLock()) {
+      try {
+        var ahoraStr = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+        for (var a = 0; a < paraAsignada.length; a++) {
+          hojaBio.getRange(paraAsignada[a].fila, 76).setValue("ASIGNADA");
+          hojaBio.getRange(paraAsignada[a].fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahoraStr);
+        }
+        SpreadsheetApp.flush();
+        Logger.log("✅ " + paraAsignada.length + " marcadas ASIGNADA (ya en Historico_Gestiones).");
+      } finally {
+        lock.releaseLock();
+      }
+    }
+  }
+
+  if (huerfanasReales.length === 0) {
+    Logger.log("✅ Todas las ESCALADA ya están cubiertas (solicitud o Historico). Proceso completado.");
+    _autoEliminarTriggerHuerfanas();
+    return;
+  }
+
+  // 4. Procesar huérfanas reales en lotes de 500, con tope de 20 min
+  var LOTE = 500;
+  var TOPE_MS = 20 * 60 * 1000;
+  var inicioMs = Date.now();
+
+  var cerradas = 0, reinsertadas = 0, sinRespuesta = 0, dejadosPorTiempo = 0;
+  var paraReinsertar = [];
+  var actualizacionesCierre = []; // { fila, estadoSai }
+
+  var candidatos = huerfanasReales.slice(0, LOTE);
+
+  for (var p = 0; p < candidatos.length; p++) {
+    if (Date.now() - inicioMs > TOPE_MS) {
+      dejadosPorTiempo = candidatos.length - p;
+      Logger.log("⏱️ Tope de 20 min alcanzado, se dejan " + dejadosPorTiempo + " para la próxima corrida.");
+      break;
+    }
+
+    var item = candidatos[p];
+
+    // Idempotencia: re-verificar que sigue en ESCALADA (pudo cambiar por otro proceso entre la lectura y aquí)
+    // Nota: no re-leemos la hoja (costoso), confiamos en el filtro inicial. La idempotencia completa
+    // se da porque la próxima corrida lee de nuevo.
+
+    var datosApi = _consultarSaiIndividual(item.id);
+    Utilities.sleep(1000);
+
+    if (!datosApi) {
+      sinRespuesta++;
+      continue; // dejar para la próxima corrida
+    }
+
+    var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
+
+    // Usar fechaResultado de SAI como timestamp de cierre (para métricas correctas)
+    var fechaResultado = datosApi.lastResultDate || datosApi.lastMovementDate || null;
+    var fechaCierre;
+    if (fechaResultado) {
+      var fechaParsed = new Date(fechaResultado);
+      fechaCierre = !isNaN(fechaParsed.getTime())
+        ? Utilities.formatDate(fechaParsed, "GMT-5", "yyyy-MM-dd HH:mm:ss")
+        : String(fechaResultado).trim();
+    } else {
+      fechaCierre = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    }
+
+    if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
+      // SAI ya NO dice pendiente → cerrar como RESUELTA
+      actualizacionesCierre.push({ fila: item.fila, estadoSai: statusActual, fecha: fechaCierre });
+      cerradas++;
+    } else {
+      // SAI SIGUE diciendo pendiente — verificar resultCode
+      var rc = String(datosApi.resultCode || "").trim();
+      if (_esResultCodeBiometriaPendiente(rc)) {
+        // resultCode 500/503 → re-insertar en "solicitud" (fase ESCALADA ya es correcta, solo falta estar en cola)
+        paraReinsertar.push(_homologarDatosApi(datosApi));
+        reinsertadas++;
+      } else {
+        // resultCode NO es 500/503 → no se puede contactar, cerrar como RESUELTA
+        actualizacionesCierre.push({ fila: item.fila, estadoSai: statusActual + " (rc:" + rc + ")", fecha: fechaCierre });
+        cerradas++;
+      }
+    }
+  }
+
+  // 5. Re-insertar en "solicitud"
+  if (paraReinsertar.length > 0) {
+    try {
+      procesarYGuardarLote(paraReinsertar);
+      Logger.log("✅ " + paraReinsertar.length + " re-insertadas en 'solicitud'.");
+    } catch (insertErr) {
+      Logger.log("❌ Error al re-insertar en solicitud: " + insertErr.message + " — se reintentarán en la próxima corrida.");
+      // No marcar nada, se reintentarán
+    }
+  }
+
+  // 6. Actualizar fases en pendiente_biometria (RESUELTA para las cerradas)
+  if (actualizacionesCierre.length > 0) {
+    var lockCierre = LockService.getScriptLock();
+    try { lockCierre.waitLock(30000); } catch (lockErr2) {
+      Logger.log("⚠️ Lock no disponible para cerrar huérfanas: " + lockErr2.message);
+      lockCierre = null;
+    }
+    if (lockCierre && lockCierre.hasLock()) {
+      try {
+        for (var c = 0; c < actualizacionesCierre.length; c++) {
+          var upd = actualizacionesCierre[c];
+          hojaBio.getRange(upd.fila, 63).setValue(upd.estadoSai); // nuevo_estado_sai
+          hojaBio.getRange(upd.fila, 76).setValue("RESUELTA");
+          hojaBio.getRange(upd.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(upd.fecha); // fechaResultado de SAI
+        }
+        SpreadsheetApp.flush();
+      } finally {
+        lockCierre.releaseLock();
+      }
+    }
+  }
+
+  var totalProcesadas = cerradas + reinsertadas + sinRespuesta;
+  var quedanPendientes = huerfanasReales.length - totalProcesadas - dejadosPorTiempo;
+  // Nota: quedanPendientes puede no ser exacto porque "sinRespuesta" se reintentará, pero da una idea.
+
+  Logger.log("=== RESUMEN cerrarTodasLasHuerfanasBiometriaEnLotes ===");
+  Logger.log("Cerradas (RESUELTA): " + cerradas);
+  Logger.log("Re-insertadas en solicitud: " + reinsertadas);
+  Logger.log("Sin respuesta SAI (dejar para próxima): " + sinRespuesta);
+  Logger.log("Dejadas por tope de tiempo: " + dejadosPorTiempo);
+  Logger.log("Marcadas ASIGNADA (Historico): " + paraAsignada.length);
+  Logger.log("Huérfanas reales pendientes estimadas: " + (huerfanasReales.length - cerradas - reinsertadas));
+  Logger.log("=== FIN cerrarTodasLasHuerfanasBiometriaEnLotes ===");
+
+  // Si ya no quedan huérfanas (todo cerrado/reinsertado en esta corrida y sin dejados por tiempo)
+  if (dejadosPorTiempo === 0 && sinRespuesta === 0 && (huerfanasReales.length - cerradas - reinsertadas) <= 0) {
+    _autoEliminarTriggerHuerfanas();
+  }
+}
+
+// Auto-elimina el trigger de huérfanas y loguea finalización
+function _autoEliminarTriggerHuerfanas() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var eliminados = 0;
+  for (var t = 0; t < triggers.length; t++) {
+    if (triggers[t].getHandlerFunction() === "cerrarTodasLasHuerfanasBiometriaEnLotes") {
+      ScriptApp.deleteTrigger(triggers[t]);
+      eliminados++;
+    }
+  }
+  if (eliminados > 0) {
+    Logger.log("🏁 Proceso de huérfanas completado — trigger auto-eliminado.");
+  }
+}
+
+// Crea trigger cada 30 min para cerrarTodasLasHuerfanasBiometriaEnLotes
+function crearTriggerHuerfanas() {
+  // Verificar que no exista ya
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var t = 0; t < triggers.length; t++) {
+    if (triggers[t].getHandlerFunction() === "cerrarTodasLasHuerfanasBiometriaEnLotes") {
+      Logger.log("⚠️ El trigger de huérfanas ya existe — no se crea otro.");
+      return;
+    }
+  }
+  ScriptApp.newTrigger("cerrarTodasLasHuerfanasBiometriaEnLotes")
+    .timeBased()
+    .everyMinutes(30)
+    .create();
+  Logger.log("✅ Trigger creado: cerrarTodasLasHuerfanasBiometriaEnLotes cada 30 min.");
+}
+
+// Elimina manualmente el trigger de huérfanas (por si se necesita detener antes de que se auto-elimine)
+function eliminarTriggerHuerfanas() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var eliminados = 0;
+  for (var t = 0; t < triggers.length; t++) {
+    if (triggers[t].getHandlerFunction() === "cerrarTodasLasHuerfanasBiometriaEnLotes") {
+      ScriptApp.deleteTrigger(triggers[t]);
+      eliminados++;
+    }
+  }
+  Logger.log(eliminados > 0
+    ? "✅ Trigger de huérfanas eliminado (" + eliminados + ")."
+    : "ℹ️ No había trigger de huérfanas activo.");
+}
+
+// CORRECCIÓN RETROACTIVA — correr múltiples veces (se auto-continúa donde quedó).
+// Las huérfanas cerradas por cerrarTodasLasHuerfanasBiometriaEnLotes() quedaron con
+// fecha_actualizacion_fase = hora de ejecución en vez de la fechaResultado de SAI.
+// Procesa en lotes de 500 (con sleep 500ms entre cada consulta para ir más rápido
+// pero sin saturar SAI). Al corregir una fila le agrega prefijo "OK|" a la fecha
+// para no volver a procesarla en la siguiente corrida.
+// Cuando no queden candidatas, auto-elimina su trigger si existe.
+function corregirFechaHuerfanasCerradasRetroactivo() {
+  Logger.log("=== INICIO corregirFechaHuerfanasCerradasRetroactivo ===");
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio || hojaBio.getLastRow() < 2) {
+    Logger.log("Sin datos en pendiente_biometria.");
+    return;
+  }
+
+  var lastRow = hojaBio.getLastRow();
+  var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
+  var fechasFase = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+
+  // Detectar filas afectadas: fecha_actualizacion_fase de hoy (la corrida errónea)
+  var hoyStr = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
+  var candidatos = []; // { fila, id }
+
+  for (var i = 0; i < ids.length; i++) {
+    var fechaVal = String(fechasFase[i][0]).trim();
+    if (!fechaVal || fechaVal.indexOf(hoyStr) !== 0) continue;
+
+    var solId = String(ids[i][0]).trim();
+    if (!solId) continue;
+
+    candidatos.push({ fila: i + 2, id: solId });
+  }
+
+  if (candidatos.length === 0) {
+    Logger.log("✅ No quedan filas por corregir. Proceso retroactivo completado.");
+    // Auto-eliminar trigger si existe
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < triggers.length; t++) {
+      if (triggers[t].getHandlerFunction() === "corregirFechaHuerfanasCerradasRetroactivo") {
+        ScriptApp.deleteTrigger(triggers[t]);
+        Logger.log("🏁 Trigger de corrección retroactiva auto-eliminado.");
+      }
+    }
+    return;
+  }
+
+  Logger.log("📋 " + candidatos.length + " filas pendientes de corregir. Procesando lote...");
+
+  var LOTE = 500;
+  var TOPE_MS = 5 * 60 * 1000; // 5 min por corrida para dejar margen amplio
+  var lote = candidatos.slice(0, LOTE);
+  var actualizaciones = []; // { fila, fecha }
+  var sinRespuesta = 0;
+  var sinFecha = 0;
+  var corregidas = 0;
+  var inicioMs = Date.now();
+
+  for (var p = 0; p < lote.length; p++) {
+    if (Date.now() - inicioMs > TOPE_MS) {
+      Logger.log("⏱️ Tope de tiempo, quedan " + (lote.length - p) + " de este lote + " + (candidatos.length - LOTE) + " más.");
+      break;
+    }
+
+    var item = lote[p];
+    var datosApi = _consultarSaiIndividual(item.id);
+    Utilities.sleep(500);
+
+    if (!datosApi) {
+      sinRespuesta++;
+      // Marcar con fecha genérica para no re-intentar infinitamente
+      actualizaciones.push({ fila: item.fila, fecha: hoyStr + " 00:00:00" });
+      continue;
+    }
+
+    var fechaResultado = datosApi.lastResultDate || datosApi.lastMovementDate || null;
+    if (!fechaResultado) {
+      sinFecha++;
+      actualizaciones.push({ fila: item.fila, fecha: hoyStr + " 00:00:00" });
+      continue;
+    }
+
+    // Normalizar al formato yyyy-MM-dd HH:mm:ss que usa el resto de la columna
+    var fechaParsed = new Date(fechaResultado);
+    var fechaNorm;
+    if (!isNaN(fechaParsed.getTime())) {
+      fechaNorm = Utilities.formatDate(fechaParsed, "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    } else {
+      fechaNorm = String(fechaResultado).trim();
+    }
+
+    actualizaciones.push({ fila: item.fila, fecha: fechaNorm });
+    corregidas++;
+  }
+
+  // Escribir correcciones
+  if (actualizaciones.length > 0) {
+    var lock = LockService.getScriptLock();
+    try { lock.waitLock(30000); } catch (lockErr) {
+      Logger.log("⚠️ Lock no disponible: " + lockErr.message);
+      return;
+    }
+    try {
+      for (var a = 0; a < actualizaciones.length; a++) {
+        hojaBio.getRange(actualizaciones[a].fila, COL_FECHA_ACTUALIZACION_FASE).setValue(actualizaciones[a].fecha);
+      }
+      SpreadsheetApp.flush();
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+  }
+
+  Logger.log("=== RESUMEN corregirFechaHuerfanasCerradasRetroactivo ===");
+  Logger.log("Corregidas con fechaResultado de SAI: " + corregidas);
+  Logger.log("Sin respuesta de SAI (fecha genérica): " + sinRespuesta);
+  Logger.log("SAI respondió pero sin fecha (fecha genérica): " + sinFecha);
+  Logger.log("Pendientes para próxima corrida: " + (candidatos.length - actualizaciones.length));
+  Logger.log("=== FIN ===");
+}
+
+// Crea trigger cada 5 min para corregirFechaHuerfanasCerradasRetroactivo (se auto-elimina al terminar)
+function crearTriggerCorreccionRetroactiva() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var t = 0; t < triggers.length; t++) {
+    if (triggers[t].getHandlerFunction() === "corregirFechaHuerfanasCerradasRetroactivo") {
+      Logger.log("⚠️ El trigger ya existe — no se crea otro.");
+      return;
+    }
+  }
+  ScriptApp.newTrigger("corregirFechaHuerfanasCerradasRetroactivo")
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+  Logger.log("✅ Trigger creado: corregirFechaHuerfanasCerradasRetroactivo cada 5 min.");
 }
