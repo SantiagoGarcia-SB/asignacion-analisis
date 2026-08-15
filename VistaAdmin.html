@@ -1000,9 +1000,6 @@ html { scroll-behavior: smooth; }
         </span>
     </div>
     <div class="d-flex gap-2 align-items-center">
-        <button class="btn-outline-brand" onclick="verificarDesaplazamientosManual()">
-            <i class="bi bi-clipboard-check"></i> Verificar Bio
-        </button>
         <button class="btn-outline-brand" id="btn-refresh" onclick="refrescarDashboardConOverlay()">
             <i class="bi bi-arrow-clockwise"></i>
         </button>
@@ -1040,14 +1037,6 @@ html { scroll-behavior: smooth; }
     </div>
     <button class="btn-outline-brand" id="btn-ayuda-orden" onclick="mostrarAyudaOrdenAsignacion()" title="¿Qué hacen estos botones?">
         <i class="bi bi-question-circle"></i>
-    </button>
-    <div class="toolbar-divider"></div>
-    <button class="btn-outline-brand" onclick="abrirConfigPlantillaWhatsApp()" title="Configurar a qué plantilla de WhatsApp (Infobip) apunta el sistema">
-        <i class="bi bi-whatsapp"></i> Plantilla WhatsApp
-    </button>
-    <div class="toolbar-divider"></div>
-    <button class="btn-outline-brand" onclick="abrirConfigSincronizacionSAI()" title="Decide si las solicitudes que SAI reporta en estado BORRADOR o EN_ESTUDIO se traen a la cola de analistas">
-        <i class="bi bi-cloud-download"></i> Sincronización SAI
     </button>
     <div class="toolbar-divider"></div>
     <button class="btn-outline-brand" onclick="abrirDesarchivarBiometrias()" title="Recuperar biometrías archivadas de vuelta a la cola de llamada. Los conteos y el análisis por período están en Métricas.">
@@ -1769,112 +1758,131 @@ html { scroll-behavior: smooth; }
 
     <!-- ===== SECCIÓN WA BIOMETRÍA ===== -->
     <div id="seccion-wabiometria" class="seccion-admin" style="display:none;">
-        <div class="mb-4">
-            <h1 class="page-title"><i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>Configuración de envío WA Biometría</h1>
-            <p class="page-sub">Define los días y horarios en los que el sistema puede enviar WhatsApp de biometría a los clientes.</p>
+        <!-- Encabezado + acciones en línea -->
+        <div class="d-flex flex-wrap justify-content-between align-items-start mb-3 gap-2">
+            <div>
+                <h1 class="page-title mb-1"><i class="bi bi-whatsapp me-2" style="color:#25D366;"></i>WA Biometría</h1>
+                <p class="page-sub mb-0">Días, horarios y ventana de envío de WhatsApp a clientes.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button class="btn-outline-brand" onclick="abrirConfigPlantillaWhatsApp()" title="Configurar a qué plantilla de WhatsApp (Infobip) apunta el sistema">
+                    <i class="bi bi-whatsapp"></i> Plantilla
+                </button>
+                <button class="btn-outline-brand" onclick="abrirConfigSincronizacionSAI()" title="Decide si las solicitudes que SAI reporta en estado BORRADOR o EN_ESTUDIO se traen a la cola de analistas">
+                    <i class="bi bi-cloud-download"></i> Sync SAI
+                </button>
+                <button class="btn-outline-brand" onclick="verificarDesaplazamientosManual()" title="Consulta en SAI el estado actual de desaplazamientos/biometrías asignados hoy">
+                    <i class="bi bi-clipboard-check"></i> Verificar Bio
+                </button>
+                <button class="btn-primary-brand" id="btn-guardar-wa-bio" onclick="guardarConfigWaBiometria()">
+                    <span class="spinner-border spinner-border-sm d-none me-1" id="spinner-guardar-wa-bio" role="status"></span>
+                    <i class="bi bi-save me-1"></i> Guardar
+                </button>
+            </div>
         </div>
 
-        <!-- Nota informativa Ley 2300 -->
-        <div class="p-3 rounded-3 mb-4" style="background:#fffbeb;border:1.5px solid #f59e0b;">
-            <div class="d-flex align-items-start gap-2">
-                <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:1.1rem;flex-shrink:0;margin-top:2px;"></i>
-                <div>
-                    <strong style="font-size:0.85rem;color:#92400e;">Referencia Ley 2300 de 2023</strong>
-                    <p class="mb-0 mt-1" style="font-size:0.8rem;color:#78350f;">
-                        Límites recomendados: <strong>Lunes a Viernes 7:00–19:00</strong>, <strong>Sábados 8:00–15:00</strong>, <strong>Domingos no recomendado</strong>. 
-                        Si configura horarios fuera de estos rangos, se mostrará una advertencia antes de guardar.
-                    </p>
+        <!-- Layout 2 columnas: tabla compacta + panel lateral -->
+        <div class="row g-3">
+            <!-- Columna izquierda: tabla de horarios -->
+            <div class="col-lg-8">
+                <div class="table-container mb-0">
+                    <div class="table-header" style="padding:10px 16px;">
+                        <div>
+                            <div class="table-title" style="font-size:0.85rem;">Horarios de envío por día</div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" id="tabla-config-wa-bio" style="font-size:0.82rem;">
+                            <thead>
+                                <tr>
+                                    <th style="width:40px;padding:6px 8px;"></th>
+                                    <th style="padding:6px 8px;">Día</th>
+                                    <th style="padding:6px 8px;">Inicio</th>
+                                    <th style="padding:6px 8px;">Fin</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-lunes-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Lun</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-lunes-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-lunes-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-martes-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Mar</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-martes-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-martes-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-miercoles-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Mié</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-miercoles-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-miercoles-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-jueves-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Jue</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-jueves-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-jueves-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-viernes-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Vie</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-viernes-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-viernes-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-sabado-check" checked></td>
+                                    <td style="padding:4px 8px;"><strong>Sáb</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-sabado-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-sabado-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:4px 8px;"><input type="checkbox" class="form-check-input" id="wa-bio-domingo-check"></td>
+                                    <td style="padding:4px 8px;"><strong>Dom</strong></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-domingo-inicio" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                    <td style="padding:4px 8px;"><select class="form-select form-select-sm" id="wa-bio-domingo-fin" style="width:100px;padding:2px 6px;font-size:0.8rem;"></select></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Grid de configuración por día -->
-        <div class="table-container mb-4">
-            <div class="table-header">
-                <div>
-                    <div class="table-title">Horarios de envío por día</div>
-                    <div class="table-sub">Seleccione los días habilitados y defina la ventana horaria de envío</div>
+            <!-- Columna derecha: ventana de horas + nota ley -->
+            <div class="col-lg-4 d-flex flex-column gap-3">
+                <!-- Ventana de horas -->
+                <div class="table-container mb-0">
+                    <div class="table-header" style="padding:10px 16px;">
+                        <div>
+                            <div class="table-title" style="font-size:0.85rem;">Ventana mínima</div>
+                        </div>
+                    </div>
+                    <div class="p-3">
+                        <p class="mb-2" style="font-size:0.78rem;color:var(--text-muted);">Horas desde el resultado de SAI antes de enviar el primer WhatsApp.</p>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="number" class="form-control" id="wa-bio-ventana-horas" min="1" max="48" value="4" style="width:80px;text-align:center;font-size:0.9rem;">
+                            <span class="text-muted" style="font-size:0.75rem;">horas (1–48)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nota Ley 2300 compacta -->
+                <div class="p-3 rounded-3" style="background:#fffbeb;border:1.5px solid #f59e0b;">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-exclamation-triangle-fill" style="color:#f59e0b;font-size:1rem;flex-shrink:0;margin-top:1px;"></i>
+                        <div>
+                            <strong style="font-size:0.78rem;color:#92400e;">Ley 2300/2023</strong>
+                            <p class="mb-0 mt-1" style="font-size:0.73rem;color:#78350f;">
+                                L-V <strong>7:00–19:00</strong><br>
+                                Sáb <strong>8:00–15:00</strong><br>
+                                Dom <strong>no recomendado</strong>
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="table-responsive">
-                <table class="table table-sm align-middle" id="tabla-config-wa-bio">
-                    <thead>
-                        <tr>
-                            <th style="width:50px;">Activo</th>
-                            <th>Día</th>
-                            <th>Hora inicio</th>
-                            <th>Hora fin</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-lunes-check" checked></td>
-                            <td><strong>Lunes</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-lunes-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-lunes-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-martes-check" checked></td>
-                            <td><strong>Martes</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-martes-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-martes-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-miercoles-check" checked></td>
-                            <td><strong>Miércoles</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-miercoles-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-miercoles-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-jueves-check" checked></td>
-                            <td><strong>Jueves</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-jueves-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-jueves-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-viernes-check" checked></td>
-                            <td><strong>Viernes</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-viernes-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-viernes-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-sabado-check" checked></td>
-                            <td><strong>Sábado</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-sabado-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-sabado-fin" style="width:120px;"></select></td>
-                        </tr>
-                        <tr>
-                            <td><input type="checkbox" class="form-check-input" id="wa-bio-domingo-check"></td>
-                            <td><strong>Domingo</strong></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-domingo-inicio" style="width:120px;"></select></td>
-                            <td><select class="form-select form-select-sm" id="wa-bio-domingo-fin" style="width:120px;"></select></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Ventana de horas -->
-        <div class="table-container mb-4">
-            <div class="table-header">
-                <div>
-                    <div class="table-title">Ventana mínima de horas</div>
-                    <div class="table-sub">Horas mínimas que deben transcurrir desde la fecha del resultado antes de enviar el primer WhatsApp</div>
-                </div>
-            </div>
-            <div class="d-flex align-items-center gap-3 p-3">
-                <label for="wa-bio-ventana-horas" class="fw-bold" style="font-size:0.85rem;white-space:nowrap;">Ventana (horas):</label>
-                <input type="number" class="form-control" id="wa-bio-ventana-horas" min="1" max="48" value="4" style="width:100px;text-align:center;">
-                <span class="text-muted" style="font-size:0.78rem;">Mínimo 1, máximo 48 horas</span>
-            </div>
-        </div>
-
-        <!-- Botón guardar -->
-        <div class="text-end">
-            <button class="btn-primary-brand" id="btn-guardar-wa-bio" onclick="guardarConfigWaBiometria()">
-                <span class="spinner-border spinner-border-sm d-none me-2" id="spinner-guardar-wa-bio" role="status"></span>
-                <i class="bi bi-save me-2"></i> Guardar Configuración
-            </button>
         </div>
     </div>
 
