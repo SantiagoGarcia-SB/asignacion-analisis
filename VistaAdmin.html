@@ -1774,6 +1774,9 @@ html { scroll-behavior: smooth; }
                 <button class="btn-outline-brand" onclick="verificarDesaplazamientosManual()" title="Consulta en SAI el estado actual de desaplazamientos/biometrías asignados hoy">
                     <i class="bi bi-clipboard-check"></i> Verificar Bio
                 </button>
+                <button class="btn-outline-brand" onclick="abrirConfigCorreosDesistimiento()" title="Correos que se notifican cuando un cliente decide no continuar con el estudio en llamada">
+                    <i class="bi bi-envelope-exclamation"></i> Correo Desistimiento
+                </button>
                 <button class="btn-primary-brand" id="btn-guardar-wa-bio" onclick="guardarConfigWaBiometria()">
                     <span class="spinner-border spinner-border-sm d-none me-1" id="spinner-guardar-wa-bio" role="status"></span>
                     <i class="bi bi-save me-1"></i> Guardar
@@ -2897,6 +2900,64 @@ function abrirConfigSincronizacionSAI() {
             Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
         })
         .admin_getConfigSincronizacionSAI();
+}
+
+function abrirConfigCorreosDesistimiento() {
+    Swal.fire({
+        title: 'Cargando configuración...',
+        allowOutsideClick: false,
+        didOpen: function() { Swal.showLoading(); }
+    });
+
+    google.script.run
+        .withSuccessHandler(function(correos) {
+            Swal.fire({
+                title: 'Correo de Desistimiento',
+                html:
+                    '<div style="text-align:left;">' +
+                    '<p style="font-size:0.82rem;color:var(--gris);margin-bottom:10px;">Cuando una analista niega un caso de Desaplazamiento/Biometría con el motivo <b>"Cliente ya no está interesado en el estudio"</b>, se notifica automáticamente por correo a estos destinatarios (p. ej. la encargada de desaplazamiento o quien haga sus veces).</p>' +
+                    '<label class="form-label" style="font-size:0.8rem;font-weight:600;" for="swal-correos-desistimiento">Correos (separados por coma)</label>' +
+                    '<textarea id="swal-correos-desistimiento" class="form-control" rows="3" placeholder="encargada@ellibertador.com, suplente@ellibertador.com"></textarea>' +
+                    '<p style="font-size:0.75rem;color:var(--gris);margin-top:8px;">Déjalo vacío para desactivar la notificación.</p>' +
+                    '</div>',
+                didOpen: function() {
+                    document.getElementById('swal-correos-desistimiento').value = (correos || []).join(', ');
+                },
+                confirmButtonColor: '#253150',
+                cancelButtonColor: '#706F6F',
+                showCancelButton: true,
+                confirmButtonText: 'Guardar',
+                focusConfirm: false,
+                preConfirm: function() {
+                    return document.getElementById('swal-correos-desistimiento').value;
+                }
+            }).then(function(result) {
+                if (!result.isConfirmed) return;
+
+                Swal.fire({
+                    title: 'Actualizando...',
+                    allowOutsideClick: false,
+                    didOpen: function() { Swal.showLoading(); }
+                });
+
+                google.script.run
+                    .withSuccessHandler(function(res) {
+                        if (res && res.success) {
+                            Swal.fire('¡Configuración actualizada!', res.message, 'success');
+                        } else {
+                            Swal.fire('Error', (res && res.message) || 'Error desconocido', 'error');
+                        }
+                    })
+                    .withFailureHandler(function(err) {
+                        Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+                    })
+                    .admin_setCorreosNotificacionDesistimiento(result.value);
+            });
+        })
+        .withFailureHandler(function(err) {
+            Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
+        })
+        .admin_getCorreosNotificacionDesistimiento();
 }
 
 document.addEventListener("DOMContentLoaded", function() {

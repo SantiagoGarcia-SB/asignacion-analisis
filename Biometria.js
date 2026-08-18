@@ -405,6 +405,13 @@ function autoAsignarBiometria() {
   }
 }
 
+// Texto exacto del motivo de negación (catálogo MotivosNegacion, aplica_biometria=TRUE)
+// que dispara la notificación por correo a la encargada de desaplazamiento. Coincide
+// con lo que el analista elige en el modal (VistaUnificada.html envía el texto tal cual,
+// no un id — ver poblarSelectMotivos). Si el texto del motivo cambia en el catálogo,
+// hay que actualizar esta constante para que la automatización lo siga reconociendo.
+const MOTIVO_NEGACION_DESISTIMIENTO_DESAPLAZAMIENTO = 'Cliente ya no está interesado en el estudio';
+
 // Garantía Req 8: este endpoint NO adquiere ScriptLock ni usa funciones del motor de asignación
 // (_contarYRecolectarPrincipal, _contarYRecolectarReestudios, _leerBloqueCasosAbiertos).
 function guardarGestionBiometria(idSolicitud, datosFormulario) {
@@ -500,6 +507,16 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
         Logger.log('⏱ SPERF guardarGestionBiometria: _cerrarConteoConLockCorto() = ' + (Date.now() - _tCierreBio0) + 'ms');
         Logger.log('⏱ SPERF guardarGestionBiometria: TOTAL función = ' + (Date.now() - _tGGB0) + 'ms');
 
+        // No debe romper el guardado si el correo falla (destinatarios sin configurar,
+        // alias de envío no habilitado, etc.) — la gestión ya quedó guardada arriba.
+        if (resFinal === 'RECHAZADO' && motivoNeg.trim() === MOTIVO_NEGACION_DESISTIMIENTO_DESAPLAZAMIENTO) {
+          try {
+            _notificarDesistimientoDesaplazamiento_(fila, motivoNeg, ahora);
+          } catch (eNotif) {
+            Logger.log('Error enviando notificación de desistimiento en desaplazamiento: ' + eNotif.message);
+          }
+        }
+
         return { success: true, message: "Gestión guardada correctamente.", disparaAsignacion: true };
       }
     }
@@ -507,6 +524,108 @@ function guardarGestionBiometria(idSolicitud, datosFormulario) {
   } catch (error) {
     return { success: false, message: error.toString() };
   }
+}
+
+// Notifica por correo a la(s) encargada(s) de desaplazamiento (configurables desde
+// VistaAdmin.html → WA Biometría, ver admin_getCorreosNotificacionDesistimiento en
+// Admin.js) cuando un analista niega un caso con el motivo "cliente ya no interesado".
+// `filaHist` es la fila de Historico_Gestiones leída ANTES de escribir el resultado
+// (misma que usa guardarGestionBiometria para el resto del guardado), así que trae los
+// datos del caso pero no el resFinal/motivo recién capturados — esos se pasan aparte.
+function _notificarDesistimientoDesaplazamiento_(filaHist, motivoNeg, fechaGestion) {
+  const destinatarios = _obtenerCorreosNotificacionDesistimiento();
+  if (!destinatarios || destinatarios.length === 0) {
+    Logger.log('Desistimiento en desaplazamiento: sin destinatarios configurados, no se envía correo.');
+    return;
+  }
+
+  const datos = {
+    solicitudId: String(filaHist[0] || ''),
+    poliza: String(filaHist[1] || ''),
+    identificacion: String(filaHist[2] || ''),
+    cliente: String(filaHist[4] || ''),
+    celular: String(filaHist[6] || ''),
+    canon: filaHist[9] || '',
+    ciudad: String(filaHist[13] || ''),
+    nombreAnalista: String(filaHist[27] || ''),
+    motivoNegacion: motivoNeg,
+    fechaGestion: Utilities.formatDate(fechaGestion, TIMEZONE, "dd/MM/yyyy HH:mm")
+  };
+
+  _enviarCorreoMarca_(
+    destinatarios.join(','),
+    'Desistimiento en desaplazamiento — Solicitud ' + datos.solicitudId,
+    _construirCorreoDesistimientoDesaplazamiento_(datos)
+  );
+}
+
+// Correo "de marca" (mismo lenguaje visual que _construirCorreoNuevoPermiso_ /
+// _construirCorreoResolucionPermiso_ en Código.js) para avisar a la encargada de
+// desaplazamiento que un cliente decidió no continuar con el estudio durante la
+// llamada. Deliberadamente más llamativo (banda roja de marca en vez de azul) porque
+// es información accionable — un caso que se está por perder — pero sin salirse de
+// la paleta corporativa de El Libertador (ver "Corporate Design System" en CLAUDE.md).
+function _construirCorreoDesistimientoDesaplazamiento_(datos) {
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const etiqueta = 'color:#706F6F;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 6px;';
+  const valor = 'color:#111827;font-size:14px;font-weight:700;margin:0;';
+
+  return `
+<div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#F4F5F8;padding:24px;">
+  <div style="background:linear-gradient(135deg,#8b0a0e 0%,#BD0F14 60%,#e0454a 100%);border-radius:16px 16px 0 0;padding:28px 32px;text-align:center;">
+    <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.5px;">El Libertador</div>
+    <div style="color:rgba(255,255,255,0.85);font-size:12px;margin-top:4px;">Desaplazamiento · Biometría</div>
+  </div>
+  <div style="background-color:#ffffff;padding:32px;border-radius:0 0 16px 16px;">
+    <div style="display:inline-block;background-color:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:6px 14px;border-radius:20px;margin-bottom:16px;">
+      ⚠ Cliente ya no está interesado
+    </div>
+    <p style="margin:0 0 24px;color:#111827;font-size:14px;line-height:1.6;">
+      La analista <b>${esc(datos.nombreAnalista)}</b> estuvo en llamada con el cliente por la solicitud <b>${esc(datos.solicitudId)}</b> y el cliente decidió no continuar. Motivo registrado: <b>"${esc(datos.motivoNegacion)}"</b>.
+    </p>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px;" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="width:50%;padding:0 12px 16px 0;vertical-align:top;">
+          <p style="${etiqueta}">Cliente</p>
+          <p style="${valor}">${esc(datos.cliente) || '—'}</p>
+        </td>
+        <td style="width:50%;padding:0 0 16px 12px;vertical-align:top;border-left:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Identificación</p>
+          <p style="${valor}">${esc(datos.identificacion) || '—'}</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="width:50%;padding:0 12px 16px 0;vertical-align:top;border-top:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Celular</p>
+          <p style="${valor}">${esc(datos.celular) || '—'}</p>
+        </td>
+        <td style="width:50%;padding:0 0 16px 12px;vertical-align:top;border-left:1px solid #e5e7eb;border-top:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Ciudad</p>
+          <p style="${valor}">${esc(datos.ciudad) || '—'}</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="width:50%;padding:0 12px 0 0;vertical-align:top;border-top:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Póliza</p>
+          <p style="${valor}">${esc(datos.poliza) || '—'}</p>
+        </td>
+        <td style="width:50%;padding:0 0 0 12px;vertical-align:top;border-left:1px solid #e5e7eb;border-top:1px solid #e5e7eb;">
+          <p style="${etiqueta}">Canon</p>
+          <p style="${valor}">${datos.canon ? '$' + esc(datos.canon) : '—'}</p>
+        </td>
+      </tr>
+    </table>
+
+    <div style="background-color:#f8fafc;border-left:3px solid #253150;border-radius:0 8px 8px 0;padding:14px 16px;">
+      <p style="${etiqueta}">Gestionado</p>
+      <p style="margin:0;color:#374151;font-size:13px;line-height:1.5;">${esc(datos.nombreAnalista)} · ${esc(datos.fechaGestion)}</p>
+    </div>
+  </div>
+  <div style="text-align:center;padding:16px;color:#A3A2A2;font-size:11px;">
+    Notificación automática — Sistema de Asignación El Libertador
+  </div>
+</div>`;
 }
 
 function getDatosBiometria() {

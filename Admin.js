@@ -1039,6 +1039,42 @@ function admin_setConfigSincronizacionSAI(incluirBorrador, incluirEnEstudio) {
   }
 }
 
+// Destinatarios del correo de "desistimiento en desaplazamiento" (ver
+// MOTIVO_NEGACION_DESISTIMIENTO_DESAPLAZAMIENTO / _notificarDesistimientoDesaplazamiento_
+// en Biometria.js): a quién avisar cuando un analista niega un caso porque el cliente,
+// en llamada, decidió no continuar con el estudio. Lista libre (no tiene que ser un
+// usuario del sistema) — típicamente la encargada de desaplazamiento o quien haga sus
+// veces, decidido por el admin, no hardcodeado.
+const _PROP_CORREOS_NOTIF_DESISTIMIENTO = 'CORREOS_NOTIF_DESISTIMIENTO_DESAPLAZAMIENTO';
+
+// Sin verificarPermisoAdmin(): la llama _notificarDesistimientoDesaplazamiento_ desde
+// el contexto de la analista que guarda su gestión, no desde el panel admin.
+function _obtenerCorreosNotificacionDesistimiento() {
+  const prop = PropertiesService.getScriptProperties().getProperty(_PROP_CORREOS_NOTIF_DESISTIMIENTO) || '';
+  return prop.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function admin_getCorreosNotificacionDesistimiento() {
+  verificarPermisoAdmin();
+  return _obtenerCorreosNotificacionDesistimiento();
+}
+
+function admin_setCorreosNotificacionDesistimiento(correos) {
+  try {
+    verificarPermisoAdmin();
+    const lista = (Array.isArray(correos) ? correos : String(correos || '').split(','))
+      .map(s => String(s).trim()).filter(Boolean);
+    const invalidos = lista.filter(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (invalidos.length > 0) {
+      return { success: false, message: "Correo(s) inválido(s): " + invalidos.join(', ') };
+    }
+    PropertiesService.getScriptProperties().setProperty(_PROP_CORREOS_NOTIF_DESISTIMIENTO, lista.join(','));
+    return { success: true, message: lista.length > 0 ? "Destinatarios actualizados (" + lista.length + ")." : "Notificación desactivada (sin destinatarios)." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
 // Plantilla de WhatsApp (Infobip) usada para el primer contacto de biometría
 // pendiente (enviarBroadcastInfobipConFilas, Biometria.js): nombre de la
 // plantilla + URL de la imagen de encabezado que se envía con ella. El texto/
