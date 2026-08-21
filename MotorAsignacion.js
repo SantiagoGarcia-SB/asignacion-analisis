@@ -344,7 +344,6 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
   for (var i = 1; i < dataSolicitudes.length; i++) {
     var row = dataSolicitudes[i];
     var asignado = String(row[27]).trim();
-    var asignadoLower = asignado.toLowerCase();
 
     // --- Clasificación de tipo (compartida por conteo y recolección) ---
     var estadoNorm = String(row[16]).trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -354,26 +353,14 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
     var esDesaplazamiento = estadoSinGuion === 'APROBADO PENDIENTE BIOMETRIA' || estadoNorm === 'APROBADO_PENDIENTE_BIOMETRIA';
     var esInduccion = claseNorm === "INDUCCION";
 
-    // === RAMA 1: Fila asignada al analista → conteo ===
-    if (asignadoLower === userEmail) {
-      var tipo = 'digital';
-      if (esDesaplazamiento) tipo = 'desaplazamiento';
-      else if (esInduccion) tipo = 'induccion';
-
-      var fechaAsig = row[26];
-      var fechaFin = row[28];
-
-      if (_cumpleHoyUnif(fechaAsig, ctx) || _cumpleHoyUnif(fechaFin, ctx)) conteoHoy[tipo]++;
-
-      var tieneAsig = fechaAsig instanceof Date || String(fechaAsig).trim() !== "";
-      var tieneFin = fechaFin instanceof Date || String(fechaFin).trim() !== "";
-      if (tieneAsig && !tieneFin) cargaPendiente++;
-
-      continue; // Esta fila ya está asignada, no es candidata
-    }
-
-    // === RAMA 2: Fila NO asignada → posible candidata para pendientes ===
-    if (asignado !== "") continue; // Asignada a otro analista, saltar
+    // Una fila con `asignado` lleno nunca persiste en esta hoja: _asignarCasoPrincipal
+    // escribe el email y, en la MISMA llamada, hace deleteRow() y mueve la fila a
+    // Historico_Gestiones. Por eso no hay una "rama de conteo" real aquí — conteoHoy/
+    // cargaPendiente de esta función quedan siempre en 0 por construcción; el conteo/carga
+    // pendiente real vienen exclusivamente de los contadores incrementales
+    // (_obtenerConteoHoyAnalista/_obtenerCargaPendienteAnalista, Código.js). No es una
+    // segunda fuente de verdad que valide a esos contadores — ver nota en RequestLeadUnificado.
+    if (asignado !== "") continue; // Asignada (a este analista o a otro), saltar
     if (estadoNorm === "") continue;
 
     // Filtros de exclusión por estado
@@ -448,7 +435,6 @@ function _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas) {
   for (var i = 1; i < dataReestudios.length; i++) {
     var row = dataReestudios[i];
     var asignado = String(row[6]).trim();
-    var asignadoLower = asignado.toLowerCase();
 
     // --- Clasificación del tipo (compartida por conteo y recolección) ---
     var origenR = String(row[3]).toUpperCase().trim();
@@ -460,17 +446,9 @@ function _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas) {
     else if (origenR === "CORREO" && tipoPNorm === "ADICIONAL") tipo = 'deudorUar';
     else if (tipoPNorm === "REESTUDIO") tipo = 'reestudio';
 
-    // --- Rama de CONTEO: filas asignadas al usuario ---
-    if (asignadoLower === userEmail) {
-      if (!tipo) continue;
-      if (_cumpleHoyUnif(row[8], ctx) || _cumpleHoyUnif(row[9], ctx)) conteoHoy[tipo]++;
-      var tieneAsig = row[8] instanceof Date ? true : String(row[8]).trim() !== "";
-      var tieneFin = row[9] instanceof Date ? true : String(row[9]).trim() !== "";
-      if (tieneAsig && !tieneFin) cargaPendiente++;
-      continue;
-    }
-
-    // --- Rama de RECOLECCIÓN: filas no asignadas ---
+    // Mismo caso que en _contarYRecolectarPrincipal: _asignarCasoReestudios borra la fila
+    // de ORIGEN en la misma llamada en que la asigna, así que nunca persiste una fila con
+    // `asignado` lleno aquí — conteoHoy/cargaPendiente quedan siempre en 0 por construcción.
     if (asignado !== "") continue;
 
     var estadoGest = String(row[10]).trim();
@@ -810,10 +788,14 @@ function RequestLeadUnificado(equipoIdOverride) {
       pendientes = pendientes.concat(resReestudios.pendientes);
     }
 
-    // Contadores incrementales: compatibles con las funciones fusionadas. La suma de
-    // conteo-en-hoja (de las fusionadas) + contadores incrementales produce el mismo total
-    // que la implementación pre-optimización. admin_recalcularContadores() los reconstruye
-    // desde cero sin conflicto (lee directamente de Historico_Gestiones).
+    // Los contadores incrementales de PropertiesService son la ÚNICA fuente real de
+    // conteoHoy/cargaPendiente en este punto (resPrincipal/resReestudios siempre aportan 0 —
+    // ver comentario en _contarYRecolectarPrincipal). No hay una segunda fuente que los
+    // valide en cada request; si se desincronizan (fallo al cerrar un caso, edición manual),
+    // admin_recalcularContadores() (Admin.js) los reconstruye desde cero leyendo
+    // Historico_Gestiones — debe correr por trigger nocturno programado en el editor de
+    // Apps Script (trigger_recalcularContadores), y además se autocorrigen de forma
+    // oportunista en cada cierre exitoso vía _cerrarConteoConLockCorto (Código.js).
     var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
     for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
     capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);

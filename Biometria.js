@@ -392,6 +392,15 @@ function autoAsignarBiometria() {
 
     SpreadsheetApp.flush();
 
+    // Avisar al contador compartido de carga pendiente (Código.js) — sin esto, RequestLeadUnificado
+    // (que sí depende de ese contador para calcular capacidadDisponible) queda ciego a estos casos:
+    // los ve como capacidad libre que en realidad ya no existe, y al cerrarlos más tarde
+    // (guardarGestionBiometria SÍ resta del contador) el descuadre queda permanente en la
+    // dirección contraria (contador por debajo de la realidad). Un registro por caso asignado.
+    candidatosParaAsignar.forEach(function() {
+      _registrarAsignacionContador(userEmail, 'desaplazamiento');
+    });
+
     // Registrar en pendiente_biometria que estas solicitudes fueron asignadas a un analista.
     var idsAsignadas = candidatosParaAsignar.map(c => String(c.row[0]).trim()).filter(id => id);
     _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");

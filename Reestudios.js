@@ -41,7 +41,7 @@ function getReestudiosData() {
     let listaPendientes = [];
 
     // --- Hoja de Reestudios ---
-    const ssReestudios = SpreadsheetApp.openById(ID_HOJA_REESTUDIOS);
+    const ssReestudios = _abrirSSCacheado(ID_HOJA_REESTUDIOS);
     const hoja = ssReestudios.getSheetByName(NOMBRE_PESTANA_REESTUDIOS);
     if (!hoja) return { success: false, message: "No se encontró la hoja de reestudios." };
 
@@ -123,7 +123,7 @@ function getReestudiosData() {
 
     // --- Hoja principal (digitales, biometría, inducciones) ---
     try {
-      const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
       const hojaDigital = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
       if (hojaDigital) {
         const lastRowD = hojaDigital.getLastRow();
@@ -189,7 +189,7 @@ function getReestudiosData() {
     // tiene, ubica la fila con TextFinder en vez de recorrer toda la hoja.
     let errorHistPrincipal = null;
     try {
-      const ssPrincipal = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+      const ssPrincipal = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
       const hojaHistPrincipal = ssPrincipal.getSheetByName('Historico_Gestiones');
       const lastRowHP = hojaHistPrincipal ? hojaHistPrincipal.getLastRow() : 0;
       if (hojaHistPrincipal && lastRowHP > 1 && _obtenerCargaPendienteAnalista(userEmail) > 0) {

@@ -123,8 +123,12 @@ function obtenerCuposEfectivos(userEmail, equipo, dataUsuarios) {
 //    criterio que el escaneo original (cuenta lo asignado HOY y lo cerrado HOY).
 //  - Carga pendiente (analista): +1 al asignar, -1 al cerrar/desasignar/reasignar.
 //    No se reinicia por día — mide casos abiertos ahora mismo.
-// Si algo se desincroniza (edición manual, error), admin_recalcularContadores()
-// (Admin.js) los reconstruye desde cero escaneando el histórico una sola vez.
+// Si algo se desincroniza (edición manual, error, fallo al cerrar un caso),
+// admin_recalcularContadores() (Admin.js) los reconstruye desde cero escaneando el
+// histórico — debe correr por trigger nocturno (trigger_recalcularContadores, programado
+// a mano en el editor de Apps Script, ver README/CLAUDE.md). Además, un fallo puntual al
+// cerrar un caso se autocorrige antes: ver _encolarAjustePendiente/_drenarAjustesPendientesContador
+// más abajo, que aplican el ajuste perdido en el próximo cierre exitoso de cualquier analista.
 
 const _PROP_CONTADORES_CUPO = 'CONTADORES_CUPO_HOY';
 const _PROP_CARGA_PENDIENTE = 'CARGA_PENDIENTE_ANALISTA';
@@ -175,7 +179,12 @@ function _decrementarContadorCupo(userEmail, tipo) {
   if (!email) return;
   var estado = _leerContadoresCupoHoy();
   var key = email + '|' + tipo;
-  estado.datos[key] = Math.max(0, (estado.datos[key] || 0) - 1);
+  var nuevo = (estado.datos[key] || 0) - 1;
+  if (nuevo < 0) {
+    Logger.log("⚠️ Contador de cupo '" + key + "' iba a quedar en " + nuevo + " — posible descuadre (se deja en 0).");
+    nuevo = 0;
+  }
+  estado.datos[key] = nuevo;
   _guardarContadoresCupoHoy(estado);
 }
 
@@ -205,7 +214,12 @@ function _ajustarCargaPendiente(userEmail, delta) {
   var email = String(userEmail).toLowerCase().trim();
   if (!email) return;
   var datos = _leerCargaPendienteTodos();
-  datos[email] = Math.max(0, (datos[email] || 0) + delta);
+  var nuevo = (datos[email] || 0) + delta;
+  if (nuevo < 0) {
+    Logger.log("⚠️ Carga pendiente de '" + email + "' iba a quedar en " + nuevo + " — posible descuadre (se deja en 0).");
+    nuevo = 0;
+  }
+  datos[email] = nuevo;
   _guardarCargaPendienteTodos(datos);
 }
 
@@ -228,6 +242,56 @@ function _registrarCierreContador(userEmail, tipo, fechaAsignacionOriginal) {
   if (!_fechaEsHoyYMD(fechaAsignacionOriginal)) {
     _incrementarContadorCupo(userEmail, tipo);
   }
+}
+
+// ============================================================
+// COLA CORTA DE AJUSTES PENDIENTES (autocorrección oportunista)
+// ============================================================
+// Si _cerrarConteoConLockCorto no consigue el candado corto (otro cierre lo tiene en
+// ese instante), el ajuste de contador de ESE cierre no se pierde: se encola aquí y se
+// aplica en el próximo cierre exitoso de CUALQUIER analista (que de todos modos ya va a
+// tomar el mismo candado). No depende de un trigger nuevo ni de esperar al recálculo
+// nocturno — con 30-40 analistas cerrando casos durante el día, el drenaje ocurre en
+// segundos/minutos, no en horas. El recálculo nocturno (trigger_recalcularContadores,
+// Admin.js) sigue siendo la red de seguridad final para lo que igual se le escape a esto
+// (ej. el último cierre del día, sin ningún cierre posterior que lo drene).
+const _PROP_AJUSTES_PENDIENTES_CONTADOR = 'AJUSTES_PENDIENTES_CONTADOR';
+const _MAX_AJUSTES_PENDIENTES_EN_COLA = 200; // margen amplio; si se llena, el recálculo nocturno lo absorbe igual
+
+function _encolarAjustePendiente(userEmail, tipo, fechaAsignacionOriginal) {
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty(_PROP_AJUSTES_PENDIENTES_CONTADOR);
+  var cola = [];
+  if (raw) {
+    try { cola = JSON.parse(raw); } catch (e) {}
+  }
+  if (cola.length >= _MAX_AJUSTES_PENDIENTES_EN_COLA) {
+    Logger.log("⚠️ Cola de ajustes pendientes llena (" + _MAX_AJUSTES_PENDIENTES_EN_COLA + ") — este ajuste queda solo para el recálculo nocturno.");
+    return;
+  }
+  cola.push({
+    email: userEmail,
+    tipo: tipo,
+    fechaAsignacionOriginal: fechaAsignacionOriginal instanceof Date ? fechaAsignacionOriginal.toISOString() : fechaAsignacionOriginal
+  });
+  props.setProperty(_PROP_AJUSTES_PENDIENTES_CONTADOR, JSON.stringify(cola));
+}
+
+// Aplica y vacía la cola. Debe llamarse solo mientras ya se tiene el ScriptLock corto
+// (dentro de _cerrarConteoConLockCorto), para que aplicar la cola + el ajuste actual quede
+// serializado con cualquier otro cierre concurrente.
+function _drenarAjustesPendientesContador() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = props.getProperty(_PROP_AJUSTES_PENDIENTES_CONTADOR);
+  if (!raw) return;
+  var cola = [];
+  try { cola = JSON.parse(raw); } catch (e) {}
+  if (!cola || cola.length === 0) return;
+  props.deleteProperty(_PROP_AJUSTES_PENDIENTES_CONTADOR);
+  cola.forEach(function(item) {
+    _registrarCierreContador(item.email, item.tipo, item.fechaAsignacionOriginal ? new Date(item.fechaAsignacionOriginal) : null);
+  });
+  Logger.log("✅ Drenados " + cola.length + " ajuste(s) de contador que habían quedado pendientes.");
 }
 
 // Ubica en una hoja tipo Historico_Gestiones (crece sin límite, nunca se archiva)
@@ -2105,6 +2169,14 @@ function procesarYGuardarLote(listaObjetos) {
 
     const setIdsP = getSetDeIds(hojaP);
     if (!setIdsP) throw new Error("Fallo al obtener los IDs existentes de la base de datos.");
+    // getSetDeIds solo ve IDs que siguen en "solicitud" (aún sin asignar). Un caso ya
+    // asignado se borra de "solicitud" en el mismo instante (ver _asignarCasoPrincipal,
+    // MotorAsignacion.js), así que si SAI lo sigue reportando dentro de su ventana de sync
+    // de 3 días (_sincronizarVentanaSAI), sin este chequeo se reinsertaría aquí como "nuevo"
+    // y podría asignarse una segunda vez. Los IDs recién asignados/cerrados siempre quedan
+    // al final de Historico_Gestiones (se agregan con appendRow), así que basta leer la
+    // cola reciente en vez de la hoja completa.
+    const setIdsHistRecientes = _getIdsRecientesHistorico(ssP);
 
     const filaP = [];
     let duplicadosEvitados = 0;
@@ -2113,9 +2185,9 @@ function procesarYGuardarLote(listaObjetos) {
       const solId = String(item.solicitud || "").trim();
       if (!solId) return;
 
-      if (setIdsP.has(solId)) {
+      if (setIdsP.has(solId) || setIdsHistRecientes.has(solId)) {
         duplicadosEvitados++;
-        return; 
+        return;
       }
 
       const est = String(item.estadoGeneral || "").toUpperCase();
@@ -2197,6 +2269,23 @@ function getSetDeIds(sheet) {
   return new Set(values.flat().map(String).map(s => s.trim()));
 }
 
+// Últimas N filas de Historico_Gestiones (columna de solicitudId). Las asignaciones más
+// recientes siempre quedan al final por el appendRow() de _asignarCasoPrincipal, así que
+// no hace falta leer la hoja completa (que solo crece y nunca se archiva) para saber qué
+// se asignó/cerró recientemente — un solo getRange acotado basta. N=5000 es un margen
+// generoso sobre el volumen real de asignaciones en la ventana de 3 días de
+// _sincronizarVentanaSAI; si el volumen diario creciera muchísimo, subir este número.
+function _getIdsRecientesHistorico(ss) {
+  const hoja = ss.getSheetByName("Historico_Gestiones");
+  if (!hoja) return new Set();
+  const lastRow = hoja.getLastRow();
+  if (lastRow < 2) return new Set();
+  const N = 5000;
+  const filaInicio = Math.max(2, lastRow - N + 1);
+  const values = hoja.getRange(filaInicio, 1, lastRow - filaInicio + 1, 1).getValues();
+  return new Set(values.flat().map(String).map(s => s.trim()));
+}
+
 // ===================================================================
 // GUARDADO OMNICANAL DE GESTIONES (VISTA PRINCIPAL)
 // ===================================================================
@@ -2234,9 +2323,9 @@ function guardarCambiosInternos(data) {
   let mensajeAdicional = "";
 
   try {
-    const ssOrigen = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+    const ssOrigen = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
 
-    const ssReestudios = SpreadsheetApp.openById(
+    const ssReestudios = _abrirSSCacheado(
       PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS
     );
 
@@ -2439,10 +2528,15 @@ function _cerrarConteoConLockCorto(email, tipo, fechaAsignacionOriginal) {
   try {
     lock.waitLock(10000);
   } catch (e) {
-    Logger.log("⚠️ No se pudo actualizar el contador de cupo de " + email + " (" + tipo + "): " + e.message + ". Queda para el recálculo nocturno.");
+    Logger.log("⚠️ No se pudo actualizar el contador de cupo de " + email + " (" + tipo + "): " + e.message + ". Se encola para el próximo cierre exitoso (o el recálculo nocturno).");
+    _encolarAjustePendiente(email, tipo, fechaAsignacionOriginal);
     return;
   }
   try {
+    // Antes de aplicar ESTE cierre, drena cualquier ajuste que se haya quedado pendiente
+    // de un cierre anterior que no consiguió el candado — mismo candado, así que queda
+    // serializado con el resto de la actividad.
+    _drenarAjustesPendientesContador();
     _registrarCierreContador(email, tipo, fechaAsignacionOriginal);
   } finally {
     lock.releaseLock();
@@ -3448,9 +3542,18 @@ function autoAsignarConPanel() {
  * Patrón idéntico a activarYAsignar() pero reemplazando activación por guardado.
  *
  * @param {Object} data - Mismos datos que recibe guardarCambiosInternos()
+ * @param {Object} [resultadoGuardadoPrevio] - Si el llamador YA guardó la gestión
+ *   (caso real hoy: los 3 modales llaman directo a guardarCambiosInternos/
+ *   guardarGestionBiometria/guardarGestionReestudio antes de llegar aquí), pasar
+ *   ese resultado aquí para que el Paso 1 no lo repita. Sin esto, un segundo
+ *   guardado siempre falla: la fila ya quedó cerrada (fechaFin puesto) por el
+ *   primer guardado, así que la búsqueda de "fila abierta con este ID" no
+ *   encuentra nada y devuelve "no encontrada en ninguna base central" — lo que
+ *   aborta toda la función antes de asignar el siguiente caso o cargar el panel
+ *   (incidente real, 2026-08-21: por esto el auto-siguiente-caso nunca corría).
  * @returns {{guardado: Object, asignacion: Object|null, panel: Object|null}}
  */
-function guardarYAsignarSiguiente(data) {
+function guardarYAsignarSiguiente(data, resultadoGuardadoPrevio) {
   var _tGYA0 = Date.now();
   var _deadline = _tGYA0 + 300000; // 300 segundos = safety deadline
   var resultado = { guardado: null, asignacion: null, panel: null };
@@ -3462,22 +3565,27 @@ function guardarYAsignarSiguiente(data) {
     return resultado;
   }
 
-  // --- Paso 1: Guardar gestión ---
-  // Verificar deadline antes de guardar
-  if (Date.now() >= _deadline) {
-    resultado.guardado = { success: false, message: 'Tiempo límite superado antes de iniciar guardado.', disparaAsignacion: false };
-    Logger.log('⏱ SPERF guardarYAsignarSiguiente: ABORTADO (deadline pre-guardado) TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
-    return resultado;
-  }
+  // --- Paso 1: Guardar gestión (o reutilizar un guardado ya hecho por el llamador) ---
+  if (resultadoGuardadoPrevio && typeof resultadoGuardadoPrevio === 'object') {
+    resultado.guardado = resultadoGuardadoPrevio;
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: guardado reutilizado (ya lo hizo el llamador), sin repetir = 0ms');
+  } else {
+    // Verificar deadline antes de guardar
+    if (Date.now() >= _deadline) {
+      resultado.guardado = { success: false, message: 'Tiempo límite superado antes de iniciar guardado.', disparaAsignacion: false };
+      Logger.log('⏱ SPERF guardarYAsignarSiguiente: ABORTADO (deadline pre-guardado) TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+      return resultado;
+    }
 
-  try {
-    resultado.guardado = guardarCambiosInternos(data);
-  } catch (e) {
-    resultado.guardado = { success: false, message: 'Error de servidor: ' + e.message, disparaAsignacion: false };
-    Logger.log('⏱ SPERF guardarYAsignarSiguiente: EXCEPCIÓN en guardado TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
-    return resultado;
+    try {
+      resultado.guardado = guardarCambiosInternos(data);
+    } catch (e) {
+      resultado.guardado = { success: false, message: 'Error de servidor: ' + e.message, disparaAsignacion: false };
+      Logger.log('⏱ SPERF guardarYAsignarSiguiente: EXCEPCIÓN en guardado TOTAL = ' + (Date.now() - _tGYA0) + 'ms');
+      return resultado;
+    }
+    Logger.log('⏱ SPERF guardarYAsignarSiguiente: guardarCambiosInternos = ' + (Date.now() - _tGYA0) + 'ms');
   }
-  Logger.log('⏱ SPERF guardarYAsignarSiguiente: guardarCambiosInternos = ' + (Date.now() - _tGYA0) + 'ms');
 
   // Early exit si guardado falla (Req 1.4, 1.6)
   if (!resultado.guardado || !resultado.guardado.success) {

@@ -498,6 +498,12 @@ function _recalcularContadoresInterno() {
   _guardarCargaPendienteTodos(cargaPendiente);
   _guardarContadoresCupoHoy({ fecha: hoy, datos: cupoHoy });
 
+  // Cualquier ajuste que siguiera en la cola de autocorrección (Código.js,
+  // _encolarAjustePendiente) queda obsoleto: este recálculo ya reconstruyó los
+  // contadores desde la fuente de verdad real (Historico_Gestiones), así que aplicar
+  // después un ajuste pensado para el estado ANTERIOR volvería a desincronizarlos.
+  PropertiesService.getScriptProperties().deleteProperty(_PROP_AJUSTES_PENDIENTES_CONTADOR);
+
   return {
     success: true,
     message: "Contadores recalculados.",

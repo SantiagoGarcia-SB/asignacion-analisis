@@ -2522,10 +2522,15 @@ function _dispararBiometriaFallback(asignacion) {
  * Invoca guardarYAsignarSiguiente(data) en el servidor y maneja la respuesta
  * consolidada: renderiza panel, muestra toasts por resultado de asignación,
  * y dispara biometría deferred si aplica.
- * 
+ *
  * @param {Object} data - Mismos datos que recibe guardarCambiosInternos()
+ * @param {Object} [resultadoGuardadoPrevio] - Resultado que YA devolvió el servidor
+ *   al guardar la gestión (el modal siempre guarda antes de llegar aquí) — se
+ *   reenvía para que el servidor no intente guardar la misma solicitud otra vez
+ *   (siempre fallaría: la fila ya quedó cerrada) y así sí llegue a asignar el
+ *   siguiente caso y cargar el panel.
  */
-function _guardarYAsignarConsolidado(data) {
+function _guardarYAsignarConsolidado(data, resultadoGuardadoPrevio) {
   _PERF.mark('GC1. _guardarYAsignarConsolidado → llamando guardarYAsignarSiguiente()');
   google.script.run
     .withSuccessHandler(function(resp) {
@@ -2588,7 +2593,7 @@ function _guardarYAsignarConsolidado(data) {
       // Fallback: recargar panel con el flujo normal
       cargarDatos();
     })
-    .guardarYAsignarSiguiente(data);
+    .guardarYAsignarSiguiente(data, resultadoGuardadoPrevio);
 }
 
 function onGuardarExitoUnificado(r, modalId, solicitudId) {
@@ -2616,7 +2621,7 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
         // Req 3.1, 7.3: usar función consolidada en lugar de _dispararAutoAsignacion + cargarDatos
         yaSeIntentoAsignar = true;
         _PERF.mark('G4. vista unificada + disparaAsignacion → _guardarYAsignarConsolidado()');
-        _guardarYAsignarConsolidado(_ultimosDatosGuardado);
+        _guardarYAsignarConsolidado(_ultimosDatosGuardado, r);
       } else {
         // Req 3.2: solo recargar panel (1 round-trip directo a cargarPanelAnalista)
         yaSeIntentoAsignar = false;
@@ -2708,7 +2713,7 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
             // Req 1.6: fallback a cargarDatos()
             cargarDatos();
           })
-          .guardarYAsignarSiguiente(_ultimosDatosGuardado);
+          .guardarYAsignarSiguiente(_ultimosDatosGuardado, r);
 
       } else {
         // Req 1.4: sin asignación → cargarPanelAnalista() directo como único round-trip
