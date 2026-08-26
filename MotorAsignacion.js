@@ -802,25 +802,26 @@ function RequestLeadUnificado(equipoIdOverride) {
   Logger.log('⏱ SPERF RequestLeadUnificado: validaciones previas al lock = ' + (Date.now() - _tRLU0) + 'ms');
 
   // === PRE-LECTURA FUERA DEL LOCK ===
-  // _getDataSolicitudMemo()/_getDataOrigenMemo() (Código.js) memoizan por ejecución
-  // de servidor: si getTableData() (llamado más abajo en el mismo ciclo, vía
-  // cargarPanelAnalista → getUnifiedTableData) ya leyó estas hojas, o si es la
-  // primera lectura, aquí se reutiliza sin volver a golpear la red — antes cada
-  // llamada a RequestLeadUnificado Y cada getTableData() posterior en el mismo
-  // ciclo releían "solicitud"/"ORIGEN" completas por separado. Devuelven [] (nunca
-  // null) si la hoja no existe o está vacía; _contarYRecolectarPrincipal/
-  // _contarYRecolectarReestudios ya manejan ese caso (length < 2 → resultado vacío).
+  // Las lecturas completas de hojas se realizan ANTES de adquirir el ScriptLock
+  // para reducir la contención entre analistas concurrentes. Dentro del lock solo
+  // se usa la data pre-cargada (sin Viajes_Red de lectura masiva).
   var _tPreRead0 = Date.now();
 
+  // Pre-lectura hoja "solicitud" (principal)
   var hojaSolicitud = ss.getSheetByName("solicitud");
-  var dataSolicitudes = _getDataSolicitudMemo();
+  var dataSolicitudes = hojaSolicitud && hojaSolicitud.getLastRow() >= 2
+    ? hojaSolicitud.getRange("A1:BG" + hojaSolicitud.getLastRow()).getValues()
+    : null;
 
+  // Pre-lectura hoja "ORIGEN" (reestudios)
   var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
   var ssReestudios = _abrirSSCacheado(ID_REEST);
   var hojaOrigen = ssReestudios.getSheetByName("ORIGEN");
-  var dataReestudios = _getDataOrigenMemo();
+  var dataReestudios = hojaOrigen && hojaOrigen.getLastRow() >= 2
+    ? hojaOrigen.getDataRange().getValues()
+    : null;
 
-  Logger.log('⏱ SPERF RequestLeadUnificado: PRE-LECTURA fuera del lock (solicitud + ORIGEN, memo compartido) = ' + (Date.now() - _tPreRead0) + 'ms');
+  Logger.log('⏱ SPERF RequestLeadUnificado: PRE-LECTURA fuera del lock (solicitud + ORIGEN) = ' + (Date.now() - _tPreRead0) + 'ms');
 
   // === PREPARACIÓN FUERA DEL LOCK ===
   // cuotas (config de cupos, no cambia por asignaciones concurrentes), la

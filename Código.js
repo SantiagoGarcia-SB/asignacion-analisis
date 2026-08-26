@@ -610,96 +610,6 @@ function _invalidarCacheTurnos() {
 }
 
 // ============================================================
-// MEMOIZACIÓN DE "solicitud" / "ORIGEN" (por ejecución)
-// ============================================================
-// Mismo patrón que _getHistGestionesPrincipal/_getHistGestionesReest: una sola
-// lectura completa por ejecución de servidor. Antes, dentro de una misma
-// ejecución de guardarYAsignarSiguiente()/autoAsignarConPanel()/activarYAsignar()
-// (RequestLeadUnificado → cargarPanelAnalista → getUnifiedTableData → getTableData),
-// "solicitud" y "ORIGEN" se leían completas 2 veces cada una, de forma
-// independiente: RequestLeadUnificado con .getValues() (tipos nativos) y
-// getTableData() con .getDisplayValues() (todo como texto, necesario para
-// mostrar fechas/moneda formateadas en la tabla del analista).
-//
-// Se estandariza aquí en .getDisplayValues() — un property test dedicado
-// (tests/properties/lectura-mixta-motor.property.test.js) confirma que
-// _contarYRecolectarPrincipal/_contarYRecolectarReestudios (el motor de
-// selección de candidatos) deciden EXACTAMENTE IGUAL con esta representación
-// que con la nativa (Date/number) que RequestLeadUnificado usaba antes — los
-// únicos campos que cambian de forma (fechas, canon) ya tienen parsing
-// tolerante a ambos formatos (_parseDateUnif, _parseCanonColombiano).
-//
-// Incluye la fila de encabezado en el índice 0, igual que getTableData() ya
-// esperaba para "solicitud" — RequestLeadUnificado, que ya iteraba asumiendo
-// encabezado en [0], no cambia su lógica. getTableData() SÍ necesita saltar
-// el encabezado al consumir la parte de "ORIGEN" (antes la leía sin encabezado,
-// arrancando en la fila 2) — ver el ajuste en su propio bucle.
-//
-// getReestudiosData() (Reestudios.js, usado solo por el equipo REESTUDIOS) NO
-// se migró a este memo — lee "solicitud"/"ORIGEN" con un rango de columnas y
-// convención de fila distintos (sin encabezado, menos columnas), y unificarlo
-// también habría exigido ajustar offsets en 2 sitios más con mayor riesgo para
-// un solo equipo de 5. Queda pendiente para una segunda iteración.
-
-/** @type {Array<Array<string>>|null} Todas las filas de "solicitud", CON encabezado en [0] */
-var _dataSolicitudMemo = null;
-
-/** @type {Array<Array<string>>|null} Todas las filas de "ORIGEN" (reestudios), CON encabezado en [0] */
-var _dataOrigenMemo = null;
-
-/**
- * Datos completos de la hoja "solicitud" (spreadsheet principal), con encabezado.
- * Primera llamada: lee toda la hoja con getDisplayValues(). Llamadas posteriores
- * en la misma ejecución: devuelve el memo sin network round-trip.
- * @returns {Array<Array<string>>} [] si la hoja no existe o está vacía.
- */
-function _getDataSolicitudMemo() {
-  if (_dataSolicitudMemo !== null) {
-    Logger.log('⏱ SPERF _getDataSolicitudMemo: memo hit (' + _dataSolicitudMemo.length + ' filas)');
-    return _dataSolicitudMemo;
-  }
-  var _t0 = Date.now();
-  var hoja = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID).getSheetByName(SHEET_NAME_SOLICITUDES);
-  if (!hoja || hoja.getLastRow() < 1) {
-    _dataSolicitudMemo = [];
-    return _dataSolicitudMemo;
-  }
-  var lastRow = hoja.getLastRow();
-  // BG = 59 columnas: límite histórico que ya usaba RequestLeadUnificado. Si la
-  // hoja tiene más columnas reales, se leen igual (Math.max) — de sobra para
-  // getTableData(), que solo referencia hasta la que necesita.
-  var numCols = Math.max(hoja.getLastColumn(), 59);
-  _dataSolicitudMemo = hoja.getRange(1, 1, lastRow, numCols).getDisplayValues();
-  Logger.log('⏱ SPERF _getDataSolicitudMemo: fresh read (' + lastRow + ' filas × ' + numCols + ' cols) = ' + (Date.now() - _t0) + 'ms');
-  return _dataSolicitudMemo;
-}
-
-/**
- * Datos completos de la hoja "ORIGEN" (spreadsheet de reestudios), con encabezado.
- * Primera llamada: lee toda la hoja con getDisplayValues(). Llamadas posteriores
- * en la misma ejecución: devuelve el memo sin network round-trip.
- * @returns {Array<Array<string>>} [] si la hoja no existe o está vacía.
- */
-function _getDataOrigenMemo() {
-  if (_dataOrigenMemo !== null) {
-    Logger.log('⏱ SPERF _getDataOrigenMemo: memo hit (' + _dataOrigenMemo.length + ' filas)');
-    return _dataOrigenMemo;
-  }
-  var _t0 = Date.now();
-  var idReest = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || ID_HOJA_REESTUDIOS;
-  var hoja = _abrirSSCacheado(idReest).getSheetByName("ORIGEN");
-  if (!hoja || hoja.getLastRow() < 1) {
-    _dataOrigenMemo = [];
-    return _dataOrigenMemo;
-  }
-  var lastRow = hoja.getLastRow();
-  var numCols = Math.max(hoja.getLastColumn(), 14);
-  _dataOrigenMemo = hoja.getRange(1, 1, lastRow, numCols).getDisplayValues();
-  Logger.log('⏱ SPERF _getDataOrigenMemo: fresh read (' + lastRow + ' filas × ' + numCols + ' cols) = ' + (Date.now() - _t0) + 'ms');
-  return _dataOrigenMemo;
-}
-
-// ============================================================
 // MEMOIZACIÓN DE HISTORICO_GESTIONES (por ejecución)
 // ============================================================
 // Mismo patrón que _datosTurnosMemo y _datosUsuariosMemo: se llena en la
@@ -1198,20 +1108,12 @@ function getTableData() {
   const lastRow = sheet.getLastRow();
   if (lastRow < 1) return { tabla: [], stats: { hoy: 0, total: 0 } };
 
-  // _getDataSolicitudMemo() (memo por ejecución) reemplaza la lectura directa: si
-  // RequestLeadUnificado ya leyó "solicitud" en este mismo ciclo (guardarYAsignarSiguiente
-  // → autoAsignarDesdeEquipo → RequestLeadUnificado → cargarPanelAnalista → aquí), se
-  // reutiliza sin volver a leer la hoja completa por red.
+  const numCols = sheet.getLastColumn();
+  Logger.log('⏱ SPERF getTableData: hoja "solicitud" tiene ' + lastRow + ' filas x ' + numCols + ' cols');
   const _tSolRead0 = Date.now();
-  const data = _getDataSolicitudMemo();
-  Logger.log('⏱ SPERF getTableData: "solicitud" (memo compartido, ' + data.length + ' filas) = ' + (Date.now() - _tSolRead0) + 'ms');
-  // numCols deriva del memo (antes era sheet.getLastColumn()) — mismo valor real,
-  // sin una llamada de red adicional. Se sigue usando más abajo para dimensionar
-  // las filas adaptadas de reestudios (filaAdaptada) al ancho real de la tabla.
-  const numCols = data[0] ? data[0].length : 0;
-  // Copia defensiva del header: se mutará con push() más abajo, y `data` puede ser
-  // el mismo array memoizado que reutilizan otras llamadas en esta ejecución.
-  const headers = data[0] ? data[0].slice() : [];
+  const data = sheet.getRange(1, 1, lastRow, numCols).getDisplayValues();
+  Logger.log('⏱ SPERF getTableData: lectura completa "solicitud" = ' + (Date.now() - _tSolRead0) + 'ms');
+  const headers = data[0];
   const registros = data.slice(1);
 
   const scoreMaps = _getScoreMapCacheado();
@@ -1304,13 +1206,10 @@ function getTableData() {
     if (hojaReest) {
       const lastRowR = hojaReest.getLastRow();
       if (lastRowR > 1) {
-        // _getDataOrigenMemo() (memo por ejecución, con encabezado en [0] — mismo
-        // reuso que "solicitud" arriba) reemplaza la lectura directa. .slice(1) quita
-        // el encabezado para mantener el mismo formato "sin encabezado" que ya
-        // esperaba dataReestOrigen (reenviado a verificarMisCupos() como _rawOrigen).
+        Logger.log('⏱ SPERF getTableData: hoja "ORIGEN" (reestudios) tiene ' + (lastRowR - 1) + ' filas');
         const _tOrigenRead0 = Date.now();
-        const dataReest = _getDataOrigenMemo().slice(1);
-        Logger.log('⏱ SPERF getTableData: "ORIGEN" (memo compartido, ' + dataReest.length + ' filas) = ' + (Date.now() - _tOrigenRead0) + 'ms');
+        const dataReest = hojaReest.getRange(2, 1, lastRowR - 1, 14).getDisplayValues();
+        Logger.log('⏱ SPERF getTableData: lectura completa "ORIGEN" = ' + (Date.now() - _tOrigenRead0) + 'ms');
         dataReestOrigen = dataReest;
         // Filtrado en memoria: los datos de "ORIGEN" ya están en el arreglo `dataReest`,
         // no se usa createTextFinder — se filtra por email vía recorrido JavaScript directo.
