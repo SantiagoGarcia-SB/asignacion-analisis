@@ -37,7 +37,12 @@ describe('Setup verification', () => {
     expect(ctx.y).toBe(2024);
     expect(ctx.m_s).toBe(6);
     expect(ctx.d_s).toBe(15);
-    expect(ctx.fmts).toHaveLength(4);
+    // Mirror real de MotorAsignacion.js: 5 formatos (DD/MM/YYYY, YYYY-MM-DD,
+    // D/M/YYYY, M/D/YYYY, MM/DD/YYYY) — no 4, el placeholder anterior omitía MM/DD/YYYY.
+    expect(ctx.fmts).toHaveLength(5);
+    expect(ctx.fmts).toContain('15/06/2024');
+    expect(ctx.fmts).toContain('2024-06-15');
+    expect(ctx.fmts).toContain('06/15/2024');
   });
 
   it('_leerBloqueCasosAbiertos returns correct rows from block', () => {

@@ -476,24 +476,101 @@ function _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas) {
 // VIP ROTATION & SCORE CATEGORIES
 // ============================================================
 
-function _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsRef) {
-  var dataScore = scoreSheet.getDataRange().getDisplayValues();
-  var buckets = { vip: new Set(), grande: new Set(), mediana: new Set(), pequena: new Set(), gen: new Set(), dev: new Set(), rev: new Set(), otros: new Set() };
+// Caché de buckets VIP/score (poliza → categoría de rotación), particionado en
+// CacheService igual que _getScoreMapCacheado (Código.js) — CacheService no admite
+// valores >100KB por key. Antes, _aplicarVipYScore releía la hoja "score" completa
+// (sin caché) en CADA asignación de Digital/Cánones Altos, DENTRO del ScriptLock
+// global — con ~2286 filas (dotación real, ver .kiro/PROMPT_OPTIMIZACION_LATENCIA.md)
+// era el tramo individual más caro retenido bajo el lock. Se llama ahora ANTES de
+// tomar el lock (ver RequestLeadUnificado): los buckets son de solo lectura y no
+// cambian por asignaciones concurrentes de otros analistas, así que no necesitan
+// estar bajo el lock — solo los 2 setProperty de VIP_COUNT/PUNTERO_ROTACION sí.
+var _scoreBucketsMemo = null;
+const _SCORE_BUCKETS_CACHE_PREFIX = 'SCORE_BUCKETS_V1_';
+const _SCORE_BUCKETS_CACHE_CHUNK = 90000;
+const _SCORE_BUCKETS_CATEGORIAS = ['vip', 'grande', 'mediana', 'pequena', 'gen', 'dev', 'rev', 'otros'];
 
-  for (var i = 1; i < dataScore.length; i++) {
-    var key = _normalizarClaveUnif(dataScore[i][0]);
-    if (!key || key === "0") continue;
-    var cat = dataScore[i][1].toString().toLowerCase().trim();
-    if (cat.indexOf("vip") !== -1) buckets.vip.add(key);
-    else if (cat.indexOf("grande") !== -1) buckets.grande.add(key);
-    else if (cat.indexOf("mediana") !== -1) buckets.mediana.add(key);
-    else if (cat.indexOf("peque") !== -1) buckets.pequena.add(key);
-    else if (cat.indexOf("generica") !== -1) buckets.gen.add(key);
-    else if (cat.indexOf("en desarrollo") !== -1) buckets.dev.add(key);
-    else if (cat.indexOf("revisar") !== -1) buckets.rev.add(key);
-    else buckets.otros.add(key);
+function _getScoreBucketsCacheado(ss) {
+  if (_scoreBucketsMemo) return _scoreBucketsMemo;
+  var _t0 = Date.now();
+  var cache = CacheService.getScriptCache();
+  try {
+    var countStr = cache.get(_SCORE_BUCKETS_CACHE_PREFIX + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [];
+      for (var i = 0; i < count; i++) keys.push(_SCORE_BUCKETS_CACHE_PREFIX + i);
+      var partes = cache.getAll(keys);
+      var json = '';
+      var completo = true;
+      for (var j = 0; j < count; j++) {
+        var parte = partes[_SCORE_BUCKETS_CACHE_PREFIX + j];
+        if (parte === null || parte === undefined) { completo = false; break; }
+        json += parte;
+      }
+      if (completo) {
+        var obj = JSON.parse(json);
+        var bucketsHit = {};
+        _SCORE_BUCKETS_CATEGORIAS.forEach(function(cat) { bucketsHit[cat] = new Set(obj[cat] || []); });
+        Logger.log('⏱ SPERF _getScoreBucketsCacheado: cache hit (' + count + ' partes) = ' + (Date.now() - _t0) + 'ms');
+        _scoreBucketsMemo = bucketsHit;
+        return _scoreBucketsMemo;
+      }
+    }
+  } catch (e) {}
+
+  Logger.log('⏱ SPERF _getScoreBucketsCacheado: CACHE MISS — leyendo hoja "score" completa');
+  var buckets = { vip: new Set(), grande: new Set(), mediana: new Set(), pequena: new Set(), gen: new Set(), dev: new Set(), rev: new Set(), otros: new Set() };
+  try {
+    var hojaScore = ss.getSheetByName("score");
+    if (hojaScore) {
+      var _tRead0 = Date.now();
+      var dataScore = hojaScore.getDataRange().getDisplayValues();
+      Logger.log('⏱ SPERF _getScoreBucketsCacheado: lectura completa "score" (' + dataScore.length + ' filas) = ' + (Date.now() - _tRead0) + 'ms');
+      for (var r = 1; r < dataScore.length; r++) {
+        var key = _normalizarClaveUnif(dataScore[r][0]);
+        if (!key || key === "0") continue;
+        var cat = dataScore[r][1].toString().toLowerCase().trim();
+        if (cat.indexOf("vip") !== -1) buckets.vip.add(key);
+        else if (cat.indexOf("grande") !== -1) buckets.grande.add(key);
+        else if (cat.indexOf("mediana") !== -1) buckets.mediana.add(key);
+        else if (cat.indexOf("peque") !== -1) buckets.pequena.add(key);
+        else if (cat.indexOf("generica") !== -1) buckets.gen.add(key);
+        else if (cat.indexOf("en desarrollo") !== -1) buckets.dev.add(key);
+        else if (cat.indexOf("revisar") !== -1) buckets.rev.add(key);
+        else buckets.otros.add(key);
+      }
+    }
+  } catch (e) {
+    Logger.log('_getScoreBucketsCacheado: ' + e.message);
   }
 
+  try {
+    var serializable = {};
+    _SCORE_BUCKETS_CATEGORIAS.forEach(function(cat) { serializable[cat] = Array.from(buckets[cat]); });
+    var json2 = JSON.stringify(serializable);
+    var partesGuardar = {};
+    var n = 0;
+    for (var p = 0; p < json2.length; p += _SCORE_BUCKETS_CACHE_CHUNK) {
+      partesGuardar[_SCORE_BUCKETS_CACHE_PREFIX + n] = json2.substring(p, p + _SCORE_BUCKETS_CACHE_CHUNK);
+      n++;
+    }
+    partesGuardar[_SCORE_BUCKETS_CACHE_PREFIX + 'COUNT'] = String(n);
+    cache.putAll(partesGuardar, 3600); // 1 hora — igual que _getScoreMapCacheado, la hoja "score" casi nunca cambia
+  } catch (e) {
+    Logger.log('⏱ SPERF _getScoreBucketsCacheado: cache.putAll falló (' + e.message + ')');
+  }
+
+  Logger.log('⏱ SPERF _getScoreBucketsCacheado: total (cache miss) = ' + (Date.now() - _t0) + 'ms');
+  _scoreBucketsMemo = buckets;
+  return _scoreBucketsMemo;
+}
+
+// `buckets` ya viene construido (por _getScoreBucketsCacheado, fuera del lock —
+// ver RequestLeadUnificado) — esta función solo hace CPU pura sobre candidatos
+// ya en memoria más los 2 setProperty de VIP/rotación, que sí deben serializarse
+// bajo el lock por ser estado compartido entre analistas concurrentes.
+function _aplicarVipYScore(candidatos, buckets, userEmail, propsRef) {
   var punteroRotacion = parseInt(propsRef.getProperty('PUNTERO_ROTACION')) || 0;
   var contadorVIP = parseInt(propsRef.getProperty('VIP_COUNT_' + userEmail)) || 0;
 
@@ -725,30 +802,61 @@ function RequestLeadUnificado(equipoIdOverride) {
   Logger.log('⏱ SPERF RequestLeadUnificado: validaciones previas al lock = ' + (Date.now() - _tRLU0) + 'ms');
 
   // === PRE-LECTURA FUERA DEL LOCK ===
-  // Las lecturas completas de hojas se realizan ANTES de adquirir el ScriptLock
-  // para reducir la contención entre analistas concurrentes. Dentro del lock solo
-  // se usa la data pre-cargada (sin Viajes_Red de lectura masiva).
+  // _getDataSolicitudMemo()/_getDataOrigenMemo() (Código.js) memoizan por ejecución
+  // de servidor: si getTableData() (llamado más abajo en el mismo ciclo, vía
+  // cargarPanelAnalista → getUnifiedTableData) ya leyó estas hojas, o si es la
+  // primera lectura, aquí se reutiliza sin volver a golpear la red — antes cada
+  // llamada a RequestLeadUnificado Y cada getTableData() posterior en el mismo
+  // ciclo releían "solicitud"/"ORIGEN" completas por separado. Devuelven [] (nunca
+  // null) si la hoja no existe o está vacía; _contarYRecolectarPrincipal/
+  // _contarYRecolectarReestudios ya manejan ese caso (length < 2 → resultado vacío).
   var _tPreRead0 = Date.now();
 
-  // Pre-lectura hoja "solicitud" (principal)
   var hojaSolicitud = ss.getSheetByName("solicitud");
-  var dataSolicitudes = hojaSolicitud && hojaSolicitud.getLastRow() >= 2
-    ? hojaSolicitud.getRange("A1:BG" + hojaSolicitud.getLastRow()).getValues()
-    : null;
+  var dataSolicitudes = _getDataSolicitudMemo();
 
-  // Pre-lectura hoja "ORIGEN" (reestudios)
   var ID_REEST = PropertiesService.getScriptProperties().getProperty('ID_HOJA_REESTUDIOS') || '1slgykTgjoAtCd6KmlG7Lqiuw-nM1hSguQbi0XqeLu7U';
   var ssReestudios = _abrirSSCacheado(ID_REEST);
   var hojaOrigen = ssReestudios.getSheetByName("ORIGEN");
-  var dataReestudios = hojaOrigen && hojaOrigen.getLastRow() >= 2
-    ? hojaOrigen.getDataRange().getValues()
-    : null;
+  var dataReestudios = _getDataOrigenMemo();
 
-  Logger.log('⏱ SPERF RequestLeadUnificado: PRE-LECTURA fuera del lock (solicitud + ORIGEN) = ' + (Date.now() - _tPreRead0) + 'ms');
+  Logger.log('⏱ SPERF RequestLeadUnificado: PRE-LECTURA fuera del lock (solicitud + ORIGEN, memo compartido) = ' + (Date.now() - _tPreRead0) + 'ms');
 
-  // === A partir de aquí sí hace falta el lock: cupos/conteo/pendientes deben
-  // leerse y escribirse de forma consistente con cualquier otra asignación
-  // corriendo en paralelo (evita que dos analistas se lleven el mismo caso). ===
+  // === PREPARACIÓN FUERA DEL LOCK ===
+  // cuotas (config de cupos, no cambia por asignaciones concurrentes), la
+  // recolección de pendientes (función pura sobre los arrays ya pre-leídos arriba
+  // — su aporte a conteoHoy/cargaPendiente es siempre 0 por construcción, ver
+  // comentario dentro de _contarYRecolectarPrincipal) y los buckets de score/VIP
+  // (solo lectura, no cambian por asignaciones de otros analistas) no dependen de
+  // ningún estado que otro analista concurrente pueda estar modificando ahora
+  // mismo — solo los 2 contadores reales (PropertiesService) sí, y esos se leen
+  // más abajo, ya bajo el lock.
+  var _tPrep0 = Date.now();
+  var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
+  var ctx = _buildFechaHoyFormats();
+
+  var conteoHoyTotal = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
+  var pendientes = [];
+
+  if (dataSolicitudes) {
+    var resPrincipal = _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, equipo);
+    for (var k in resPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + resPrincipal.conteoHoy[k]; }
+    pendientes = pendientes.concat(resPrincipal.pendientes);
+  }
+  if (dataReestudios) {
+    var resReestudios = _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas);
+    for (var k2 in resReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + resReestudios.conteoHoy[k2]; }
+    pendientes = pendientes.concat(resReestudios.pendientes);
+  }
+
+  var scoreBuckets = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? _getScoreBucketsCacheado(ss) : null;
+
+  Logger.log('⏱ SPERF RequestLeadUnificado: preparación fuera del lock (cupos+conteo+score, ' + pendientes.length + ' candidatos) = ' + (Date.now() - _tPrep0) + 'ms');
+
+  // === A partir de aquí sí hace falta el lock: los contadores reales y la
+  // selección/escritura deben ejecutarse de forma consistente con cualquier otra
+  // asignación corriendo en paralelo (evita que dos analistas se lleven el mismo
+  // caso, y que dos analistas gasten el mismo giro de VIP_COUNT/PUNTERO_ROTACION). ===
   var _tLockWait0 = Date.now();
   var lock = LockService.getScriptLock();
   try {
@@ -761,46 +869,36 @@ function RequestLeadUnificado(equipoIdOverride) {
   var _tEnLock0 = Date.now();
 
   try {
+    // Si el cierre de un caso (guardarCambiosInternos/guardarGestionBiometria/
+    // guardarGestionReestudio → _cerrarConteoConLockCorto) no consiguió este mismo
+    // candado a tiempo — porque justo lo tenía otra asignación en curso —, su ajuste
+    // de contador quedó encolado (_encolarAjustePendiente) en vez de perderse. Como
+    // esta ejecución ya tiene el candado tomado, es el punto correcto para drenarlo
+    // antes de mirar cuánta capacidad le queda al analista: si no se hace aquí, una
+    // asignación que corre justo después del propio cierre del analista puede leer
+    // su carga pendiente todavía con el +1 no descontado y rechazarlo con "sin
+    // capacidad" en el mismo clic que debía haberle liberado el cupo.
+    _drenarAjustesPendientesContador();
+
     var propsLocal = PropertiesService.getScriptProperties();
-    var cuotas = obtenerCuposEfectivos(userEmail, equipoId, dataUsuarios);
-
-    var ctx = _buildFechaHoyFormats();
-
-    // === CONTEO + RECOLECCIÓN FUSIONADOS (1 pasada por hoja) ===
-    var _tFusionado0 = Date.now();
-    var conteoHoyTotal = { digital: 0, desaplazamiento: 0, induccion: 0, reestudio: 0, nuevaUar: 0, deudorUar: 0, biometriaFallida: 0 };
-    var capPendienteReal = 0;
-    var pendientes = [];
-
-    // Fusionada principal
-    if (dataSolicitudes) {
-      var resPrincipal = _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, equipo);
-      for (var k in resPrincipal.conteoHoy) { conteoHoyTotal[k] = (conteoHoyTotal[k] || 0) + resPrincipal.conteoHoy[k]; }
-      capPendienteReal += resPrincipal.cargaPendiente;
-      pendientes = pendientes.concat(resPrincipal.pendientes);
-    }
-
-    // Fusionada reestudios
-    if (dataReestudios) {
-      var resReestudios = _contarYRecolectarReestudios(dataReestudios, userEmail, ctx, cuotas);
-      for (var k2 in resReestudios.conteoHoy) { conteoHoyTotal[k2] = (conteoHoyTotal[k2] || 0) + resReestudios.conteoHoy[k2]; }
-      capPendienteReal += resReestudios.cargaPendiente;
-      pendientes = pendientes.concat(resReestudios.pendientes);
-    }
 
     // Los contadores incrementales de PropertiesService son la ÚNICA fuente real de
-    // conteoHoy/cargaPendiente en este punto (resPrincipal/resReestudios siempre aportan 0 —
-    // ver comentario en _contarYRecolectarPrincipal). No hay una segunda fuente que los
-    // valide en cada request; si se desincronizan (fallo al cerrar un caso, edición manual),
-    // admin_recalcularContadores() (Admin.js) los reconstruye desde cero leyendo
-    // Historico_Gestiones — debe correr por trigger nocturno programado en el editor de
-    // Apps Script (trigger_recalcularContadores), y además se autocorrigen de forma
-    // oportunista en cada cierre exitoso vía _cerrarConteoConLockCorto (Código.js).
+    // conteoHoy/cargaPendiente (conteoHoyTotal/pendientes ya traen, desde la
+    // preparación fuera del lock, el aporte de la recolección fusionada — siempre 0,
+    // ver comentario en _contarYRecolectarPrincipal). Estos SÍ deben leerse aquí,
+    // bajo el lock, porque reflejan el estado compartido con cualquier otra
+    // asignación/cierre concurrente. Si se desincronizan (fallo al cerrar un caso,
+    // edición manual), admin_recalcularContadores() (Admin.js) los reconstruye desde
+    // cero leyendo Historico_Gestiones — debe correr por trigger nocturno programado
+    // en el editor de Apps Script (trigger_recalcularContadores), y además se
+    // autocorrigen de forma oportunista en cada cierre exitoso vía
+    // _cerrarConteoConLockCorto (Código.js).
+    var _tContadores0 = Date.now();
     var conteoHoyContador = _obtenerConteoHoyAnalista(userEmail);
     for (var kc in conteoHoyContador) { conteoHoyTotal[kc] = (conteoHoyTotal[kc] || 0) + conteoHoyContador[kc]; }
-    capPendienteReal += _obtenerCargaPendienteAnalista(userEmail);
+    var capPendienteReal = _obtenerCargaPendienteAnalista(userEmail);
 
-    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): conteo+recolección fusionados = ' + (Date.now() - _tFusionado0) + 'ms (' + pendientes.length + ' candidatos)');
+    Logger.log('⏱ SPERF RequestLeadUnificado (dentro del lock): contadores reales = ' + (Date.now() - _tContadores0) + 'ms (' + pendientes.length + ' candidatos)');
 
     // Referencias a hojas — necesarias para _asignarCasoPrincipal / _asignarCasoReestudios
     var refPrincipal = { hoja: hojaSolicitud, data: dataSolicitudes };
@@ -826,8 +924,7 @@ function RequestLeadUnificado(equipoIdOverride) {
     var fechaHora = new Date();
     var maxAsignar = Math.max(1, equipo.maxAsignarPorLlamada || 1);
     var cupoDisponible = Math.min(maxAsignar, capacidadDisponible);
-    var scoreSheet = (equipo.usarVipRotacion && equipo.usarScoreCategories) ? ss.getSheetByName("score") : null;
-    var aplicarVipYScoreFn = scoreSheet ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreSheet, userEmail, propsLocal); } : null;
+    var aplicarVipYScoreFn = scoreBuckets ? function(candidatos) { return _aplicarVipYScore(candidatos, scoreBuckets, userEmail, propsLocal); } : null;
 
     var _tOrdenar0 = Date.now();
     var resultadoSeleccion = _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equipo, propsLocal, cupoDisponible, aplicarVipYScoreFn);

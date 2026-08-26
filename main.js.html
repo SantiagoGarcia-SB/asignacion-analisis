@@ -2535,7 +2535,14 @@ function _guardarYAsignarConsolidado(data, resultadoGuardadoPrevio) {
   google.script.run
     .withSuccessHandler(function(resp) {
       _PERF.mark('GC2. guardarYAsignarSiguiente → respuesta recibida');
-      yaSeIntentoAsignar = false;
+
+      // Si el servidor ya intentó asignar en este mismo ciclo (resp.asignacion viene
+      // no-nulo, éxito o fracaso), _onPanelRecibido() no debe repetir el intento: su
+      // guardia de "tabla vacía + ACTIVO" dispararía un tercer round-trip determinísticamente
+      // inútil (mismos contadores, mismo resultado) y un segundo toast de advertencia para
+      // el mismo evento. Se deja la guardia activa solo para su uso original (boot/polling,
+      // donde nunca se intentó asignar todavía en este ciclo).
+      yaSeIntentoAsignar = !!resp.asignacion;
 
       // Si el panel vino nulo o con error, usar cargarDatos() como recuperación
       if (!resp.panel || resp.panel._error) {
@@ -2545,6 +2552,7 @@ function _guardarYAsignarConsolidado(data, resultadoGuardadoPrevio) {
         // Renderizar panel directamente con los datos recibidos (sin round-trip adicional)
         _procesarRespuestaPanel(resp.panel);
       }
+      yaSeIntentoAsignar = false;
 
       // Toasts por resultado de asignación (Req 4.1, 4.2, 4.3, 4.4)
       if (resp.asignacion) {
@@ -2652,7 +2660,11 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
         google.script.run
           .withSuccessHandler(function(resp) {
             _PERF.mark('G5. vista NO unificada guardarYAsignarSiguiente → respuesta recibida');
-            yaSeIntentoAsignar = false;
+
+            // Igual que en la vista unificada: si el servidor ya intentó asignar en este
+            // ciclo (resp.asignacion no-nulo), no dejar que la guardia de _onPanelRecibido
+            // dispare un tercer round-trip redundante con el mismo resultado.
+            yaSeIntentoAsignar = !!resp.asignacion;
 
             // Req 1.2, 1.3: Panel rendering o fallback
             if (!resp.panel || resp.panel._error) {
@@ -2661,6 +2673,7 @@ function onGuardarExitoUnificado(r, modalId, solicitudId) {
             } else {
               _procesarRespuestaPanel(resp.panel);
             }
+            yaSeIntentoAsignar = false;
 
             // Req 1.5: Toasts por resultado de asignación
             if (resp.asignacion) {
