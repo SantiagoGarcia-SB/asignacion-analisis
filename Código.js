@@ -1165,29 +1165,44 @@ function getTableData() {
     }
   }
 
+  // Se lee una sola vez y se reutiliza en los bloques 1 y 4 de abajo (Historico_Gestiones
+  // principal y de reestudios) — ambos gatean su lectura completa con este mismo valor,
+  // así que declararla aquí evita 2 lecturas de PropertiesService y mantiene el mismo
+  // valor coherente entre los dos bloques dentro de una sola ejecución.
+  const cargaPendienteUsuario = _obtenerCargaPendienteAnalista(userEmail);
+
   // 1. Historico_Gestiones — casos ya movidos al asignar (nueva lógica)
   // Usa el memo _getHistGestionesPrincipal() para evitar network round-trips
   // redundantes: filtra en memoria por col 25 (email del analista, 0-indexed para col 26).
+  // El gate por cargaPendiente va ANTES de leer (no solo antes de procesar) — medido en
+  // producción: esta lectura completa cuesta ~2.1s con ~2657 filas (Historico_Gestiones
+  // "solo crece y nunca se archiva"), y para un analista con cargaPendiente=0 ese costo
+  // no aportaba nada al resultado. Mismo patrón que ya usa correctamente
+  // obtenerCasosPendientesAnalista() (más abajo en este archivo).
   try {
     const _tHist0 = Date.now();
-    const dataHist = _getHistGestionesPrincipal();
-    Logger.log('⏱ SPERF getTableData: Historico_Gestiones principal memo (' + dataHist.length + ' filas), cargaPendiente=' + _obtenerCargaPendienteAnalista(userEmail));
-    if (dataHist.length > 0 && _obtenerCargaPendienteAnalista(userEmail) > 0) {
-      // Filtrar filas del analista in-memory (col 26 = idx 25)
-      const filasAbiertas = [];
-      for (var i = 0; i < dataHist.length; i++) {
-        if (String(dataHist[i][25]).trim().toLowerCase() === userEmail) {
-          var fechaFin = String(dataHist[i][26]).trim(); // col 27 = idx 26
-          if (fechaFin !== '') {
-            gestionadasTotal++;
-            if (fechaFin.includes(hoyStr)) gestionadasHoy++;
-          } else {
-            filasAbiertas.push(dataHist[i]);
+    if (cargaPendienteUsuario > 0) {
+      const dataHist = _getHistGestionesPrincipal();
+      Logger.log('⏱ SPERF getTableData: Historico_Gestiones principal memo (' + dataHist.length + ' filas), cargaPendiente=' + cargaPendienteUsuario);
+      if (dataHist.length > 0) {
+        // Filtrar filas del analista in-memory (col 26 = idx 25)
+        const filasAbiertas = [];
+        for (var i = 0; i < dataHist.length; i++) {
+          if (String(dataHist[i][25]).trim().toLowerCase() === userEmail) {
+            var fechaFin = String(dataHist[i][26]).trim(); // col 27 = idx 26
+            if (fechaFin !== '') {
+              gestionadasTotal++;
+              if (fechaFin.includes(hoyStr)) gestionadasHoy++;
+            } else {
+              filasAbiertas.push(dataHist[i]);
+            }
           }
         }
+        Logger.log('⏱ SPERF getTableData: filtro in-memory Hist principal = ' + (Date.now() - _tHist0) + 'ms (' + filasAbiertas.length + ' abiertas)');
+        agregarDesdeRegistros(filasAbiertas, 'HISTORICO');
       }
-      Logger.log('⏱ SPERF getTableData: filtro in-memory Hist principal = ' + (Date.now() - _tHist0) + 'ms (' + filasAbiertas.length + ' abiertas)');
-      agregarDesdeRegistros(filasAbiertas, 'HISTORICO');
+    } else {
+      Logger.log('⏱ SPERF getTableData: Historico_Gestiones principal OMITIDA (cargaPendiente=0)');
     }
     Logger.log('⏱ SPERF getTableData: bloque Historico_Gestiones principal completo = ' + (Date.now() - _tHist0) + 'ms');
   } catch(e) {
@@ -1255,43 +1270,48 @@ function getTableData() {
 
   // 4. Historico_Gestiones de reestudios (casos movidos al asignar)
   // Usa _getHistGestionesReest() (memo) + filtro in-memory por col 6 (email).
+  // Mismo gate por cargaPendiente ANTES de leer que en el bloque principal de arriba.
   try {
     const _tHistR0 = Date.now();
-    const dataHistReestMemo = _getHistGestionesReest();
-    Logger.log('⏱ SPERF getTableData: _getHistGestionesReest() devolvió ' + dataHistReestMemo.length + ' filas');
-    for (var iHR = 0; iHR < dataHistReestMemo.length; iHR++) {
-      var asignadoHR = String(dataHistReestMemo[iHR][6]).trim().toLowerCase();
-      if (asignadoHR !== userEmail) continue;
+    if (cargaPendienteUsuario > 0) {
+      const dataHistReestMemo = _getHistGestionesReest();
+      Logger.log('⏱ SPERF getTableData: _getHistGestionesReest() devolvió ' + dataHistReestMemo.length + ' filas');
+      for (var iHR = 0; iHR < dataHistReestMemo.length; iHR++) {
+        var asignadoHR = String(dataHistReestMemo[iHR][6]).trim().toLowerCase();
+        if (asignadoHR !== userEmail) continue;
 
-      var fechaFinHR = String(dataHistReestMemo[iHR][9]).trim();
-      if (fechaFinHR !== '') {
-        gestionadasTotal++;
-        if (fechaFinHR.includes(hoyStr)) gestionadasHoy++;
-        continue;
+        var fechaFinHR = String(dataHistReestMemo[iHR][9]).trim();
+        if (fechaFinHR !== '') {
+          gestionadasTotal++;
+          if (fechaFinHR.includes(hoyStr)) gestionadasHoy++;
+          continue;
+        }
+
+        var fechaAsigHR = String(dataHistReestMemo[iHR][8]).trim();
+        if (fechaAsigHR === "") continue;
+
+        var tipoProcHR = String(dataHistReestMemo[iHR][4]).trim();
+        var claseHR = String(dataHistReestMemo[iHR][5]).trim();
+        let filaAdaptada = new Array(numCols).fill("");
+        filaAdaptada[0] = String(dataHistReestMemo[iHR][1]).trim();
+        filaAdaptada[1] = String(dataHistReestMemo[iHR][3]).trim();
+        filaAdaptada[2] = String(dataHistReestMemo[iHR][2]).trim();
+        filaAdaptada[3] = String(dataHistReestMemo[iHR][3]).trim();
+        filaAdaptada[4] = tipoProcHR;
+        filaAdaptada[5] = claseHR;
+        filaAdaptada[8] = fechaAsigHR;
+        filaAdaptada[16] = "__REESTUDIO__";
+        filaAdaptada[17] = String(dataHistReestMemo[iHR][0]).trim();
+        filaAdaptada[20] = tipoProcHR || claseHR;
+        filaAdaptada[26] = fechaAsigHR;
+        filaAdaptada[27] = asignadoHR;
+        filaAdaptada[28] = "";
+        filaAdaptada[30] = String(dataHistReestMemo[iHR][7]).trim();
+        filaAdaptada.push("");
+        misFilasPendientes.push(filaAdaptada);
       }
-
-      var fechaAsigHR = String(dataHistReestMemo[iHR][8]).trim();
-      if (fechaAsigHR === "") continue;
-
-      var tipoProcHR = String(dataHistReestMemo[iHR][4]).trim();
-      var claseHR = String(dataHistReestMemo[iHR][5]).trim();
-      let filaAdaptada = new Array(numCols).fill("");
-      filaAdaptada[0] = String(dataHistReestMemo[iHR][1]).trim();
-      filaAdaptada[1] = String(dataHistReestMemo[iHR][3]).trim();
-      filaAdaptada[2] = String(dataHistReestMemo[iHR][2]).trim();
-      filaAdaptada[3] = String(dataHistReestMemo[iHR][3]).trim();
-      filaAdaptada[4] = tipoProcHR;
-      filaAdaptada[5] = claseHR;
-      filaAdaptada[8] = fechaAsigHR;
-      filaAdaptada[16] = "__REESTUDIO__";
-      filaAdaptada[17] = String(dataHistReestMemo[iHR][0]).trim();
-      filaAdaptada[20] = tipoProcHR || claseHR;
-      filaAdaptada[26] = fechaAsigHR;
-      filaAdaptada[27] = asignadoHR;
-      filaAdaptada[28] = "";
-      filaAdaptada[30] = String(dataHistReestMemo[iHR][7]).trim();
-      filaAdaptada.push("");
-      misFilasPendientes.push(filaAdaptada);
+    } else {
+      Logger.log('⏱ SPERF getTableData: Historico_Gestiones reestudios OMITIDA (cargaPendiente=0)');
     }
     Logger.log('⏱ SPERF getTableData: bloque Historico_Gestiones reestudios completo = ' + (Date.now() - _tHistR0) + 'ms');
   } catch(e) {
@@ -1306,7 +1326,7 @@ function getTableData() {
   try {
     var ahora = new Date();
     var hace30 = new Date(ahora.getTime() - 30 * 60 * 1000);
-    if (_obtenerCargaPendienteAnalista(userEmail) > 0) {
+    if (cargaPendienteUsuario > 0) {
       // Principal: col 38 (idx 37) — usa memo para filtrar por email (col 25)
       // y marca "ADMIN:" (col 37) en memoria sin network round-trip adicional.
       var dataHistReasig = _getHistGestionesPrincipal();
