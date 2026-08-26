@@ -318,11 +318,11 @@ function autoAsignarBiometria() {
     const datosSol = hojaSolicitud.getRange(2, 1, lastRowSol - 1, 38).getValues();
 
     let candidatosElegibles = [];
-    // Misma ventana de liberación que usa RequestLeadUnificado (ver
-    // _calcularLimiteLiberacionDesaplazamiento en este archivo), para que ambas rutas de
-    // asignación (manual y automática) respeten la regla real de operación: un caso "de
-    // esta tarde" no se ofrece hasta la sesión de mañana del siguiente día hábil.
-    const limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
+    // La ventana de liberación (_calcularLimiteLiberacionDesaplazamiento) ya NO se
+    // revisa aquí — por decisión de negocio, esa regla de horario solo aplica en el
+    // momento del corte/escalada (_procesarCortePendientes: cuándo un caso pasa de
+    // WA_ENVIADO a ESCALADA en "solicitud"). Una vez que un caso ya está escalado y
+    // visible en la cola, la asignación lo ofrece sin volver a filtrar por horario.
 
     for (let i = 0; i < datosSol.length; i++) {
       const row = datosSol[i];
@@ -339,10 +339,8 @@ function autoAsignarBiometria() {
       // fechaResultado (col S / índice 18): misma columna que usa RequestLeadUnificado
       // para ordenar desaplazamiento, así ambas rutas de asignación quedan consistentes.
       // _parseDateUnif devuelve un NÚMERO (ms desde epoch), no un Date — y 9999999999999
-      // si no pudo parsear fecha; ese caso no se filtra, para no bloquearlo para siempre.
+      // si no pudo parsear fecha.
       const fechaOrdCandidato = _parseDateUnif(row[18]);
-      // Bug 4 fix: usa > (no >=) para incluir casos exactamente en la frontera del corte
-      if (fechaOrdCandidato !== 9999999999999 && fechaOrdCandidato > limiteLiberacionDesaplazamiento.getTime()) continue;
 
       candidatosElegibles.push({ row: row, sheetRowIndex: i + 2, fechaOrd: fechaOrdCandidato });
       idsEnGestion.add(id);

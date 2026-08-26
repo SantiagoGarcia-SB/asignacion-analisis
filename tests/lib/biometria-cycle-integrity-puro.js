@@ -182,51 +182,10 @@ const TARGET_SOLICITUDES_SS_ID_VALUE = '1x9groW5-I7Xg5ULh7DXfa2XGmS_RMdfqfW1iDWB
 const CONSTANTE_USADA_POR_AUTOASIGNAR = 'TARGET_SOLICITUDES_SS_ID';
 const CONSTANTE_USADA_POR_ESCRIBIR = 'TARGET_SOLICITUDES_SS_ID';
 
-// ============================================================
-// Bug 4: Comparación de frontera (>= vs >)
-// ============================================================
-
-/**
- * Calcula el límite de liberación de desaplazamiento (replica exacta de
- * _calcularLimiteLiberacionDesaplazamiento en Biometria.js).
- *
- * @param {Date} ahora - Fecha/hora actual
- * @returns {Date} Límite: hoy 00:00 si mañana, hoy 12:00 si tarde
- */
-function calcularLimiteLiberacion(ahora) {
-  const hoy00 = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-  if (ahora.getHours() < 12) return hoy00;
-  return new Date(hoy00.getTime() + 12 * 60 * 60 * 1000);
-}
-
-/**
- * Simula el filtro ACTUAL (buggy) de candidatos: usa >= para excluir.
- * Un caso con fechaResultado EXACTAMENTE en el límite es EXCLUIDO.
- *
- * @param {number} fechaResultadoMs - Timestamp del fechaResultado del caso
- * @param {number} limiteMs - Timestamp del límite de liberación
- * @returns {boolean} true si el caso debe ser INCLUIDO (ofrecido), false si se filtra (excluido)
- */
-function filtrarCandidato_actual(fechaResultadoMs, limiteMs) {
-  // Replica: if (fechaResultadoMs > limiteMs) continue; // excluir (fixed: usa >)
-  if (fechaResultadoMs === 9999999999999) return true; // fecha inválida → no filtrar
-  if (fechaResultadoMs > limiteMs) return false; // Fixed: solo excluye estrictamente después
-  return true; // incluir
-}
-
-/**
- * Simula el filtro ESPERADO (fixed): usa > para excluir.
- * Un caso con fechaResultado EXACTAMENTE en el límite es INCLUIDO.
- *
- * @param {number} fechaResultadoMs - Timestamp del fechaResultado del caso
- * @param {number} limiteMs - Timestamp del límite de liberación
- * @returns {boolean} true si el caso debe ser INCLUIDO (ofrecido), false si se filtra (excluido)
- */
-function filtrarCandidato_esperado(fechaResultadoMs, limiteMs) {
-  if (fechaResultadoMs === 9999999999999) return true; // fecha inválida → no filtrar
-  if (fechaResultadoMs > limiteMs) return false; // Fixed: solo excluye estrictamente después
-  return true; // incluir (incluyendo caso exacto en frontera)
-}
+// (El antiguo "Bug 4: Comparación de frontera (>= vs >)" y sus funciones de
+// preservación de filtrado/ordenamiento por ventana de liberación se
+// eliminaron por completo: esa regla de horario ya no se revisa en el
+// momento de asignar — ver nota en MotorAsignacion.js/Biometria.js.)
 
 // ============================================================
 // PRESERVATION: Normal SAI Response (Req 3.1, 3.2)
@@ -297,32 +256,6 @@ function desarchivarBiometriasExitoso_preservacion(params) {
 }
 
 // ============================================================
-// PRESERVATION: Non-Boundary Filtering (Req 3.5, 3.6)
-// ============================================================
-
-/**
- * Verifica que para fechaResultado estrictamente ANTES del límite,
- * AMBOS operadores (>= y >) producen el mismo resultado: INCLUIR.
- *
- * @param {number} fechaResultadoMs - Timestamp del fechaResultado
- * @param {number} limiteMs - Timestamp del límite
- * @returns {{ incluidoConActual: boolean, incluidoConFix: boolean, coinciden: boolean }}
- */
-function filtrarNoBoundary_preservacion(fechaResultadoMs, limiteMs) {
-  if (fechaResultadoMs === 9999999999999) {
-    // fecha inválida — ambos la incluyen
-    return { incluidoConActual: true, incluidoConFix: true, coinciden: true };
-  }
-
-  // Operador actual: >= excluye
-  const incluidoConActual = !(fechaResultadoMs >= limiteMs);
-  // Operador fix: > excluye
-  const incluidoConFix = !(fechaResultadoMs > limiteMs);
-
-  return { incluidoConActual, incluidoConFix, coinciden: incluidoConActual === incluidoConFix };
-}
-
-// ============================================================
 // PRESERVATION: _volcarBloque Protective Pattern (Req 3.7)
 // ============================================================
 
@@ -361,42 +294,6 @@ function volcarBloque_preservacion(params) {
 }
 
 // ============================================================
-// PRESERVATION: Assignment Ordering (Req 3.4)
-// ============================================================
-
-/**
- * Simula la lógica de ordenamiento y filtrado de asignación.
- * Los casos se ordenan por fechaResultado (más antiguo primero)
- * y se limitan por cupo disponible.
- *
- * @param {Object} params
- * @param {Array<Object>} params.casosDisponibles - Casos con fechaResultadoMs
- * @param {number} params.cupoDisponible - Número máximo de casos a asignar
- * @param {number} params.limiteMs - Timestamp del límite de liberación
- * @returns {{ casosSeleccionados: Array<Object>, cantidadAsignada: number }}
- */
-function asignarConOrden_preservacion(params) {
-  const { casosDisponibles, cupoDisponible, limiteMs } = params;
-
-  // Filtrar: excluir los que están después del límite (usando >= actual)
-  const candidatos = casosDisponibles.filter((c) => {
-    if (c.fechaResultadoMs === 9999999999999) return true;
-    return c.fechaResultadoMs < limiteMs; // strictly before (NOT at boundary)
-  });
-
-  // Ordenar por fechaResultado ascendente (más antiguo primero)
-  const ordenados = [...candidatos].sort((a, b) => a.fechaResultadoMs - b.fechaResultadoMs);
-
-  // Limitar por cupo
-  const casosSeleccionados = ordenados.slice(0, Math.max(0, cupoDisponible));
-
-  return {
-    casosSeleccionados,
-    cantidadAsignada: casosSeleccionados.length,
-  };
-}
-
-// ============================================================
 // EXPORTS
 // ============================================================
 
@@ -413,14 +310,8 @@ export {
   TARGET_SOLICITUDES_SS_ID_VALUE,
   CONSTANTE_USADA_POR_AUTOASIGNAR,
   CONSTANTE_USADA_POR_ESCRIBIR,
-  // Bug 4
-  calcularLimiteLiberacion,
-  filtrarCandidato_actual,
-  filtrarCandidato_esperado,
   // Preservation
   procesarCasoSaiNonNull_preservacion,
   desarchivarBiometriasExitoso_preservacion,
-  filtrarNoBoundary_preservacion,
   volcarBloque_preservacion,
-  asignarConOrden_preservacion,
 };

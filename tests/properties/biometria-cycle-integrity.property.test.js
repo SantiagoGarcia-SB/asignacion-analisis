@@ -9,7 +9,12 @@
  * Bug 1: SAI Null Stuck — cases never escalate after repeated null responses
  * Bug 2: Orphan Desarchivar — cases marked ESCALADA even when write fails
  * Bug 3: Dual-Constant — autoAsignarBiometria uses wrong constant name
- * Bug 4: Boundary Off-by-One — cases at exact boundary excluded by >=
+ *
+ * (El antiguo Bug 4 — Boundary Off-by-One, y sus tests de preservación de
+ * ordenamiento/filtrado por ventana de liberación, se eliminaron: la regla de
+ * horario que validaban (_calcularLimiteLiberacionDesaplazamiento aplicada en
+ * el momento de asignar) se removió de la asignación por decisión de negocio
+ * — esa ventana ahora solo aplica, si acaso, en el corte/escalada, no aquí.)
  */
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
@@ -21,14 +26,9 @@ import {
   verificarConstanteSolicitud_actual,
   CONSTANTE_USADA_POR_AUTOASIGNAR,
   CONSTANTE_USADA_POR_ESCRIBIR,
-  calcularLimiteLiberacion,
-  filtrarCandidato_actual,
-  filtrarCandidato_esperado,
   procesarCasoSaiNonNull_preservacion,
   desarchivarBiometriasExitoso_preservacion,
-  filtrarNoBoundary_preservacion,
   volcarBloque_preservacion,
-  asignarConOrden_preservacion,
 } from '../lib/biometria-cycle-integrity-puro.js';
 
 // ============================================================
@@ -55,15 +55,6 @@ const arbErrorMessage = fc.oneof(
   fc.constant('Quota exceeded'),
   fc.string({ minLength: 1, maxLength: 50 })
 );
-
-/** Genera una fecha a cualquier hora del día */
-const arbFechaEnDia = fc.record({
-  year: fc.integer({ min: 2024, max: 2027 }),
-  month: fc.integer({ min: 0, max: 11 }),
-  day: fc.integer({ min: 1, max: 28 }),
-  hour: fc.integer({ min: 0, max: 23 }),
-  minute: fc.integer({ min: 0, max: 59 }),
-});
 
 // ============================================================
 // Property 1: Bug Condition — SAI Null Stuck
@@ -175,42 +166,6 @@ describe('Bug Condition Exploration: Bug 3 — Dual-Constant Coupling', () => {
     );
   });
 });
-
-// ============================================================
-// Property 4: Bug Condition — Boundary Off-by-One
-// Validates: Requirement 1.4
-// ============================================================
-
-describe('Bug Condition Exploration: Bug 4 — Boundary Off-by-One', () => {
-  it('Case with fechaResultado exactly at boundary MUST be INCLUDED (offered, not deferred)', () => {
-    /**
-     * This property asserts the EXPECTED behavior: a case whose fechaResultado
-     * is exactly at the boundary timestamp should be INCLUDED in the current corte.
-     *
-     * On UNFIXED code: filtrarCandidato_actual uses >= which EXCLUDES the case
-     * at exactly the boundary. This will FAIL.
-     */
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        ({ year, month, day, hour, minute }) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          // Generate a case with fechaResultado EXACTLY at the boundary
-          const fechaResultadoMs = limiteMs;
-
-          // EXPECTED: case at boundary IS included (offered)
-          const incluido = filtrarCandidato_actual(fechaResultadoMs, limiteMs);
-          expect(incluido).toBe(true);
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-});
-
 
 // ============================================================
 // PRESERVATION PROPERTY TESTS
@@ -352,79 +307,6 @@ describe('Preservation: Property 6 — Successful Desarchivar Write Path', () =>
 });
 
 // ============================================================
-// Property 7: Preservation — Non-Boundary Case Filtering
-// Validates: Requirements 3.4, 3.5, 3.6
-// ============================================================
-
-describe('Preservation: Property 7 — Non-Boundary Case Filtering', () => {
-  /**
-   * Observation on UNFIXED code:
-   * For fechaResultado values NOT exactly at the boundary:
-   * - Strictly before boundary → INCLUDED (offered to analyst)
-   * - Strictly after boundary → EXCLUDED (deferred to next session)
-   *
-   * Both >= and > produce the SAME result for non-boundary values.
-   * This behavior must be preserved after the fix.
-   */
-
-  /** Genera un timestamp estrictamente ANTES del límite (offset negativo de 1ms a 24h) */
-  const arbOffsetAntes = fc.integer({ min: 1, max: 24 * 60 * 60 * 1000 });
-
-  /** Genera un timestamp estrictamente DESPUÉS del límite (offset positivo de 1ms a 24h) */
-  const arbOffsetDespues = fc.integer({ min: 1, max: 24 * 60 * 60 * 1000 });
-
-  it('fechaResultado strictly BEFORE boundary → both operators agree: INCLUDE', () => {
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        arbOffsetAntes,
-        ({ year, month, day, hour, minute }, offset) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          // Strictly before boundary
-          const fechaResultadoMs = limiteMs - offset;
-
-          const resultado = filtrarNoBoundary_preservacion(fechaResultadoMs, limiteMs);
-
-          // Both operators MUST include (agree)
-          expect(resultado.incluidoConActual).toBe(true);
-          expect(resultado.incluidoConFix).toBe(true);
-          expect(resultado.coinciden).toBe(true);
-        }
-      ),
-      { numRuns: 200 }
-    );
-  });
-
-  it('fechaResultado strictly AFTER boundary → both operators agree: EXCLUDE', () => {
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        arbOffsetDespues,
-        ({ year, month, day, hour, minute }, offset) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          // Strictly after boundary
-          const fechaResultadoMs = limiteMs + offset;
-
-          const resultado = filtrarNoBoundary_preservacion(fechaResultadoMs, limiteMs);
-
-          // Both operators MUST exclude (agree)
-          expect(resultado.incluidoConActual).toBe(false);
-          expect(resultado.incluidoConFix).toBe(false);
-          expect(resultado.coinciden).toBe(true);
-        }
-      ),
-      { numRuns: 200 }
-    );
-  });
-});
-
-// ============================================================
 // Preservation — _volcarBloque Protective Pattern
 // Validates: Requirement 3.7
 // ============================================================
@@ -493,123 +375,3 @@ describe('Preservation: _volcarBloque Protective Pattern', () => {
   });
 });
 
-// ============================================================
-// Preservation — Assignment Ordering (Cupo + FechaResultado)
-// Validates: Requirement 3.4
-// ============================================================
-
-describe('Preservation: Assignment Ordering (Cupo + FechaResultado)', () => {
-  /**
-   * Observation on UNFIXED code:
-   * Cases are ordered by fechaResultado ascending (oldest first),
-   * limited by cupo, and filtered to only include those strictly
-   * before the boundary. This ordering logic is unchanged.
-   */
-
-  /** Genera un caso con fechaResultado estrictamente antes del límite */
-  const arbCasoAntesDeLimite = (limiteMs) =>
-    fc.record({
-      consecutivo: arbConsecutivo,
-      fechaResultadoMs: fc.integer({
-        min: limiteMs - 30 * 24 * 60 * 60 * 1000, // up to 30 days before
-        max: limiteMs - 1, // strictly before
-      }),
-    });
-
-  it('Cases are selected in fechaResultado ascending order, limited by cupo', () => {
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        fc.integer({ min: 1, max: 10 }), // cupo
-        fc.integer({ min: 2, max: 15 }), // num cases
-        ({ year, month, day, hour, minute }, cupo, numCases) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          // Generate cases all before the boundary with distinct timestamps
-          const casosDisponibles = Array.from({ length: numCases }, (_, i) => ({
-            consecutivo: String(30000000 + i),
-            fechaResultadoMs: limiteMs - (numCases - i) * 60000, // spaced 1 min apart
-          }));
-
-          const resultado = asignarConOrden_preservacion({
-            casosDisponibles,
-            cupoDisponible: cupo,
-            limiteMs,
-          });
-
-          // MUST respect cupo limit
-          expect(resultado.cantidadAsignada).toBeLessThanOrEqual(cupo);
-
-          // MUST be ordered by fechaResultado ascending
-          for (let i = 1; i < resultado.casosSeleccionados.length; i++) {
-            expect(resultado.casosSeleccionados[i].fechaResultadoMs)
-              .toBeGreaterThanOrEqual(resultado.casosSeleccionados[i - 1].fechaResultadoMs);
-          }
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  it('Cases strictly after boundary are excluded from assignment', () => {
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        fc.integer({ min: 1, max: 10 }),
-        ({ year, month, day, hour, minute }, cupo) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          // All cases AFTER boundary
-          const casosDisponibles = Array.from({ length: 5 }, (_, i) => ({
-            consecutivo: String(40000000 + i),
-            fechaResultadoMs: limiteMs + (i + 1) * 60000, // after boundary
-          }));
-
-          const resultado = asignarConOrden_preservacion({
-            casosDisponibles,
-            cupoDisponible: cupo,
-            limiteMs,
-          });
-
-          // No cases should be selected — all are after boundary
-          expect(resultado.cantidadAsignada).toBe(0);
-          expect(resultado.casosSeleccionados).toEqual([]);
-        }
-      ),
-      { numRuns: 100 }
-    );
-  });
-
-  it('Zero cupo → no cases assigned regardless of availability', () => {
-    fc.assert(
-      fc.property(
-        arbFechaEnDia,
-        fc.integer({ min: 1, max: 10 }),
-        ({ year, month, day, hour, minute }, numCases) => {
-          const ahora = new Date(year, month, day, hour, minute, 0, 0);
-          const limite = calcularLimiteLiberacion(ahora);
-          const limiteMs = limite.getTime();
-
-          const casosDisponibles = Array.from({ length: numCases }, (_, i) => ({
-            consecutivo: String(50000000 + i),
-            fechaResultadoMs: limiteMs - (i + 1) * 60000,
-          }));
-
-          const resultado = asignarConOrden_preservacion({
-            casosDisponibles,
-            cupoDisponible: 0,
-            limiteMs,
-          });
-
-          expect(resultado.cantidadAsignada).toBe(0);
-          expect(resultado.casosSeleccionados).toEqual([]);
-        }
-      ),
-      { numRuns: 50 }
-    );
-  });
-});

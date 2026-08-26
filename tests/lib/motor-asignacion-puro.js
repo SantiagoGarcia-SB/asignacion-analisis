@@ -129,8 +129,6 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
   var canonHasta = equipo.canonHasta || 0;
   var canonTipos = equipo.canonTipos || [];
 
-  var limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
-
   for (var i = 1; i < dataSolicitudes.length; i++) {
     var row = dataSolicitudes[i];
     var asignado = String(row[27]).trim();
@@ -162,11 +160,6 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
 
     var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
     if (!reasignada && conteoHoy[tipoPendiente] >= (cuotas[tipoPendiente] || 0)) continue;
-
-    if (esDesaplazamiento && !reasignada) {
-      var fechaResultadoCaseMs = _parseDateUnif(row[18]);
-      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs > limiteLiberacionDesaplazamiento.getTime()) continue;
-    }
 
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
     var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';

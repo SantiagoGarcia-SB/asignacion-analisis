@@ -207,11 +207,6 @@ function _parseCanonColombiano(valor) {
 
 function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, canonDesde, canonHasta, canonTipos) {
   var pendientes = [];
-  // Límite superior sobre fechaResultado para desaplazamiento/biometría, según la regla
-  // real de operación (ver _calcularLimiteLiberacionDesaplazamiento en Biometria.js): un
-  // caso "de esta tarde" no se ofrece hasta la sesión de mañana del siguiente día hábil,
-  // aunque ya esté escalado en la cola.
-  var limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
   for (var i = 1; i < dataSolicitudes.length; i++) {
     var row = dataSolicitudes[i];
     var asignado = String(row[27]).trim();
@@ -242,14 +237,6 @@ function _recolectarPendientesPrincipal(dataSolicitudes, cuotas, conteoHoy, cano
 
     var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
     if (!reasignada && conteoHoy[tipo] >= (cuotas[tipo] || 0)) continue;
-
-    if (esDesaplazamiento && !reasignada) {
-      // _parseDateUnif devuelve un NÚMERO (ms desde epoch), no un Date — y 9999999999999
-      // si no pudo parsear fecha (fechaResultado vacía). No se filtra ese caso: bloquearlo
-      // para siempre sería peor que la prioridad baja que ya le daba el orden existente.
-      var fechaResultadoCaseMs = _parseDateUnif(row[18]);
-      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs > limiteLiberacionDesaplazamiento.getTime()) continue;
-    }
 
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
     var esExterno = canalNorm !== '' && canalNorm !== 'EL_LIBERTADOR';
@@ -338,9 +325,6 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
   var canonHasta = equipo.canonHasta || 0;
   var canonTipos = equipo.canonTipos || [];
 
-  // Límite de liberación para desaplazamiento (mismo cálculo que _recolectarPendientesPrincipal)
-  var limiteLiberacionDesaplazamiento = _calcularLimiteLiberacionDesaplazamiento(new Date());
-
   for (var i = 1; i < dataSolicitudes.length; i++) {
     var row = dataSolicitudes[i];
     var asignado = String(row[27]).trim();
@@ -384,11 +368,10 @@ function _contarYRecolectarPrincipal(dataSolicitudes, userEmail, ctx, cuotas, eq
     var reasignada = row.length > 58 && String(row[58]).trim().toUpperCase() === "REASIGNADA";
     if (!reasignada && conteoHoy[tipoPendiente] >= (cuotas[tipoPendiente] || 0)) continue;
 
-    // Filtro de fecha de liberación para desaplazamiento
-    if (esDesaplazamiento && !reasignada) {
-      var fechaResultadoCaseMs = _parseDateUnif(row[18]);
-      if (fechaResultadoCaseMs !== 9999999999999 && fechaResultadoCaseMs > limiteLiberacionDesaplazamiento.getTime()) continue;
-    }
+    // La ventana de liberación (antes filtrada aquí vía _calcularLimiteLiberacionDesaplazamiento)
+    // ya NO se revisa en la asignación — por decisión de negocio, esa regla de horario
+    // aplica solo en el corte/escalada (_procesarCortePendientes, Biometria.js). Un caso
+    // ya escalado y visible en "solicitud" se ofrece sin volver a filtrar por horario.
 
     // Detección de canal externo
     var canalNorm = String(row[36] || "").toUpperCase().trim().replace(/\s+/g, '_');
