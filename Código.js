@@ -987,7 +987,31 @@ function autoAsignarDesdeEquipo() {
 
   var equipo = resolverEquipoDesdeEspecialidad(info.especialidad);
 
-  return RequestLeadUnificado(equipo.id);
+  var resultado = RequestLeadUnificado(equipo.id);
+
+  // Actualiza pendiente_biometria a fase="ASIGNADA" aquí, en el punto común por el
+  // que pasan TODOS los caminos de auto-asignación (activarYAsignar, autoAsignarConPanel,
+  // guardarYAsignarSiguiente, autoAsignarAlEntrar, y el intento directo del frontend en
+  // _onPanelRecibido) — así ningún camino, presente o futuro, puede olvidarlo. Antes cada
+  // llamador debía acordarse de hacerlo por su cuenta con idsAsignados/faseTarget; el
+  // camino de autoAsignarAlEntrar() nunca lo hacía, dejando casos de desaplazamiento
+  // asignados y cerrados con fase="ESCALADA" atascada para siempre en pendiente_biometria
+  // (bug confirmado en producción: casos con días de antigüedad sin pasar a ASIGNADA).
+  // Los 3 llamadores que ya lo hacían por su cuenta ahora chequean _biometriaEjecutada
+  // antes de repetirlo (ver activarYAsignar/autoAsignarConPanel/guardarYAsignarSiguiente).
+  if (resultado && resultado.idsAsignados && resultado.idsAsignados.length > 0) {
+    try {
+      actualizarFaseBiometriaPendienteDeferred(resultado.idsAsignados, resultado.faseTarget);
+      resultado._biometriaEjecutada = true;
+    } catch (e) {
+      Logger.log('⚠ autoAsignarDesdeEquipo: biometría deferred falló: ' + e.message);
+      resultado._biometriaEjecutada = false;
+    }
+  } else if (resultado) {
+    resultado._biometriaEjecutada = false;
+  }
+
+  return resultado;
 }
 
 function getEquipoDelUsuario() {
@@ -3465,7 +3489,11 @@ function activarYAsignar() {
   // Paso 2.5: biometría deferred server-side (Req 5.6, 5.3, 5.4)
   // Si hay IDs asignados, ejecutar actualización de fase de biometría en esta misma invocación.
   // Esto evita un round-trip adicional desde el cliente.
-  if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
+  // autoAsignarDesdeEquipo() ya lo intenta internamente (_biometriaEjecutada) — este bloque
+  // es solo un respaldo por si esa ejecución interna no llegó a marcarlo.
+  if (resultado.asignacion && resultado.asignacion._biometriaEjecutada) {
+    Logger.log('⏱ SPERF activarYAsignar: biometriaDeferred ya ejecutada dentro de autoAsignarDesdeEquipo(), no se repite');
+  } else if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
     if (Date.now() < _deadline) {
       var _tBio0 = Date.now();
       try {
@@ -3536,7 +3564,11 @@ function autoAsignarConPanel() {
   Logger.log('⏱ SPERF autoAsignarConPanel: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
 
   // --- Paso 1.5: Biometría deferred server-side (Req 5.1, 5.3, 5.4) ---
-  if (asignacion && asignacion.idsAsignados && asignacion.idsAsignados.length > 0) {
+  // autoAsignarDesdeEquipo() ya lo intenta internamente (_biometriaEjecutada) — este
+  // bloque es solo un respaldo por si esa ejecución interna no llegó a marcarlo.
+  if (asignacion && asignacion._biometriaEjecutada) {
+    Logger.log('⏱ SPERF autoAsignarConPanel: biometriaDeferred ya ejecutada dentro de autoAsignarDesdeEquipo(), no se repite');
+  } else if (asignacion && asignacion.idsAsignados && asignacion.idsAsignados.length > 0) {
     if (Date.now() < _deadline) {
       var _tBio0 = Date.now();
       try {
@@ -3674,7 +3706,11 @@ function guardarYAsignarSiguiente(data, resultadoGuardadoPrevio) {
     Logger.log('⏱ SPERF guardarYAsignarSiguiente: autoAsignarDesdeEquipo = ' + (Date.now() - _tAutoAsignar0) + 'ms');
 
     // --- Paso 2.5: Biometría deferred server-side (Req 5.2, 5.3, 5.4) ---
-    if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
+    // autoAsignarDesdeEquipo() ya lo intenta internamente (_biometriaEjecutada) — este
+    // bloque es solo un respaldo por si esa ejecución interna no llegó a marcarlo.
+    if (resultado.asignacion && resultado.asignacion._biometriaEjecutada) {
+      Logger.log('⏱ SPERF guardarYAsignarSiguiente: biometriaDeferred ya ejecutada dentro de autoAsignarDesdeEquipo(), no se repite');
+    } else if (resultado.asignacion && resultado.asignacion.idsAsignados && resultado.asignacion.idsAsignados.length > 0) {
       try {
         actualizarFaseBiometriaPendienteDeferred(resultado.asignacion.idsAsignados, resultado.asignacion.faseTarget);
         resultado.asignacion._biometriaEjecutada = true;
