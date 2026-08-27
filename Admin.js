@@ -3171,6 +3171,10 @@ function admin_actualizarCategoriaPoliza(fila, nuevaCategoria) {
 
   hoja.getRange(fila, 2).setValue(String(nuevaCategoria).trim());
   SpreadsheetApp.flush();
+  // Sin esto, el cambio podía tardar hasta 1 hora (el TTL de ambos cachés) en
+  // reflejarse en la asignación real — ver _invalidarCacheScoreMap/_invalidarCacheScoreBuckets.
+  _invalidarCacheScoreMap();
+  _invalidarCacheScoreBuckets();
   return { success: true, message: "Categoría actualizada correctamente." };
 
   } catch (e) {

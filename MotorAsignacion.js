@@ -549,6 +549,29 @@ function _getScoreBucketsCacheado(ss) {
   return _scoreBucketsMemo;
 }
 
+/**
+ * Invalida el caché de _getScoreBucketsCacheado (CacheService + memo de ejecución).
+ * Se invoca desde admin_actualizarCategoriaPoliza (Admin.js), junto con
+ * _invalidarCacheScoreMap() (Código.js) — ambas cachés leen la misma hoja "score"
+ * pero son independientes, así que un cambio de categoría necesita invalidar las
+ * dos. Mismo patrón que _invalidarCacheTurnos().
+ */
+function _invalidarCacheScoreBuckets() {
+  _scoreBucketsMemo = null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var countStr = cache.get(_SCORE_BUCKETS_CACHE_PREFIX + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [_SCORE_BUCKETS_CACHE_PREFIX + 'COUNT'];
+      for (var i = 0; i < count; i++) keys.push(_SCORE_BUCKETS_CACHE_PREFIX + i);
+      cache.removeAll(keys);
+    }
+  } catch (e) {
+    Logger.log('_invalidarCacheScoreBuckets: error al eliminar cache (' + e.message + ')');
+  }
+}
+
 // `buckets` ya viene construido (por _getScoreBucketsCacheado, fuera del lock —
 // ver RequestLeadUnificado) — esta función solo hace CPU pura sobre candidatos
 // ya en memoria más los 2 setProperty de VIP/rotación, que sí deben serializarse

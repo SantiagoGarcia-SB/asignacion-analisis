@@ -1095,6 +1095,29 @@ function _getScoreMapCacheado() {
   return _scoreMapMemo;
 }
 
+/**
+ * Invalida el caché de _getScoreMapCacheado (CacheService + memo de ejecución).
+ * Se invoca desde admin_actualizarCategoriaPoliza — antes de esto, un cambio de
+ * categoría/VIP hecho por un admin podía tardar hasta 1 hora (el TTL del caché)
+ * en reflejarse, porque nada avisaba a esta caché que la hoja "score" cambió.
+ * Mismo patrón que _invalidarCacheTurnos().
+ */
+function _invalidarCacheScoreMap() {
+  _scoreMapMemo = null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var countStr = cache.get(_SCORE_CACHE_PREFIX + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [_SCORE_CACHE_PREFIX + 'COUNT'];
+      for (var i = 0; i < count; i++) keys.push(_SCORE_CACHE_PREFIX + i);
+      cache.removeAll(keys);
+    }
+  } catch (e) {
+    Logger.log('_invalidarCacheScoreMap: error al eliminar cache (' + e.message + ')');
+  }
+}
+
 function getTableData() {
   const _tGTD0 = Date.now();
   const ss = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
