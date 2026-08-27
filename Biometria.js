@@ -1163,6 +1163,90 @@ function diagnosticarHuerfanasBiometriaEscalada() {
   return { huerfanas: huerfanas };
 }
 
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Patrón
+// inverso al de diagnosticarHuerfanasBiometriaEscalada(): busca filas ESCALADA en
+// pendiente_biometria cuyo caso YA fue asignado (está en Historico_Gestiones), pero cuya
+// fase nunca se actualizó a ASIGNADA — el bug confirmado en producción (solicitudes con
+// días de antigüedad, gestionadas y cerradas con normalidad, pero atascadas en ESCALADA
+// para siempre) y corregido en autoAsignarDesdeEquipo() (Código.js, ver commit
+// 7f567f5): 2 de los 5 caminos que disparan la auto-asignación nunca llamaban a
+// actualizarFaseBiometriaPendienteDeferred() tras asignar. Ese fix previene casos NUEVOS;
+// esta función cuantifica el backlog ya acumulado antes del fix. No modifica nada.
+function diagnosticarBiometriaEscaladaYaAsignada() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+
+  var lastRowBio = hojaBio.getLastRow();
+  if (lastRowBio < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+
+  var ids = hojaBio.getRange(2, 1, lastRowBio - 1, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, lastRowBio - 1, 1).getValues();
+  var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRowBio - 1, 1).getValues();
+
+  var idsEscalada = [];
+  for (var i = 0; i < ids.length; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "ESCALADA") continue;
+    var id = String(ids[i][0]).trim();
+    if (!id) continue;
+    idsEscalada.push({ id: id, fecha: fechas[i][0], filaBio: i + 2 });
+  }
+
+  Logger.log("=== DIAGNÓSTICO biometrías ESCALADA que ya fueron asignadas (" + new Date() + ") ===");
+  Logger.log(idsEscalada.length + " filas en fase ESCALADA en pendiente_biometria.");
+
+  if (idsEscalada.length === 0) {
+    Logger.log("=== FIN DIAGNÓSTICO ===");
+    return { yaAsignadas: [] };
+  }
+
+  var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaHist = ssSol.getSheetByName("Historico_Gestiones");
+  var mapaHist = {}; // id -> {email, fechaFin, tipo}
+  if (hojaHist && hojaHist.getLastRow() > 1) {
+    var lastRowHist = hojaHist.getLastRow();
+    var colsHist = Math.max(61, hojaHist.getLastColumn());
+    var datosHist = hojaHist.getRange(2, 1, lastRowHist - 1, colsHist).getValues();
+    datosHist.forEach(function(r) {
+      var idH = String(r[0]).trim();
+      if (!idH) return;
+      mapaHist[idH] = {
+        email: String(r[25] || '').trim(),
+        fechaFin: r[26] || '',
+        tipo: String(r[60] || '').trim()
+      };
+    });
+  }
+
+  var yaAsignadas = [];
+  idsEscalada.forEach(function(item) {
+    var hist = mapaHist[item.id];
+    if (!hist) return; // no está en Historico_Gestiones — no aplica aquí, ver diagnosticarHuerfanasBiometriaEscalada()
+    var cerrado = hist.fechaFin instanceof Date || String(hist.fechaFin).trim() !== '';
+    yaAsignadas.push({
+      id: item.id,
+      filaBio: item.filaBio,
+      escaladaDesde: item.fecha,
+      email: hist.email,
+      estado: cerrado ? ("CERRADO (fechaFin=" + hist.fechaFin + ")") : "ABIERTO (aún en gestión)",
+      tipo: hist.tipo || '(sin tipo)'
+    });
+  });
+
+  if (yaAsignadas.length === 0) {
+    Logger.log("✅ Ninguna fila ESCALADA corresponde a un caso ya asignado en Historico_Gestiones. Sin backlog de este tipo.");
+  } else {
+    Logger.log("🟡 " + yaAsignadas.length + " filas ESCALADA que en realidad ya se asignaron (deberían ser fase=ASIGNADA):");
+    yaAsignadas.forEach(function(item) {
+      Logger.log("🟡 " + item.id + " (fila " + item.filaBio + " en pendiente_biometria) | escalada desde: " + item.escaladaDesde + " | analista: " + item.email + " | " + item.estado + " | tipo: " + item.tipo);
+    });
+    Logger.log("Esto es solo diagnóstico — no se modificó nada. Para corregir el backlog, decide con el equipo si corresponde marcar estos IDs como fase=ASIGNADA.");
+  }
+
+  Logger.log("=== FIN DIAGNÓSTICO ===");
+  return { yaAsignadas: yaAsignadas };
+}
+
 // DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Con los datos
 // reales de "solicitud" en este momento, lista los candidatos a desaplazamiento
 // disponibles para ofrecer a un analista ahora (vía RequestLeadUnificado o
