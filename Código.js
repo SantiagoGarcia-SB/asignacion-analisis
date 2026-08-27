@@ -498,7 +498,14 @@ function _invalidarCacheUsuarios() {
 // ~15-30KB, el chunking es defensivo para crecimiento futuro.
 
 const _TURNOS_CACHE_PREFIX = 'TURNOS_DATA_V1_';
-const _TURNOS_CACHE_TTL = 300; // segundos (5 min — turnos cambian rara vez, solo admin)
+// 30 min — turnos cambian rara vez y solo un admin puede hacerlo, y cuando lo hace
+// ya invalida la caché al instante (_invalidarCacheTurnos, llamada desde
+// admin_guardarTurno/admin_desactivarTurno/admin_asignarTurnoAnalista). El TTL aquí
+// es solo un respaldo, no la vía real de actualización — se puede alargar sin riesgo
+// de mostrar datos desactualizados tras un cambio real. Antes en 5 min, el cache miss
+// costaba ~2.6-2.8s (medido en producción) cada vez que expiraba sin que nadie lo
+// hubiera invalidado antes.
+const _TURNOS_CACHE_TTL = 1800; // segundos (30 min)
 const _TURNOS_CACHE_TAM_CHUNK = 90000; // bytes por chunk
 
 // Memoización de ejecución (igual que _datosUsuariosMemo para Usuarios):
