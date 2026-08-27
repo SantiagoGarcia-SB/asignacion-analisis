@@ -995,8 +995,13 @@ function _archivarColaBiometriaVencida() {
     // filas), cientos de deleteRow() secuenciales son lentos y pueden agotar la cuota de
     // escritura del servicio de Sheets ("Service Spreadsheets failed..."). En su lugar se
     // reescribe toda la hoja de una sola vez, conservando el orden de las filas que quedan.
+    // También descarta filas ya completamente vacías (row[0]==="") — mismo fix que
+    // eliminarSolicitudesFinalizadas (Código.js): un hueco interno nunca calza con
+    // idsAQuitarDeSolicitud (solo tiene IDs reales) y quedaba ahí para siempre,
+    // inflando getLastRow() en cada lectura futura de "solicitud".
     var filasRestantes = datosActuales.filter(function(row) {
-      return !idsAQuitarDeSolicitud.has(String(row[0]).trim());
+      var id = String(row[0]).trim();
+      return id !== '' && !idsAQuitarDeSolicitud.has(id);
     });
 
     hoja.getRange(2, 1, datosActuales.length, numColsActual).clearContent();

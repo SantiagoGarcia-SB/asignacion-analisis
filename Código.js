@@ -1785,7 +1785,16 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     // desalineando REASIGNADA entre solicitudes.
     const numCols = hoja.getLastColumn();
     const datos = hoja.getRange(2, 1, lastRow - 1, numCols).getValues();
-    const filasFinales = datos.filter(row => !idsAEliminar.has(String(row[0]).trim()));
+    // También descarta filas ya completamente vacías (row[0]==="") — un hueco
+    // interno deja una fila sin ningún dato (ni siquiera el ID de solicitud),
+    // y como idsAEliminar solo contiene IDs reales, ese hueco pasaba el filtro
+    // sin cambios y quedaba ahí para siempre, inflando getLastRow() en cada
+    // lectura futura de "solicitud" (mismo patrón que Historico_Gestiones
+    // "solo crece y nunca se archiva", pero por huecos en vez de crecimiento).
+    const filasFinales = datos.filter(row => {
+      const id = String(row[0]).trim();
+      return id !== '' && !idsAEliminar.has(id);
+    });
     const eliminadas = datos.length - filasFinales.length;
 
     // Recorte en bloque en vez de deleteRow() por fila: con backlogs grandes, cientos de
