@@ -1159,10 +1159,15 @@ function diagnosticarHuerfanasBiometriaEscalada() {
 }
 
 // DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Con los datos
-// reales de "solicitud" en este momento, muestra qué candidatos a desaplazamiento
-// quedarían LIBERADOS (se le pueden ofrecer a un analista ahora, vía RequestLeadUnificado
-// o autoAsignarBiometria) vs. ESPERANDO su ventana (_calcularLimiteLiberacionDesaplazamiento)
-// si se pidiera una asignación en este instante. No asigna ni modifica nada.
+// reales de "solicitud" en este momento, lista los candidatos a desaplazamiento
+// disponibles para ofrecer a un analista ahora (vía RequestLeadUnificado o
+// autoAsignarBiometria). No asigna ni modifica nada.
+//
+// Desde que se quitó el filtro de ventana horaria de la asignación (decisión de
+// negocio: esa regla solo aplica en el corte/escalada, no cada vez que se pide un
+// caso — ver MotorAsignacion.js/autoAsignarBiometria), ya no existe la distinción
+// LIBERADOS/ESPERANDO — todo candidato escalado (APROBADO_PENDIENTE_BIOMETRIA, sin
+// asignar) es ofrecible de inmediato. fechaResultado se muestra solo informativamente.
 function diagnosticarLiberacionDesaplazamiento() {
   var ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hoja = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
@@ -1172,15 +1177,11 @@ function diagnosticarLiberacionDesaplazamiento() {
   if (lastRow < 2) { Logger.log("No hay filas en 'solicitud'."); return; }
 
   var ahora = new Date();
-  var limite = _calcularLimiteLiberacionDesaplazamiento(ahora);
-  var sesion = ahora.getHours() < 12 ? "MAÑANA (antes de 12m)" : "TARDE (desde 12m)";
-
-  Logger.log("=== DIAGNÓSTICO ventana de liberación desaplazamiento (" + ahora + ") ===");
-  Logger.log("Sesión: " + sesion + " | Límite de liberación (fechaResultado <): " + limite);
+  Logger.log("=== DIAGNÓSTICO candidatos desaplazamiento disponibles (" + ahora + ") ===");
+  Logger.log("Nota: la ventana de horario ya NO se revisa al asignar — todo lo listado aquí es ofrecible de inmediato.");
 
   var datos = hoja.getRange(2, 1, lastRow - 1, 59).getValues();
-  var liberados = [];
-  var esperando = [];
+  var disponibles = [];
 
   for (var i = 0; i < datos.length; i++) {
     var row = datos[i];
@@ -1198,20 +1199,12 @@ function diagnosticarLiberacionDesaplazamiento() {
     var fechaResultadoMs = _parseDateUnif(row[18]);
     var sinFechaParseable = fechaResultadoMs === 9999999999999;
 
-    var linea = solicitud + " | fechaResultado=" + (sinFechaParseable ? "(sin fecha)" : new Date(fechaResultadoMs)) + (reasignada ? " | REASIGNADA (bypass)" : "");
-
-    if (reasignada || sinFechaParseable || fechaResultadoMs < limite.getTime()) {
-      liberados.push(linea);
-    } else {
-      esperando.push(linea);
-    }
+    var linea = solicitud + " | fechaResultado=" + (sinFechaParseable ? "(sin fecha)" : new Date(fechaResultadoMs)) + (reasignada ? " | REASIGNADA (bypass cupo)" : "");
+    disponibles.push(linea);
   }
 
-  Logger.log("--- LIBERADOS, se pueden ofrecer a un analista ahora (" + liberados.length + ") ---");
-  liberados.forEach(function(l) { Logger.log("🟢 " + l); });
-
-  Logger.log("--- ESPERANDO su ventana, no se ofrecen todavía (" + esperando.length + ") ---");
-  esperando.forEach(function(l) { Logger.log("🟡 " + l); });
+  Logger.log("--- DISPONIBLES para ofrecer a un analista ahora (" + disponibles.length + ") ---");
+  disponibles.forEach(function(l) { Logger.log("🟢 " + l); });
 
   Logger.log("=== FIN DIAGNÓSTICO ===");
 }
