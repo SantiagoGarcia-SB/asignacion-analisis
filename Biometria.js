@@ -1163,22 +1163,16 @@ function diagnosticarHuerfanasBiometriaEscalada() {
   return { huerfanas: huerfanas };
 }
 
-// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Patrón
-// inverso al de diagnosticarHuerfanasBiometriaEscalada(): busca filas ESCALADA en
-// pendiente_biometria cuyo caso YA fue asignado (está en Historico_Gestiones), pero cuya
-// fase nunca se actualizó a ASIGNADA — el bug confirmado en producción (solicitudes con
-// días de antigüedad, gestionadas y cerradas con normalidad, pero atascadas en ESCALADA
-// para siempre) y corregido en autoAsignarDesdeEquipo() (Código.js, ver commit
-// 7f567f5): 2 de los 5 caminos que disparan la auto-asignación nunca llamaban a
-// actualizarFaseBiometriaPendienteDeferred() tras asignar. Ese fix previene casos NUEVOS;
-// esta función cuantifica el backlog ya acumulado antes del fix. No modifica nada.
-function diagnosticarBiometriaEscaladaYaAsignada() {
+// Lógica compartida por diagnosticarBiometriaEscaladaYaAsignada() (solo reporta) y
+// corregirBiometriaEscaladaYaAsignada() (además corrige) — así ambas nunca pueden
+// divergir sobre qué filas califican. No modifica nada por sí sola.
+function _buscarBiometriaEscaladaYaAsignada() {
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+  if (!hojaBio) return { yaAsignadas: [], totalEscalada: 0, error: "Hoja pendiente_biometria no encontrada." };
 
   var lastRowBio = hojaBio.getLastRow();
-  if (lastRowBio < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+  if (lastRowBio < 2) return { yaAsignadas: [], totalEscalada: 0 };
 
   var ids = hojaBio.getRange(2, 1, lastRowBio - 1, 1).getValues();
   var fases = hojaBio.getRange(2, 76, lastRowBio - 1, 1).getValues();
@@ -1192,13 +1186,7 @@ function diagnosticarBiometriaEscaladaYaAsignada() {
     idsEscalada.push({ id: id, fecha: fechas[i][0], filaBio: i + 2 });
   }
 
-  Logger.log("=== DIAGNÓSTICO biometrías ESCALADA que ya fueron asignadas (" + new Date() + ") ===");
-  Logger.log(idsEscalada.length + " filas en fase ESCALADA en pendiente_biometria.");
-
-  if (idsEscalada.length === 0) {
-    Logger.log("=== FIN DIAGNÓSTICO ===");
-    return { yaAsignadas: [] };
-  }
+  if (idsEscalada.length === 0) return { yaAsignadas: [], totalEscalada: 0 };
 
   var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hojaHist = ssSol.getSheetByName("Historico_Gestiones");
@@ -1228,23 +1216,88 @@ function diagnosticarBiometriaEscaladaYaAsignada() {
       filaBio: item.filaBio,
       escaladaDesde: item.fecha,
       email: hist.email,
-      estado: cerrado ? ("CERRADO (fechaFin=" + hist.fechaFin + ")") : "ABIERTO (aún en gestión)",
+      fechaFin: hist.fechaFin,
+      cerrado: cerrado,
       tipo: hist.tipo || '(sin tipo)'
     });
   });
 
+  return { yaAsignadas: yaAsignadas, totalEscalada: idsEscalada.length };
+}
+
+// DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Patrón
+// inverso al de diagnosticarHuerfanasBiometriaEscalada(): busca filas ESCALADA en
+// pendiente_biometria cuyo caso YA fue asignado (está en Historico_Gestiones), pero cuya
+// fase nunca se actualizó a ASIGNADA — el bug confirmado en producción (solicitudes con
+// días de antigüedad, gestionadas y cerradas con normalidad, pero atascadas en ESCALADA
+// para siempre) y corregido en autoAsignarDesdeEquipo() (Código.js, ver commit
+// 7f567f5): 2 de los 5 caminos que disparan la auto-asignación nunca llamaban a
+// actualizarFaseBiometriaPendienteDeferred() tras asignar. Ese fix previene casos NUEVOS;
+// esta función cuantifica el backlog ya acumulado antes del fix. No modifica nada — para
+// corregir el backlog, ver corregirBiometriaEscaladaYaAsignada().
+function diagnosticarBiometriaEscaladaYaAsignada() {
+  var resultado = _buscarBiometriaEscaladaYaAsignada();
+  if (resultado.error) { Logger.log(resultado.error); return; }
+
+  Logger.log("=== DIAGNÓSTICO biometrías ESCALADA que ya fueron asignadas (" + new Date() + ") ===");
+  Logger.log(resultado.totalEscalada + " filas en fase ESCALADA en pendiente_biometria.");
+
+  var yaAsignadas = resultado.yaAsignadas;
   if (yaAsignadas.length === 0) {
     Logger.log("✅ Ninguna fila ESCALADA corresponde a un caso ya asignado en Historico_Gestiones. Sin backlog de este tipo.");
   } else {
     Logger.log("🟡 " + yaAsignadas.length + " filas ESCALADA que en realidad ya se asignaron (deberían ser fase=ASIGNADA):");
     yaAsignadas.forEach(function(item) {
-      Logger.log("🟡 " + item.id + " (fila " + item.filaBio + " en pendiente_biometria) | escalada desde: " + item.escaladaDesde + " | analista: " + item.email + " | " + item.estado + " | tipo: " + item.tipo);
+      var estadoTxt = item.cerrado ? ("CERRADO (fechaFin=" + item.fechaFin + ")") : "ABIERTO (aún en gestión)";
+      Logger.log("🟡 " + item.id + " (fila " + item.filaBio + " en pendiente_biometria) | escalada desde: " + item.escaladaDesde + " | analista: " + item.email + " | " + estadoTxt + " | tipo: " + item.tipo);
     });
-    Logger.log("Esto es solo diagnóstico — no se modificó nada. Para corregir el backlog, decide con el equipo si corresponde marcar estos IDs como fase=ASIGNADA.");
+    Logger.log("Esto es solo diagnóstico — no se modificó nada. Para corregir el backlog, correr corregirBiometriaEscaladaYaAsignada().");
   }
 
   Logger.log("=== FIN DIAGNÓSTICO ===");
   return { yaAsignadas: yaAsignadas };
+}
+
+// CORRECCIÓN MANUAL, SÍ ESCRIBE — correr desde el editor sin parámetros cuando ya se
+// revisó el resultado de diagnosticarBiometriaEscaladaYaAsignada() y se decidió corregir
+// el backlog. Marca fase="ASIGNADA" (con fecha_actualizacion_fase = la fechaFin real
+// tomada de Historico_Gestiones, para que quede la fecha real del cierre y no la fecha de
+// hoy) en cada fila que _buscarBiometriaEscaladaYaAsignada() identificó. Usa la misma
+// lógica de búsqueda que el diagnóstico (no puede corregir algo distinto de lo que se
+// reportó). Reescribe en un solo bloque para no hacer cientos de escrituras sueltas.
+function corregirBiometriaEscaladaYaAsignada() {
+  var resultado = _buscarBiometriaEscaladaYaAsignada();
+  if (resultado.error) { Logger.log(resultado.error); return; }
+
+  var yaAsignadas = resultado.yaAsignadas;
+  Logger.log("=== CORRECCIÓN biometrías ESCALADA que ya fueron asignadas (" + new Date() + ") ===");
+  if (yaAsignadas.length === 0) {
+    Logger.log("Nada que corregir.");
+    Logger.log("=== FIN CORRECCIÓN ===");
+    return { corregidas: 0 };
+  }
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  var lastRowBio = hojaBio.getLastRow();
+  var numRows = lastRowBio - 1;
+  var faseFechaData = hojaBio.getRange(2, 76, numRows, 2).getValues();
+
+  yaAsignadas.forEach(function(item) {
+    var idx = item.filaBio - 2;
+    // Fecha real del cierre si está disponible (más fiel que "ahora"); si el caso sigue
+    // ABIERTO (aún en gestión, sin fechaFin), usa la fecha/hora actual como aproximación.
+    var fechaFase = item.cerrado ? item.fechaFin : Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+    faseFechaData[idx][0] = "ASIGNADA";
+    faseFechaData[idx][1] = fechaFase;
+  });
+
+  hojaBio.getRange(2, 76, numRows, 2).setValues(faseFechaData);
+  SpreadsheetApp.flush();
+
+  Logger.log("✅ " + yaAsignadas.length + " filas corregidas a fase=ASIGNADA.");
+  Logger.log("=== FIN CORRECCIÓN ===");
+  return { corregidas: yaAsignadas.length };
 }
 
 // DIAGNÓSTICO MANUAL, SOLO LECTURA — correr desde el editor sin parámetros. Con los datos
