@@ -3805,11 +3805,15 @@ function admin_sincronizarEstado(correoAsesor, nuevoEstado){
 
 function autoAsignarAlEntrar() {
   const correo = Session.getActiveUser().getEmail().toLowerCase().trim();
-  
-  const ss = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
-  const hojaUsuarios = ss.getSheetByName("Usuarios");
-  const datos = hojaUsuarios.getDataRange().getValues();
-  
+
+  // Antes releía "Usuarios" completa por su cuenta (getDataRange().getValues()),
+  // y autoAsignarDesdeEquipo() (llamada justo abajo) volvía a leerla completa vía
+  // _getDataUsuarios() porque esta lectura directa nunca llenó su caché/memo —
+  // dos lecturas completas de la misma hoja en la misma ejecución. Usa el mismo
+  // caché de 30s que ya usa RequestLeadUnificado para esta misma validación
+  // (usuario activo) — misma tolerancia a datos ya aceptada en el motor real.
+  const datos = _getDataUsuarios();
+
   const usuario = datos.find(fila => fila[2].toString().toLowerCase().trim() === correo);
   
   if (!usuario) return { success: false, message: "Usuario no registrado" };
