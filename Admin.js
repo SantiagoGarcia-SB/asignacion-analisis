@@ -2952,32 +2952,112 @@ function _asegurarEsquemaScopeMotivos(hoja, tipo) {
       }
     }
     SpreadsheetApp.flush();
+    _invalidarCacheMotivos(tipo);
   } finally {
     if (lock.hasLock()) lock.releaseLock();
   }
 }
 
+// ============================================================
+// CACHÉ DE MOTIVOS (por ejecución + CacheService)
+// ============================================================
+// Antes _getMotivos() releía "MotivosAplazamiento"/"MotivosNegacion" completas
+// en CADA carga de panel (getMotivosAplazamiento/getMotivosNegacion, llamadas
+// desde cargarPanelAnalista en cada boot y en cada poll de ~20s cuando el
+// analista está sin casos) — sin ninguna caché, a diferencia de Usuarios/
+// Turnos/Score/Historico que sí la tienen. Mismo patrón de invalidación
+// proactiva que _invalidarCacheTurnos(): el TTL es solo un respaldo,
+// admin_guardarMotivo/admin_eliminarMotivo invalidan al instante cuando
+// cambia algo real, así que alargarlo no arriesga mostrar datos obsoletos
+// tras una edición real de un admin.
+var _motivosMemo = { aplazamiento: null, negacion: null };
+const _MOTIVOS_CACHE_TTL = 3600; // 1h — catálogo administrado, cambia rara vez
+const _MOTIVOS_CACHE_TAM_CHUNK = 90000;
+
+function _motivosCachePrefix(tipo) {
+  return 'MOTIVOS_' + (tipo === 'negacion' ? 'NEGACION' : 'APLAZAMIENTO') + '_V1_';
+}
+
+/** Invalida el caché de motivos (CacheService + memo de ejecución) para un tipo dado. */
+function _invalidarCacheMotivos(tipo) {
+  _motivosMemo[tipo] = null;
+  try {
+    var prefix = _motivosCachePrefix(tipo);
+    var cache = CacheService.getScriptCache();
+    var countStr = cache.get(prefix + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [prefix + 'COUNT'];
+      for (var i = 0; i < count; i++) keys.push(prefix + i);
+      cache.removeAll(keys);
+    }
+  } catch (e) {
+    Logger.log('_invalidarCacheMotivos: error al eliminar cache (' + e.message + ')');
+  }
+}
+
 function _getMotivos(tipo) {
+  if (_motivosMemo[tipo]) return _motivosMemo[tipo];
+
+  var prefix = _motivosCachePrefix(tipo);
+  var cache = CacheService.getScriptCache();
+  try {
+    var countStr = cache.get(prefix + 'COUNT');
+    if (countStr) {
+      var count = parseInt(countStr, 10);
+      var keys = [];
+      for (var i = 0; i < count; i++) keys.push(prefix + i);
+      var partes = cache.getAll(keys);
+      var json = '';
+      var completo = true;
+      for (var j = 0; j < count; j++) {
+        var parte = partes[prefix + j];
+        if (parte === null || parte === undefined) { completo = false; break; }
+        json += parte;
+      }
+      if (completo) {
+        _motivosMemo[tipo] = JSON.parse(json);
+        return _motivosMemo[tipo];
+      }
+    }
+  } catch (e) {}
+
   var hoja = _getHojaMotivos(tipo);
   var lastRow = hoja.getLastRow();
-  if (lastRow < 2) return [];
-
-  var data = hoja.getRange(2, 1, lastRow - 1, _HEADERS_MOTIVOS.length).getValues();
   var motivos = [];
-  for (var i = 0; i < data.length; i++) {
-    var motivo = String(data[i][1]).trim();
-    if (!motivo) continue;
-    motivos.push({
-      id: parseInt(data[i][0]) || (i + 1),
-      motivo: motivo,
-      activo: String(data[i][2]).toUpperCase() === 'TRUE',
-      orden: parseInt(data[i][3]) || (i + 1),
-      aplicaDigital: String(data[i][4]).toUpperCase() === 'TRUE',
-      aplicaReestudio: String(data[i][5]).toUpperCase() === 'TRUE',
-      aplicaBiometria: String(data[i][6]).toUpperCase() === 'TRUE'
-    });
+  if (lastRow >= 2) {
+    var data = hoja.getRange(2, 1, lastRow - 1, _HEADERS_MOTIVOS.length).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var motivo = String(data[i][1]).trim();
+      if (!motivo) continue;
+      motivos.push({
+        id: parseInt(data[i][0]) || (i + 1),
+        motivo: motivo,
+        activo: String(data[i][2]).toUpperCase() === 'TRUE',
+        orden: parseInt(data[i][3]) || (i + 1),
+        aplicaDigital: String(data[i][4]).toUpperCase() === 'TRUE',
+        aplicaReestudio: String(data[i][5]).toUpperCase() === 'TRUE',
+        aplicaBiometria: String(data[i][6]).toUpperCase() === 'TRUE'
+      });
+    }
+    motivos.sort(function(a, b) { return a.motivo.localeCompare(b.motivo, 'es', { sensitivity: 'base' }); });
   }
-  motivos.sort(function(a, b) { return a.motivo.localeCompare(b.motivo, 'es', { sensitivity: 'base' }); });
+
+  try {
+    var jsonOut = JSON.stringify(motivos);
+    var partesGuardar = {};
+    var n = 0;
+    for (var k = 0; k < jsonOut.length; k += _MOTIVOS_CACHE_TAM_CHUNK) {
+      partesGuardar[prefix + n] = jsonOut.substring(k, k + _MOTIVOS_CACHE_TAM_CHUNK);
+      n++;
+    }
+    partesGuardar[prefix + 'COUNT'] = String(n);
+    cache.putAll(partesGuardar, _MOTIVOS_CACHE_TTL);
+  } catch (e) {
+    Logger.log('_getMotivos: cache.putAll falló (' + e.message + ')');
+  }
+
+  _motivosMemo[tipo] = motivos;
   return motivos;
 }
 
@@ -3038,6 +3118,7 @@ function admin_guardarMotivo(tipo, datos) {
     hoja.appendRow(fila);
   }
   SpreadsheetApp.flush();
+  _invalidarCacheMotivos(tipo);
   return { success: true, message: "Motivo guardado correctamente." };
 
   } catch (e) {
@@ -3065,6 +3146,7 @@ function admin_eliminarMotivo(tipo, id) {
     if (parseInt(ids[i][0]) === parseInt(id)) {
       hoja.deleteRow(i + 2);
       SpreadsheetApp.flush();
+      _invalidarCacheMotivos(tipo);
       return { success: true, message: "Motivo eliminado correctamente." };
     }
   }
