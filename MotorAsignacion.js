@@ -718,20 +718,30 @@ function _ordenarYSeleccionarCandidatos(pendientes, cuotas, conteoHoyTotal, equi
 // ============================================================
 
 function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solicitudesSheet, ss) {
+  var _t0 = Date.now();
+  // Leer ANTES de escribir: Apps Script encola las escrituras y las confirma
+  // recién cuando algo necesita leer datos frescos (o al flush() final). Si el
+  // orden es escritura→lectura de la MISMA fila, esa lectura obliga a Apps
+  // Script a aplicar ya mismo las escrituras pendientes (flush implícito),
+  // perdiendo el batching con el resto del lote — medido en producción: ~6.7s
+  // para asignar 1 solo caso. fechaHora/userEmail/nombreUsuario ya están en
+  // memoria (son los mismos valores que se van a escribir abajo), así que no
+  // hace falta releerlos del sheet.
+  var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 58).getValues()[0];
+  Logger.log('⏱ SPERF _asignarCasoPrincipal: lectura fila = ' + (Date.now() - _t0) + 'ms');
+
+  var _t1 = Date.now();
   solicitudesSheet.getRange(lead.rowIndex, 27, 1, 5).setValues([[fechaHora, userEmail, "", "", nombreUsuario]]);
   solicitudesSheet.getRange(lead.rowIndex, 27).setNumberFormat("dd/MM/yyyy HH:mm:ss");
   solicitudesSheet.getRange(lead.rowIndex, 59).clearContent();
+  Logger.log('⏱ SPERF _asignarCasoPrincipal: escrituras en solicitud = ' + (Date.now() - _t1) + 'ms');
 
-  // Dentro de la misma ejecución, las lecturas ya ven las escrituras anteriores
-  // sin necesidad de flush() — el flush real se hace una sola vez al final del
-  // lote completo, en RequestLeadUnificado (evita decenas de confirmaciones sueltas).
-  var s = solicitudesSheet.getRange(lead.rowIndex, 1, 1, 58).getValues()[0];
   var histRow = [
     s[0],s[1],s[2],s[3],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[13],s[14],s[15],
     s[16],s[17],s[18],s[19],s[20],s[21],
     s[23],s[24],
-    s[26],s[27],s[28],
-    s[30],s[31],s[32],s[33],
+    fechaHora, userEmail, "",
+    nombreUsuario,s[31],s[32],s[33],
     s[35],s[36],
     '',0,0,0,
     '','',
@@ -740,19 +750,31 @@ function _asignarCasoPrincipal(lead, userEmail, nombreUsuario, fechaHora, solici
     s[51],s[52],s[53],s[54],s[55],s[56],s[57],
     lead.tipo
   ];
+  var _t2 = Date.now();
   var hojaHist = ss.getSheetByName("Historico_Gestiones");
   if (!hojaHist) hojaHist = ss.insertSheet("Historico_Gestiones");
   hojaHist.appendRow(histRow);
   hojaHist.getRange(hojaHist.getLastRow(), 35, 1, 3).setNumberFormat("0.00");
+  Logger.log('⏱ SPERF _asignarCasoPrincipal: appendRow + formato Historico_Gestiones = ' + (Date.now() - _t2) + 'ms');
+
+  var _t3 = Date.now();
   solicitudesSheet.deleteRow(lead.rowIndex);
+  Logger.log('⏱ SPERF _asignarCasoPrincipal: deleteRow = ' + (Date.now() - _t3) + 'ms');
+
   _registrarAsignacionContador(userEmail, lead.tipo);
 }
 
 function _asignarCasoReestudios(lead, userEmail, nombreUsuario, fechaHora, reestudiosSheet, ssReestudios) {
+  // Mismo motivo que en _asignarCasoPrincipal: leer antes de escribir evita el
+  // flush implícito que provoca una lectura justo después de escribir la misma fila.
+  var filaCompleta = reestudiosSheet.getRange(lead.rowIndex, 1, 1, 18).getValues()[0];
+
   reestudiosSheet.getRange(lead.rowIndex, 7, 1, 3).setValues([[userEmail, nombreUsuario, fechaHora]]);
   reestudiosSheet.getRange(lead.rowIndex, 9).setNumberFormat("dd/MM/yyyy HH:mm:ss");
 
-  var filaCompleta = reestudiosSheet.getRange(lead.rowIndex, 1, 1, 18).getValues()[0];
+  filaCompleta[6] = userEmail;
+  filaCompleta[7] = nombreUsuario;
+  filaCompleta[8] = fechaHora;
   filaCompleta.push(lead.tipo);
   var hojaHistR = ssReestudios.getSheetByName("Historico_Gestiones");
   if (!hojaHistR) hojaHistR = ssReestudios.insertSheet("Historico_Gestiones");

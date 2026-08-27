@@ -746,54 +746,53 @@ var COL_INTENTOS_SAI_NULL = 78;
 function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
   if (!consecutivos || (consecutivos instanceof Set ? consecutivos.size === 0 : consecutivos.length === 0)) return;
 
-  var idsSet = consecutivos instanceof Set ? consecutivos : new Set(consecutivos);
+  var ids = consecutivos instanceof Set ? Array.from(consecutivos) : consecutivos;
   var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+  var FASES_TERMINALES = new Set(["RESUELTA", "RESUELTA_EN_COLA", "ASIGNADA", "ARCHIVADA"]);
 
   try {
+    var _t0 = Date.now();
     var ssBio = _abrirSSCacheado(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-    if (!hojaBio || hojaBio.getLastRow() < 2) return;
+    var lastRow = hojaBio ? hojaBio.getLastRow() : 0;
+    Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: abrir sheet + getLastRow = ' + (Date.now() - _t0) + 'ms');
+    if (!hojaBio || lastRow < 2) return;
 
-    var lastRow = hojaBio.getLastRow();
-    var numRows = lastRow - 1;
-    var ids = hojaBio.getRange(2, 1, numRows, 1).getValues();
-    // Leer columnas 76 (fase) y 77 (fecha_actualizacion_fase) juntas en un solo getValues()
-    var faseFechaData = hojaBio.getRange(2, 76, numRows, 2).getValues();
-
-    var FASES_TERMINALES = new Set(["RESUELTA", "RESUELTA_EN_COLA", "ASIGNADA", "ARCHIVADA"]);
-    var filasModificadas = []; // índices de filas que se modificaron en el array
+    // Este flujo actualiza como mucho unos pocos IDs por llamada (los recién
+    // asignados en una sola pasada del motor), nunca la cola entera — usar
+    // TextFinder por ID en vez de leer las columnas completas de la hoja
+    // (que puede tener miles de filas) evita pagar un getValues()/setValues()
+    // de toda la cola solo para tocar 1-3 filas.
+    var colId = hojaBio.getRange(2, 1, lastRow - 1, 1);
     var actualizadas = 0;
 
     for (var i = 0; i < ids.length; i++) {
-      var solId = String(ids[i][0]).trim();
-      if (!idsSet.has(solId)) continue;
+      var solId = String(ids[i]).trim();
+      if (!solId) continue;
 
-      var faseActual = String(faseFechaData[i][0]).trim().toUpperCase();
+      var _tFind0 = Date.now();
+      var celda = colId.createTextFinder(solId).matchEntireCell(true).findNext();
+      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: TextFinder id=' + solId + ' = ' + (Date.now() - _tFind0) + 'ms');
+      if (!celda) continue;
+
+      var fila = celda.getRow();
+      var _tRead0 = Date.now();
+      var faseActual = String(hojaBio.getRange(fila, 76).getValue()).trim().toUpperCase();
+      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: lectura fase actual = ' + (Date.now() - _tRead0) + 'ms');
       if (FASES_TERMINALES.has(faseActual)) continue; // ya cerrada, no sobreescribir
 
-      // Modificar en memoria
-      faseFechaData[i][0] = nuevaFase;
-      faseFechaData[i][1] = ahora;
-      filasModificadas.push(i);
+      var _tWrite0 = Date.now();
+      hojaBio.getRange(fila, 76, 1, 2).setValues([[nuevaFase, ahora]]);
+      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: setValues = ' + (Date.now() - _tWrite0) + 'ms');
       actualizadas++;
-
-      idsSet.delete(solId);
-      if (idsSet.size === 0) break; // ya encontró todas
     }
 
     if (actualizadas === 0) return;
 
-    if (actualizadas === 1) {
-      // Caso de 1 sola fila: escritura directa sin reescribir el bloque completo
-      var rowIdx = filasModificadas[0];
-      hojaBio.getRange(rowIdx + 2, 76, 1, 2).setValues([[nuevaFase, ahora]]);
-    } else {
-      // Caso de N filas: escribir de vuelta el bloque completo de 2 columnas con un solo setValues()
-      hojaBio.getRange(2, 76, numRows, 2).setValues(faseFechaData);
-    }
-
+    var _tFlush0 = Date.now();
     SpreadsheetApp.flush();
-    Logger.log("📝 pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "' (batch write).");
+    Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: flush = ' + (Date.now() - _tFlush0) + 'ms');
+    Logger.log("📝 pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "' (TextFinder).");
   } catch (e) {
     // No lanzar: esta operación es de trazabilidad, no debe romper el flujo principal.
     Logger.log("⚠️ Error actualizando fase en pendiente_biometria (" + nuevaFase + "): " + e.message);

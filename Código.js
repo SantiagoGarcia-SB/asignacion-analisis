@@ -3296,7 +3296,9 @@ function actualizarEstadoPropio(nuevoEstado) {
   // Ahorra ~1.5s de lock ocupado innecesariamente.
   const correoAnalista = Session.getActiveUser().getEmail();
   if (nuevoEstado.toUpperCase() === 'ACTIVO') {
+    const _tAbrirPre0 = Date.now();
     const ssPre = _abrirSSCacheado(TARGET_SOLICITUDES_SS_ID);
+    Logger.log('⏱ SPERF actualizarEstadoPropio: _abrirSSCacheado (primera apertura de la ejecución) = ' + (Date.now() - _tAbrirPre0) + 'ms');
     const turnoCheck = verificarTurnoActivo(correoAnalista.toLowerCase().trim(), ssPre);
     Logger.log('⏱ SPERF actualizarEstadoPropio: verificarTurnoActivo (previo al lock) = ' + (Date.now() - _tAEP0) + 'ms');
     if (!turnoCheck.ok) {
@@ -3976,10 +3978,15 @@ function obtenerInfoTurnoActual() {
       return h * 60 + m;
     }
 
-    const hojaAT = ss.getSheetByName('Analistas_Turnos');
-    if (!hojaAT || hojaAT.getLastRow() <= 1) return { tieneTurno: false };
+    // Reusa la caché/memo que cargarPanelAnalista() ya calentó unas líneas antes
+    // (ver "Pre-warm" en cargarPanelAnalista) — antes esta función releía
+    // Analistas_Turnos y Turnos por su cuenta (2 getValues() + 1 getDisplayValues())
+    // pese a que esos datos ya estaban en memoria, pagando ~2900ms de más en cada
+    // cargarPanelAnalista() (todo ciclo de "guardar y asignar siguiente").
+    const _turnosData = _getTurnosDataCacheado(ss);
+    const dataAT = _turnosData.dataAT;
+    if (!dataAT || dataAT.length <= 1) return { tieneTurno: false };
 
-    const dataAT = hojaAT.getDataRange().getValues();
     let idTurnoActivo = null;
     for (let i = 1; i < dataAT.length; i++) {
       const r = dataAT[i];
@@ -3996,11 +4003,10 @@ function obtenerInfoTurnoActual() {
     }
     if (!idTurnoActivo) return { tieneTurno: false };
 
-    const hojaTurnos = ss.getSheetByName('Turnos');
-    if (!hojaTurnos || hojaTurnos.getLastRow() <= 1) return { tieneTurno: false };
+    const dataTurnos = _turnosData.dataTurnos;
+    const dispTurnos = _turnosData.dispTurnos;
+    if (!dataTurnos || dataTurnos.length <= 1) return { tieneTurno: false };
 
-    const dataTurnos = hojaTurnos.getDataRange().getValues();
-    const dispTurnos = hojaTurnos.getDataRange().getDisplayValues();
     const diaISO = parseInt(Utilities.formatDate(now, TIMEZONE, 'u'), 10);
     const dIdx = diaISO - 1;
     const boolCol = 3 + dIdx;
