@@ -1106,13 +1106,16 @@ function diagnosticarArchivadoColaBiometria() {
 // pero este chequeo no depende de eso por si esa escritura también llegara a fallar). Si no
 // está en ninguno de los 2, es huérfana: se reporta pero no se modifica nada — la
 // recuperación es manual, mismo patrón que recuperarLoteHuerfanasBiometria().
-function diagnosticarHuerfanasBiometriaEscalada() {
+// Lógica compartida por diagnosticarHuerfanasBiometriaEscalada() (solo reporta) y
+// corregirHuerfanasBiometriaResueltaEnCola() (además corrige) — así ambas nunca pueden
+// divergir sobre qué filas califican. No modifica nada por sí sola.
+function _buscarHuerfanasBiometriaEscalada() {
   var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
   var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-  if (!hojaBio) { Logger.log("Hoja pendiente_biometria no encontrada."); return; }
+  if (!hojaBio) return { huerfanas: [], totalEscalada: 0, error: "Hoja pendiente_biometria no encontrada." };
 
   var lastRowBio = hojaBio.getLastRow();
-  if (lastRowBio < 2) { Logger.log("No hay filas en pendiente_biometria."); return; }
+  if (lastRowBio < 2) return { huerfanas: [], totalEscalada: 0 };
 
   var ids = hojaBio.getRange(2, 1, lastRowBio - 1, 1).getValues();
   var fases = hojaBio.getRange(2, 76, lastRowBio - 1, 1).getValues();
@@ -1123,16 +1126,10 @@ function diagnosticarHuerfanasBiometriaEscalada() {
     if (String(fases[i][0]).trim().toUpperCase() !== "ESCALADA") continue;
     var id = String(ids[i][0]).trim();
     if (!id) continue;
-    idsEscalada.push({ id: id, fecha: fechas[i][0] });
+    idsEscalada.push({ id: id, fecha: fechas[i][0], filaBio: i + 2 });
   }
 
-  Logger.log("=== DIAGNÓSTICO huérfanas de biometría escalada (" + new Date() + ") ===");
-  Logger.log(idsEscalada.length + " filas en fase ESCALADA en pendiente_biometria.");
-
-  if (idsEscalada.length === 0) {
-    Logger.log("=== FIN DIAGNÓSTICO ===");
-    return { huerfanas: [] };
-  }
+  if (idsEscalada.length === 0) return { huerfanas: [], totalEscalada: 0 };
 
   var ssSol = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
   var hojaSol = ssSol.getSheetByName(SHEET_NAME_SOLICITUDES);
@@ -1148,19 +1145,72 @@ function diagnosticarHuerfanasBiometriaEscalada() {
   var huerfanas = [];
   idsEscalada.forEach(function(item) {
     if (setIdsSol.has(item.id) || setIdsHist.has(item.id)) return;
-    huerfanas.push(item.id + " (fase_actualizada: " + item.fecha + ")");
+    huerfanas.push(item);
   });
 
+  return { huerfanas: huerfanas, totalEscalada: idsEscalada.length };
+}
+
+function diagnosticarHuerfanasBiometriaEscalada() {
+  var resultado = _buscarHuerfanasBiometriaEscalada();
+  if (resultado.error) { Logger.log(resultado.error); return; }
+
+  Logger.log("=== DIAGNÓSTICO huérfanas de biometría escalada (" + new Date() + ") ===");
+  Logger.log(resultado.totalEscalada + " filas en fase ESCALADA en pendiente_biometria.");
+
+  var huerfanas = resultado.huerfanas;
   if (huerfanas.length === 0) {
     Logger.log("✅ Todas las filas ESCALADA están en 'solicitud' o Historico_Gestiones. Sin huérfanas.");
   } else {
     Logger.log("🔴 " + huerfanas.length + " huérfanas encontradas (ESCALADA pero ausentes de 'solicitud' y de Historico_Gestiones):");
-    huerfanas.forEach(function(l) { Logger.log("🔴 " + l); });
-    Logger.log("Recuperación manual: adaptar recuperarLoteHuerfanasBiometria() con estos IDs.");
+    huerfanas.forEach(function(item) { Logger.log("🔴 " + item.id + " (fase_actualizada: " + item.fecha + ")"); });
+    Logger.log("Esto es solo diagnóstico — no se modificó nada. Para corregir el backlog, correr corregirHuerfanasBiometriaResueltaEnCola().");
   }
 
   Logger.log("=== FIN DIAGNÓSTICO ===");
-  return { huerfanas: huerfanas };
+  return { huerfanas: huerfanas.map(function(item) { return item.id + " (fase_actualizada: " + item.fecha + ")"; }) };
+}
+
+// CORRECCIÓN MANUAL, SÍ ESCRIBE — correr desde el editor sin parámetros cuando ya se
+// revisó el resultado de diagnosticarHuerfanasBiometriaEscalada() y se decidió corregir
+// el backlog. Marca fase="RESUELTA_EN_COLA" (con fecha_actualizacion_fase = ahora, ya que
+// a diferencia del backlog de "ya asignada" no hay una fecha real de cierre que rescatar
+// de ningún lado — el caso nunca llegó a Historico_Gestiones) en cada fila que
+// _buscarHuerfanasBiometriaEscalada() identificó. Usa la misma lógica de búsqueda que el
+// diagnóstico. "RESUELTA_EN_COLA" es la fase correcta para este patrón — es exactamente lo
+// que habría pasado si el fix de eliminarSolicitudesFinalizadas() (commit c5f2aa3) ya
+// hubiera estado activo cuando estos casos salieron de la cola.
+function corregirHuerfanasBiometriaResueltaEnCola() {
+  var resultado = _buscarHuerfanasBiometriaEscalada();
+  if (resultado.error) { Logger.log(resultado.error); return; }
+
+  var huerfanas = resultado.huerfanas;
+  Logger.log("=== CORRECCIÓN huérfanas de biometría escalada (" + new Date() + ") ===");
+  if (huerfanas.length === 0) {
+    Logger.log("Nada que corregir.");
+    Logger.log("=== FIN CORRECCIÓN ===");
+    return { corregidas: 0 };
+  }
+
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  var lastRowBio = hojaBio.getLastRow();
+  var numRows = lastRowBio - 1;
+  var faseFechaData = hojaBio.getRange(2, 76, numRows, 2).getValues();
+  var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+
+  huerfanas.forEach(function(item) {
+    var idx = item.filaBio - 2;
+    faseFechaData[idx][0] = "RESUELTA_EN_COLA";
+    faseFechaData[idx][1] = ahora;
+  });
+
+  hojaBio.getRange(2, 76, numRows, 2).setValues(faseFechaData);
+  SpreadsheetApp.flush();
+
+  Logger.log("✅ " + huerfanas.length + " filas corregidas a fase=RESUELTA_EN_COLA.");
+  Logger.log("=== FIN CORRECCIÓN ===");
+  return { corregidas: huerfanas.length };
 }
 
 // Lógica compartida por diagnosticarBiometriaEscaladaYaAsignada() (solo reporta) y
