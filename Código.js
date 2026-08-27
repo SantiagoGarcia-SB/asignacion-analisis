@@ -1840,6 +1840,27 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
   } finally {
     lock.releaseLock();
   }
+
+  // Avisa a pendiente_biometria (fuera del lock ya liberado arriba): un ID en idsAEliminar
+  // puede corresponder a un caso de desaplazamiento que SAI dejó de reportar como
+  // APROBADO_PENDIENTE_BIOMETRIA (avanzó a RECHAZADO/APROBADO/CODEUDORES_REQUERIDOS) y que
+  // esta función acaba de sacar de "solicitud". Antes de este fix, esta función nunca tocaba
+  // pendiente_biometria — el caso quedaba con fase="ESCALADA" congelada para siempre (huérfano
+  // confirmado en producción: 447 casos, con fechas hasta el día del fix). limpiarBiometriasResueltas()
+  // (Biometria.js) sí notifica correctamente este mismo tipo de transición, pero corre con mucha
+  // menor frecuencia (~1 vez/hora) que este sync (cada 5-10 min, 24/7) — casi siempre esta función
+  // ganaba la carrera y se quedaba con la única oportunidad de avisar. actualizarFaseBiometriaPendienteDeferred
+  // ya está diseñada para no lanzar excepciones y para ignorar IDs que no estén en pendiente_biometria
+  // (la mayoría de idsAEliminar son casos Digital/Reestudio normales, no biometría), así que es seguro
+  // llamarla siempre con el set completo. Deliberadamente fuera del lock: no es una operación urgente
+  // ni bloqueante para nadie más, y pendiente_biometria puede tener miles de filas.
+  try {
+    if (idsAEliminar && idsAEliminar.size > 0) {
+      actualizarFaseBiometriaPendienteDeferred(idsAEliminar, "RESUELTA_EN_COLA");
+    }
+  } catch (e) {
+    Logger.log("⚠ eliminarSolicitudesFinalizadas: aviso a pendiente_biometria falló: " + e.message);
+  }
 }
 
 // Archiva CODEUDORES_REQUERIDOS antes de borrarlas, para poder revisarlas luego aunque queden fuera de la ventana de fechas de la API.
