@@ -837,6 +837,7 @@ function admin_asignarManualmente(solicitudId, tipo, correoAnalista) {
       }
 
       var fechaHora = new Date();
+      var asignadoOk = false; // se notifica a pendiente_biometria fuera del lock, ver abajo
 
       // 1) Buscar en "solicitud" (digital/desaplazamiento/inducción)
       var sheetPrincipal = ss.getSheetByName(SHEET_NAME_SOLICITUDES);
@@ -847,6 +848,7 @@ function admin_asignarManualmente(solicitudId, tipo, correoAnalista) {
       if (matchPrincipal) {
         _asignarCasoPrincipal({ rowIndex: matchPrincipal.getRow(), tipo: tipo }, email, nombreAnalista, fechaHora, sheetPrincipal, ss);
         SpreadsheetApp.flush();
+        asignadoOk = true;
         return { success: true, message: "Solicitud " + idBuscado + " asignada a " + nombreAnalista + "." };
       }
 
@@ -866,6 +868,23 @@ function admin_asignarManualmente(solicitudId, tipo, correoAnalista) {
 
     } finally {
       if (lock.hasLock()) lock.releaseLock();
+      // Avisa a pendiente_biometria (fuera del lock, ya liberado arriba): si idBuscado
+      // corresponde a un caso de desaplazamiento/biometriaFallida escalado (fase=ESCALADA),
+      // esta asignación manual acaba de sacarlo de "solicitud" igual que lo haría
+      // RequestLeadUnificado — pero admin_asignarManualmente() llama a _asignarCasoPrincipal
+      // directamente, sin pasar por autoAsignarDesdeEquipo() (donde vive el fix del commit
+      // 7f567f5), así que sin este aviso el caso quedaría con fase="ESCALADA" congelada para
+      // siempre (mismo patrón de huérfano confirmado en producción, 447 casos, ver commit
+      // c5f2aa3). Seguro llamarla siempre: _actualizarFaseBiometriaPendiente ignora IDs que
+      // no estén en pendiente_biometria (la mayoría de asignaciones manuales son Digital/
+      // Reestudio, no biometría) o que ya tengan fase terminal.
+      if (typeof asignadoOk !== 'undefined' && asignadoOk) {
+        try {
+          actualizarFaseBiometriaPendienteDeferred([idBuscado], "ASIGNADA");
+        } catch (eBio) {
+          Logger.log("⚠ admin_asignarManualmente: aviso a pendiente_biometria falló: " + eBio.message);
+        }
+      }
     }
   } catch (e) {
     return { success: false, message: e.message };
