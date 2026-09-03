@@ -155,6 +155,7 @@ function limpiarBiometriasResueltas() {
       return;
     }
 
+    var idsEliminadosConfirmados = new Set();
     const lock = LockService.getScriptLock();
     try {
       lock.waitLock(30000);
@@ -180,6 +181,7 @@ function limpiarBiometriasResueltas() {
         const estado = String(fila[16]).toUpperCase().trim();
 
         if (estado === "APROBADO_PENDIENTE_BIOMETRIA" && idsAEliminar.has(solicitud)) {
+          idsEliminadosConfirmados.add(solicitud);
           eliminadas++;
           continue; // se excluye del recorte en bloque
         }
@@ -209,10 +211,14 @@ function limpiarBiometriasResueltas() {
       if (lock.hasLock()) lock.releaseLock();
     }
 
-    // Fuera del lock: registrar en pendiente_biometria que estas solicitudes se resolvieron
-    // solas mientras estaban en la cola (ningún analista las tomó).
-    if (idsAEliminar.size > 0) {
-      _actualizarFaseBiometriaPendiente(idsAEliminar, "RESUELTA_EN_COLA");
+    // Solo se actualizan las filas que efectivamente se retiraron de solicitud en esta corrida.
+    // Una candidata que fue asignada por otro proceso mientras se esperaba el lock no puede
+    // terminar erróneamente como RESUELTA_EN_COLA.
+    if (idsEliminadosConfirmados.size > 0) {
+      var resultadoFase = _actualizarFaseBiometriaPendiente(idsEliminadosConfirmados, "RESUELTA_EN_COLA");
+      if (!resultadoFase.success || resultadoFase.actualizadasIds.length !== idsEliminadosConfirmados.size) {
+        Logger.log("⚠️ limpiarBiometriasResueltas: fase RESUELTA_EN_COLA incompleta. " + JSON.stringify(resultadoFase));
+      }
     }
   } catch (e) {
     Logger.log("❌ Error en limpiarBiometriasResueltas: " + e.message);
@@ -401,7 +407,10 @@ function autoAsignarBiometria() {
 
     // Registrar en pendiente_biometria que estas solicitudes fueron asignadas a un analista.
     var idsAsignadas = candidatosParaAsignar.map(c => String(c.row[0]).trim()).filter(id => id);
-    _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");
+    var sincronizacionAsignadas = _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");
+    if (!sincronizacionAsignadas.success || sincronizacionAsignadas.actualizadasIds.length !== idsAsignadas.length) {
+      Logger.log("⚠️ autoAsignarBiometria: fase ASIGNADA incompleta. " + JSON.stringify(sincronizacionAsignadas));
+    }
 
     return { success: true, message: `Se te asignaron ${filasHist.length} nuevas solicitudes.`, nueva: true };
 
@@ -734,68 +743,77 @@ var COL_FECHA_ACTUALIZACION_FASE = 77;
 var COL_INTENTOS_SAI_NULL = 78;
 
 /**
- * Actualiza la fase final en pendiente_biometria para una lista de consecutivos.
- * Busca cada consecutivo en la hoja y marca la fase indicada + timestamp.
- * Solo actualiza filas cuya fase actual sea "ESCALADA" (las únicas que deberían
- * estar en la cola "solicitud"). Si la fase ya es terminal (RESUELTA, RESUELTA_EN_COLA,
- * ASIGNADA, ARCHIVADA), no la sobreescribe — protege contra doble ejecución.
- *
- * @param {Set|Array} consecutivos - IDs de solicitud a actualizar
- * @param {string} nuevaFase - "RESUELTA_EN_COLA" | "ASIGNADA" | "ARCHIVADA"
+ * Confirma una salida de la cola únicamente desde fase ESCALADA.
+ * @param {Set|Array<string>} consecutivos IDs que ya salieron de "solicitud".
+ * @param {string} nuevaFase ASIGNADA, RESUELTA_EN_COLA o ARCHIVADA.
+ * @returns {{success: boolean, actualizadasIds: string[], noEncontradas: string[], omitidas: string[], error: string|null}}
  */
 function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
-  if (!consecutivos || (consecutivos instanceof Set ? consecutivos.size === 0 : consecutivos.length === 0)) return;
+  var resultado = { success: false, actualizadasIds: [], noEncontradas: [], omitidas: [], error: null };
+  if (!consecutivos || (consecutivos instanceof Set ? consecutivos.size === 0 : consecutivos.length === 0)) {
+    resultado.success = true;
+    return resultado;
+  }
+
+  var fasesOrigenPermitidas = {
+    ASIGNADA: new Set(["ESCALADA", "WA_ENVIADO"]),
+    RESUELTA_EN_COLA: new Set(["ESCALADA"]),
+    ARCHIVADA: new Set(["ESCALADA"])
+  };
+  if (!fasesOrigenPermitidas[nuevaFase]) {
+    resultado.error = "Fase de salida no permitida: " + nuevaFase;
+    Logger.log("⚠️ " + resultado.error);
+    return resultado;
+  }
 
   var ids = consecutivos instanceof Set ? Array.from(consecutivos) : consecutivos;
   var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-  var FASES_TERMINALES = new Set(["RESUELTA", "RESUELTA_EN_COLA", "ASIGNADA", "ARCHIVADA"]);
-
   try {
-    var _t0 = Date.now();
     var ssBio = _abrirSSCacheado(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
     var lastRow = hojaBio ? hojaBio.getLastRow() : 0;
-    Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: abrir sheet + getLastRow = ' + (Date.now() - _t0) + 'ms');
-    if (!hojaBio || lastRow < 2) return;
-
-    // Este flujo actualiza como mucho unos pocos IDs por llamada (los recién
-    // asignados en una sola pasada del motor), nunca la cola entera — usar
-    // TextFinder por ID en vez de leer las columnas completas de la hoja
-    // (que puede tener miles de filas) evita pagar un getValues()/setValues()
-    // de toda la cola solo para tocar 1-3 filas.
-    var colId = hojaBio.getRange(2, 1, lastRow - 1, 1);
-    var actualizadas = 0;
-
-    for (var i = 0; i < ids.length; i++) {
-      var solId = String(ids[i]).trim();
-      if (!solId) continue;
-
-      var _tFind0 = Date.now();
-      var celda = colId.createTextFinder(solId).matchEntireCell(true).findNext();
-      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: TextFinder id=' + solId + ' = ' + (Date.now() - _tFind0) + 'ms');
-      if (!celda) continue;
-
-      var fila = celda.getRow();
-      var _tRead0 = Date.now();
-      var faseActual = String(hojaBio.getRange(fila, 76).getValue()).trim().toUpperCase();
-      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: lectura fase actual = ' + (Date.now() - _tRead0) + 'ms');
-      if (FASES_TERMINALES.has(faseActual)) continue; // ya cerrada, no sobreescribir
-
-      var _tWrite0 = Date.now();
-      hojaBio.getRange(fila, 76, 1, 2).setValues([[nuevaFase, ahora]]);
-      Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: setValues = ' + (Date.now() - _tWrite0) + 'ms');
-      actualizadas++;
+    if (!hojaBio || lastRow < 2) {
+      resultado.error = "Hoja pendiente_biometria sin filas disponibles.";
+      return resultado;
     }
 
-    if (actualizadas === 0) return;
+    var colId = hojaBio.getRange(2, 1, lastRow - 1, 1);
+    ids.forEach(function(id) {
+      var solId = String(id || "").trim();
+      if (!solId) return;
 
-    var _tFlush0 = Date.now();
-    SpreadsheetApp.flush();
-    Logger.log('⏱ SPERF _actualizarFaseBiometriaPendiente: flush = ' + (Date.now() - _tFlush0) + 'ms');
-    Logger.log("📝 pendiente_biometria: " + actualizadas + " filas actualizadas a fase '" + nuevaFase + "' (TextFinder).");
+      var coincidencias = colId.createTextFinder(solId).matchEntireCell(true).findAll();
+      if (coincidencias.length === 0) {
+        resultado.noEncontradas.push(solId);
+        return;
+      }
+
+      var actualizoId = false;
+      coincidencias.forEach(function(celda) {
+        var fila = celda.getRow();
+        var faseActual = String(hojaBio.getRange(fila, 76).getValue()).trim().toUpperCase();
+        if (!fasesOrigenPermitidas[nuevaFase].has(faseActual)) {
+          resultado.omitidas.push(solId + " (fase=" + (faseActual || "vacía") + ")");
+          return;
+        }
+        hojaBio.getRange(fila, 76, 1, 2).setValues([[nuevaFase, ahora]]);
+        actualizoId = true;
+      });
+      if (actualizoId) resultado.actualizadasIds.push(solId);
+    });
+
+    if (resultado.actualizadasIds.length > 0) SpreadsheetApp.flush();
+    resultado.success = resultado.noEncontradas.length === 0;
+    Logger.log(
+      "📝 pendiente_biometria → " + nuevaFase + ": " + resultado.actualizadasIds.length
+      + " actualizadas, " + resultado.noEncontradas.length + " no encontradas, "
+      + resultado.omitidas.length + " omitidas por fase."
+    );
+    return resultado;
   } catch (e) {
-    // No lanzar: esta operación es de trazabilidad, no debe romper el flujo principal.
+    resultado.error = e.message;
     Logger.log("⚠️ Error actualizando fase en pendiente_biometria (" + nuevaFase + "): " + e.message);
+    return resultado;
   }
 }
 
@@ -811,11 +829,7 @@ function _actualizarFaseBiometriaPendiente(consecutivos, nuevaFase) {
  * @param {string} fase - Nueva fase ("ASIGNADA", "RESUELTA_EN_COLA", "ARCHIVADA", etc.)
  */
 function actualizarFaseBiometriaPendienteDeferred(ids, fase) {
-  try {
-    _actualizarFaseBiometriaPendiente(ids, fase);
-  } catch (e) {
-    Logger.log('⚠️ actualizarFaseBiometriaPendienteDeferred falló: ' + e.message + ' | IDs: ' + JSON.stringify(ids) + ' | fase: ' + fase);
-  }
+  return _actualizarFaseBiometriaPendiente(ids, fase);
 }
 
 // SUSPENDIDA (2026-07-13): la captura de nuevas biometrías se fusionó dentro de
@@ -1011,8 +1025,11 @@ function _archivarColaBiometriaVencida() {
     SpreadsheetApp.flush();
     Logger.log("✅ " + idsAQuitarDeSolicitud.size + " solicitudes vencidas eliminadas de cola (" + vent.corteOrigen + ").");
 
-    // Registrar en pendiente_biometria que estas solicitudes se vencieron sin ser asignadas.
-    _actualizarFaseBiometriaPendiente(idsAQuitarDeSolicitud, "ARCHIVADA");
+    // Registrar en pendiente_biometria exactamente las solicitudes que esta ejecución retiró de cola.
+    var resultadoFase = _actualizarFaseBiometriaPendiente(idsAQuitarDeSolicitud, "ARCHIVADA");
+    if (!resultadoFase.success || resultadoFase.actualizadasIds.length !== idsAQuitarDeSolicitud.size) {
+      Logger.log("⚠️ _archivarColaBiometriaVencida: fase ARCHIVADA incompleta. " + JSON.stringify(resultadoFase));
+    }
   } catch (e) {
     Logger.log("❌ Error en _archivarColaBiometriaVencida: " + e.message);
   } finally {
@@ -1411,6 +1428,11 @@ function cicloBiometriaPendiente() {
     Logger.log("⏸️ Día no hábil para operación (domingo o festivo) — se omite limpieza/archivado/escalada. Nadie está llamando hoy, así que archivar por tiempo de espera penalizaría casos sin que operación tuviera oportunidad real de tomarlos.");
     Logger.log("=== FIN cicloBiometriaPendiente ===");
     return;
+  }
+  try {
+    reconciliarBiometriasEscaladas();
+  } catch (e) {
+    Logger.log("⚠️ Reconciliación biometría falló; el corte continúa: " + e.message);
   }
   limpiarBiometriasResueltas();
   _archivarColaBiometriaVencida();
@@ -2071,9 +2093,12 @@ function _procesarCortePendientes() {
     // procesarYGuardarLote() toma su propio lock, independiente del de pendiente_biometria
     // más abajo, así que en ningún momento se sostienen dos locks del script a la vez.
     var falloEscrituraSolicitud = false;
+    var resultadoInsercion = {
+      idsInsertados: [], idsYaEnSolicitud: [], idsYaEnHistorico: [], idsInvalidos: []
+    };
     if (solicitudesParaAsignar.length > 0) {
       try {
-        procesarYGuardarLote(solicitudesParaAsignar.slice());
+        resultadoInsercion = procesarYGuardarLote(solicitudesParaAsignar.slice());
       } catch (e) {
         falloEscrituraSolicitud = true;
         Logger.log("❌ procesarYGuardarLote falló al volcar el bloque del corte: " + e.message
@@ -2082,13 +2107,28 @@ function _procesarCortePendientes() {
       solicitudesParaAsignar.length = 0;
     }
 
-    // Si falló la escritura en "solicitud", no avanzar la fase de los casos que iban a
-    // ESCALADA (quedan en WA_ENVIADO). Los que iban a RESUELTA no dependen de esa
-    // escritura (no se envían a "solicitud"), así que esos sí se confirman igual.
-    var aEscribir = falloEscrituraSolicitud
-      ? actualizaciones.filter(function(u) { return u.fase !== "ESCALADA"; })
-      : actualizaciones;
+    // ESCALADA significa que el ID está realmente en la cola. Una ejecución sin excepción
+    // no basta: procesarYGuardarLote puede omitir un ID por duplicado o por ser inválido.
+    var idsConfirmadosEnCola = new Set(
+      resultadoInsercion.idsInsertados.concat(resultadoInsercion.idsYaEnSolicitud)
+    );
+    var idsYaAsignados = new Set(resultadoInsercion.idsYaEnHistorico);
+    var sinConfirmarEnCola = [];
+    var aEscribir = actualizaciones.filter(function(u) {
+      if (u.fase !== "ESCALADA") return true;
+      if (falloEscrituraSolicitud) return false;
+      if (idsYaAsignados.has(u.consecutivo)) {
+        u.fase = "ASIGNADA";
+        return true;
+      }
+      if (idsConfirmadosEnCola.has(u.consecutivo)) return true;
+      sinConfirmarEnCola.push(u.consecutivo);
+      return false;
+    });
     actualizaciones = [];
+    if (sinConfirmarEnCola.length > 0) {
+      Logger.log("⚠️ Corte: " + sinConfirmarEnCola.length + " caso(s) no quedaron confirmados en solicitud; se mantienen WA_ENVIADO: " + sinConfirmarEnCola.join(", "));
+    }
     if (aEscribir.length === 0) return;
 
     var lock = LockService.getScriptLock();
@@ -2143,12 +2183,12 @@ function _procesarCortePendientes() {
           ingresos: "", fechaExpedicion: "", canon: "", cuota: "",
           direccionInmueble: "", destinoInmueble: "", ciudadInmueble: "",
           nombreAsesor: "", correoAsesor: "",
-          estadoGeneral: "SAI_NO_CONFIRMO",
+          estadoGeneral: "APROBADO_PENDIENTE_BIOMETRIA",
           fechaRadicacion: "", fechaResultado: "",
           clase: "", digitalUar: "No", canal: "",
           codeudores: [], resultCode: ""
         });
-        actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: "SAI_NO_CONFIRMO", intentosSaiNull: nuevosIntentos });
+        actualizaciones.push({ consecutivo: item.consecutivo, fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: "SAI_NO_CONFIRMO", intentosSaiNull: nuevosIntentos });
         escaladas++;
       } else {
         // Aún por debajo del umbral: persistir counter incrementado, dejar en WA_ENVIADO
@@ -2162,11 +2202,11 @@ function _procesarCortePendientes() {
     var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
 
     if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA") {
-      actualizaciones.push({ fila: item.fila, fase: "RESUELTA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
+      actualizaciones.push({ consecutivo: item.consecutivo, fila: item.fila, fase: "RESUELTA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
       resueltas++;
     } else {
       solicitudesParaAsignar.push(_homologarDatosApi(datosApi));
-      actualizaciones.push({ fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
+      actualizaciones.push({ consecutivo: item.consecutivo, fila: item.fila, fase: "ESCALADA", fecha: ahora, estadoSai: statusActual, intentosSaiNull: 0 });
       escaladas++;
     }
 
@@ -2387,13 +2427,13 @@ function admin_desarchivarBiometrias(cantidad) {
 
       var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
       if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA" || !_esResultCodeBiometriaPendiente(datosApi.resultCode)) {
-        filasAActualizar.push({ fila: candidatos[c].fila, nuevaFase: "RESUELTA" });
+        filasAActualizar.push({ fila: candidatos[c].fila, solicitud: candidatos[c].solicitud, nuevaFase: "RESUELTA" });
         yaResueltas++;
         continue;
       }
 
       paraReponer.push(_homologarDatosApi(datosApi));
-      filasAActualizar.push({ fila: candidatos[c].fila, nuevaFase: "ESCALADA" });
+      filasAActualizar.push({ fila: candidatos[c].fila, solicitud: candidatos[c].solicitud, nuevaFase: "ESCALADA" });
       Utilities.sleep(1000);
     }
 
@@ -2403,37 +2443,70 @@ function admin_desarchivarBiometrias(cantidad) {
     // Las RESUELTA no dependen de procesarYGuardarLote y se confirman siempre.
 
     var falloEscrituraSolicitud = false;
-    var restauradas = paraReponer.length;
+    var resultadoReposicion = {
+      idsInsertados: [], idsYaEnSolicitud: [], idsYaEnHistorico: [], idsInvalidos: []
+    };
 
     if (paraReponer.length > 0) {
       try {
-        procesarYGuardarLote(paraReponer);
+        resultadoReposicion = procesarYGuardarLote(paraReponer);
       } catch (e) {
         falloEscrituraSolicitud = true;
-        restauradas = 0;
         Logger.log("❌ procesarYGuardarLote falló en admin_desarchivarBiometrias: " + e.message
           + " — los " + paraReponer.length + " caso(s) que iban a ESCALADA se dejan en ARCHIVADA para reintento futuro.");
       }
     }
 
-    // Separar: RESUELTA siempre se confirma; ESCALADA solo si la escritura tuvo éxito
-    var filasParaEscribir = falloEscrituraSolicitud
-      ? filasAActualizar.filter(function(item) { return item.nuevaFase !== "ESCALADA"; })
-      : filasAActualizar;
+    var idsConfirmadosEnCola = new Set(
+      resultadoReposicion.idsInsertados.concat(resultadoReposicion.idsYaEnSolicitud)
+    );
+    var idsYaAsignados = new Set(resultadoReposicion.idsYaEnHistorico);
+    var noConfirmadas = [];
+    var filasParaEscribir = filasAActualizar.filter(function(item) {
+      if (item.nuevaFase !== "ESCALADA") return true;
+      if (!falloEscrituraSolicitud && idsConfirmadosEnCola.has(item.solicitud)) return true;
+      if (!falloEscrituraSolicitud && idsYaAsignados.has(item.solicitud)) {
+        item.nuevaFase = "ASIGNADA";
+        return true;
+      }
+      noConfirmadas.push(item.solicitud);
+      return false;
+    });
+    var restauradas = filasParaEscribir.filter(function(item) {
+      return item.nuevaFase === "ESCALADA";
+    }).length;
 
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
-    filasParaEscribir.forEach(function(item) {
-      hojaBio.getRange(item.fila, 76).setValue(item.nuevaFase);
-      hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
-    });
-    if (filasParaEscribir.length > 0) SpreadsheetApp.flush();
+    var lockFase = LockService.getScriptLock();
+    var fasesActualizadas = 0;
+    var restauradasConfirmadas = 0;
+    try {
+      lockFase.waitLock(30000);
+      filasParaEscribir.forEach(function(item) {
+        var faseActual = String(hojaBio.getRange(item.fila, 76).getValue()).trim().toUpperCase();
+        if (faseActual !== "ARCHIVADA") {
+          Logger.log("⚠️ admin_desarchivarBiometrias: se conserva fase " + faseActual + " para " + item.solicitud + ".");
+          return;
+        }
+        hojaBio.getRange(item.fila, 76).setValue(item.nuevaFase);
+        hojaBio.getRange(item.fila, COL_FECHA_ACTUALIZACION_FASE).setValue(ahora);
+        fasesActualizadas++;
+        if (item.nuevaFase === "ESCALADA") restauradasConfirmadas++;
+      });
+      if (fasesActualizadas > 0) SpreadsheetApp.flush();
+    } catch (e) {
+      throw new Error("No se pudo confirmar la fase de las biometrías repuestas: " + e.message);
+    } finally {
+      if (lockFase.hasLock()) lockFase.releaseLock();
+    }
+    restauradas = restauradasConfirmadas;
 
     var msg = restauradas + " biometría(s) repuestas en la cola de llamada.";
     if (yaResueltas > 0) msg += " " + yaResueltas + " ya se habían resuelto en SAI (se dejaron cerradas).";
     if (sinRespuestaSai > 0) msg += " " + sinRespuestaSai + " sin respuesta de SAI (se dejaron archivadas, reintentar luego).";
-    if (falloEscrituraSolicitud) msg += " ⚠️ " + paraReponer.length + " caso(s) no se pudieron escribir en solicitud (se dejaron archivadas, reintentar luego).";
+    if (noConfirmadas.length > 0) msg += " ⚠️ " + noConfirmadas.length + " caso(s) no quedaron confirmados en solicitud y se dejaron archivados: " + noConfirmadas.join(", ") + ".";
 
-    return { success: !falloEscrituraSolicitud || yaResueltas > 0, message: msg, restauradas: restauradas, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
+    return { success: noConfirmadas.length === 0 || yaResueltas > 0, message: msg, restauradas: restauradas, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -3249,4 +3322,191 @@ function triggerVerificacionReestudiosUar() {
   } catch (e) {
     Logger.log("Error en trigger verificación reestudios/UAR: " + e.message);
   }
+}
+/**
+ * Sincroniza casos ESCALADA contra la cola, el histórico y el estado actual de SAI.
+ * Se ejecuta al inicio de cada corte como red de seguridad para fallos transitorios entre
+ * la operación sobre "solicitud" y la actualización de pendiente_biometria.
+ * @returns {{asignadas: number, resueltas: number, repuestas: number, pendientesDeRevisar: number}}
+ */
+function reconciliarBiometriasEscaladas() {
+  var resultado = { asignadas: 0, resueltas: 0, repuestas: 0, pendientesDeRevisar: 0 };
+  var asignadas = _buscarBiometriaEscaladaYaAsignada();
+  if (asignadas.error) {
+    Logger.log("⚠️ Reconciliación biometría: " + asignadas.error);
+    return resultado;
+  }
+
+  if (asignadas.yaAsignadas.length > 0) {
+    var idsAsignadas = asignadas.yaAsignadas.map(function(item) { return item.id; });
+    var sincronizacionAsignadas = _actualizarFaseBiometriaPendiente(idsAsignadas, "ASIGNADA");
+    resultado.asignadas = sincronizacionAsignadas.actualizadasIds.length;
+    if (!sincronizacionAsignadas.success || resultado.asignadas !== idsAsignadas.length) {
+      Logger.log("⚠️ Reconciliación biometría: ASIGNADA incompleta. " + JSON.stringify(sincronizacionAsignadas));
+    }
+  }
+
+  var transicionesPendientes = _buscarBiometriasWaEnColaOHistorico();
+  if (transicionesPendientes.enCola.length > 0) {
+    var ssBioTransicion = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBioTransicion = ssBioTransicion.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    var lockTransicion = LockService.getScriptLock();
+    try {
+      lockTransicion.waitLock(30000);
+      var ahoraTransicion = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+      transicionesPendientes.enCola.forEach(function(id) {
+        var celda = hojaBioTransicion.getRange(2, 1, hojaBioTransicion.getLastRow() - 1, 1)
+          .createTextFinder(id).matchEntireCell(true).findNext();
+        if (!celda) return;
+        if (String(hojaBioTransicion.getRange(celda.getRow(), 76).getValue()).trim().toUpperCase() !== "WA_ENVIADO") return;
+        hojaBioTransicion.getRange(celda.getRow(), 76, 1, 2).setValues([["ESCALADA", ahoraTransicion]]);
+      });
+      SpreadsheetApp.flush();
+    } catch (e) {
+      resultado.pendientesDeRevisar += transicionesPendientes.enCola.length;
+      Logger.log("⚠️ Reconciliación biometría: no se pudieron confirmar escaladas: " + e.message);
+    } finally {
+      if (lockTransicion.hasLock()) lockTransicion.releaseLock();
+    }
+  }
+  if (transicionesPendientes.enHistorico.length > 0) {
+    var sincronizacionWaAsignadas = _actualizarFaseBiometriaPendiente(transicionesPendientes.enHistorico, "ASIGNADA");
+    resultado.asignadas += sincronizacionWaAsignadas.actualizadasIds.length;
+  }
+
+  var huerfanas = _buscarHuerfanasBiometriaEscalada();
+  if (huerfanas.error) {
+    Logger.log("⚠️ Reconciliación biometría: " + huerfanas.error);
+    return resultado;
+  }
+
+  var paraReponer = [];
+  var resueltas = [];
+  var maxCandidatos = 50;
+  var tiempoMaximoMs = 5 * 60 * 1000;
+  var inicioReconciliacionMs = Date.now();
+  var propsReconciliacion = PropertiesService.getScriptProperties();
+  var cursor = parseInt(propsReconciliacion.getProperty("CURSOR_RECONCILIACION_BIOMETRIA") || "0", 10) || 0;
+  var totalHuerfanas = huerfanas.huerfanas.length;
+  var cantidadAProcesar = Math.min(maxCandidatos, totalHuerfanas);
+
+  for (var indice = 0; indice < cantidadAProcesar; indice++) {
+    if (Date.now() - inicioReconciliacionMs > tiempoMaximoMs) {
+      resultado.pendientesDeRevisar += cantidadAProcesar - indice;
+      break;
+    }
+
+    var posicion = (cursor + indice) % totalHuerfanas;
+    var item = huerfanas.huerfanas[posicion];
+    var datosApi = _consultarSaiIndividual(item.id);
+    if (!datosApi) {
+      resultado.pendientesDeRevisar++;
+      Logger.log("⚠️ Reconciliación biometría: SAI sin respuesta para " + item.id + ".");
+      continue;
+    }
+
+    var estadoSai = String(datosApi.studyStatus || "").toUpperCase().trim();
+    if (estadoSai === "APROBADO_PENDIENTE_BIOMETRIA") {
+      paraReponer.push(_homologarDatosApi(datosApi));
+    } else {
+      resueltas.push({ id: item.id, fila: item.filaBio, estadoSai: estadoSai });
+    }
+    Utilities.sleep(1000);
+  }
+  if (totalHuerfanas > 0) {
+    propsReconciliacion.setProperty(
+      "CURSOR_RECONCILIACION_BIOMETRIA",
+      String((cursor + cantidadAProcesar) % totalHuerfanas)
+    );
+  }
+  if (totalHuerfanas > cantidadAProcesar) {
+    resultado.pendientesDeRevisar += totalHuerfanas - cantidadAProcesar;
+  }
+
+  if (paraReponer.length > 0) {
+    try {
+      var reposicion = procesarYGuardarLote(paraReponer);
+      var idsConfirmados = new Set(reposicion.idsInsertados.concat(reposicion.idsYaEnSolicitud));
+      resultado.repuestas = idsConfirmados.size;
+      if (reposicion.idsYaEnHistorico.length > 0) {
+        _actualizarFaseBiometriaPendiente(reposicion.idsYaEnHistorico, "ASIGNADA");
+      }
+      var noRepuestas = paraReponer
+        .map(function(item) { return String(item.solicitud || "").trim(); })
+        .filter(function(id) { return id && !idsConfirmados.has(id) && reposicion.idsYaEnHistorico.indexOf(id) === -1; });
+      if (noRepuestas.length > 0) {
+        resultado.pendientesDeRevisar += noRepuestas.length;
+        Logger.log("⚠️ Reconciliación biometría: no se confirmó reposición en solicitud para " + noRepuestas.join(", ") + ".");
+      }
+    } catch (e) {
+      resultado.pendientesDeRevisar += paraReponer.length;
+      Logger.log("⚠️ Reconciliación biometría: no se pudo reponer en solicitud: " + e.message);
+    }
+  }
+
+  if (resueltas.length > 0) {
+    var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+    var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    var lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+      var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
+      resueltas.forEach(function(item) {
+        var faseActual = String(hojaBio.getRange(item.fila, 76).getValue()).trim().toUpperCase();
+        if (faseActual !== "ESCALADA") return;
+        hojaBio.getRange(item.fila, 63).setValue(item.estadoSai);
+        hojaBio.getRange(item.fila, 76, 1, 2).setValues([["RESUELTA_EN_COLA", ahora]]);
+        resultado.resueltas++;
+      });
+      if (resultado.resueltas > 0) SpreadsheetApp.flush();
+    } catch (e) {
+      resultado.pendientesDeRevisar += resueltas.length;
+      Logger.log("⚠️ Reconciliación biometría: no se pudieron cerrar resueltas: " + e.message);
+    } finally {
+      if (lock.hasLock()) lock.releaseLock();
+    }
+  }
+
+  Logger.log(
+    "✅ Reconciliación biometría: " + resultado.asignadas + " ASIGNADA, "
+    + resultado.resueltas + " RESUELTA_EN_COLA, " + resultado.repuestas
+    + " repuestas, " + resultado.pendientesDeRevisar + " pendientes de revisión."
+  );
+  return resultado;
+}
+/**
+ * Identifica filas WA_ENVIADO que ya están en la cola o fueron asignadas antes de
+ * que el corte pudiera confirmar su fase. Solo cubre una carrera de escritura.
+ * @returns {{enCola: string[], enHistorico: string[]}}
+ */
+function _buscarBiometriasWaEnColaOHistorico() {
+  var resultado = { enCola: [], enHistorico: [] };
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio || hojaBio.getLastRow() < 2) return resultado;
+
+  var total = hojaBio.getLastRow() - 1;
+  var ids = hojaBio.getRange(2, 1, total, 1).getValues();
+  var fases = hojaBio.getRange(2, 76, total, 1).getValues();
+  var ssSolicitud = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
+  var hojaSolicitud = ssSolicitud.getSheetByName(SHEET_NAME_SOLICITUDES);
+  var setSolicitud = hojaSolicitud ? getSetDeIds(hojaSolicitud) : new Set();
+  var setHistorico = new Set();
+  var hojaHistorico = ssSolicitud.getSheetByName("Historico_Gestiones");
+  if (hojaHistorico && hojaHistorico.getLastRow() > 1) {
+    hojaHistorico.getRange(2, 1, hojaHistorico.getLastRow() - 1, 1).getValues()
+      .forEach(function(fila) {
+        var id = String(fila[0]).trim();
+        if (id) setHistorico.add(id);
+      });
+  }
+
+  for (var i = 0; i < total; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "WA_ENVIADO") continue;
+    var solicitud = String(ids[i][0]).trim();
+    if (!solicitud) continue;
+    if (setHistorico.has(solicitud)) resultado.enHistorico.push(solicitud);
+    else if (setSolicitud.has(solicitud)) resultado.enCola.push(solicitud);
+  }
+  return resultado;
 }

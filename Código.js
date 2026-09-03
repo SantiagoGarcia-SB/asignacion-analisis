@@ -1000,12 +1000,14 @@ function autoAsignarDesdeEquipo() {
   // Los 3 llamadores que ya lo hacían por su cuenta ahora chequean _biometriaEjecutada
   // antes de repetirlo (ver activarYAsignar/autoAsignarConPanel/guardarYAsignarSiguiente).
   if (resultado && resultado.idsAsignados && resultado.idsAsignados.length > 0) {
-    try {
-      actualizarFaseBiometriaPendienteDeferred(resultado.idsAsignados, resultado.faseTarget);
-      resultado._biometriaEjecutada = true;
-    } catch (e) {
-      Logger.log('⚠ autoAsignarDesdeEquipo: biometría deferred falló: ' + e.message);
-      resultado._biometriaEjecutada = false;
+    var sincronizacionBiometria = actualizarFaseBiometriaPendienteDeferred(resultado.idsAsignados, resultado.faseTarget);
+    resultado._biometriaEjecutada = !!(
+      sincronizacionBiometria
+      && sincronizacionBiometria.success
+      && sincronizacionBiometria.actualizadasIds.length === resultado.idsAsignados.length
+    );
+    if (!resultado._biometriaEjecutada) {
+      Logger.log('⚠ autoAsignarDesdeEquipo: fase ASIGNADA incompleta. ' + JSON.stringify(sincronizacionBiometria));
     }
   } else if (resultado) {
     resultado._biometriaEjecutada = false;
@@ -1786,6 +1788,7 @@ function sincronizarHistoricoSAI() {
 }
 
 function eliminarSolicitudesFinalizadas(idsAEliminar) {
+  let idsEliminadosConfirmados = new Set();
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -1815,6 +1818,11 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     // sin cambios y quedaba ahí para siempre, inflando getLastRow() en cada
     // lectura futura de "solicitud" (mismo patrón que Historico_Gestiones
     // "solo crece y nunca se archiva", pero por huecos en vez de crecimiento).
+    idsEliminadosConfirmados = new Set(
+      datos
+        .map(function(row) { return String(row[0]).trim(); })
+        .filter(function(id) { return id && idsAEliminar.has(id); })
+    );
     const filasFinales = datos.filter(row => {
       const id = String(row[0]).trim();
       return id !== '' && !idsAEliminar.has(id);
@@ -1841,25 +1849,12 @@ function eliminarSolicitudesFinalizadas(idsAEliminar) {
     lock.releaseLock();
   }
 
-  // Avisa a pendiente_biometria (fuera del lock ya liberado arriba): un ID en idsAEliminar
-  // puede corresponder a un caso de desaplazamiento que SAI dejó de reportar como
-  // APROBADO_PENDIENTE_BIOMETRIA (avanzó a RECHAZADO/APROBADO/CODEUDORES_REQUERIDOS) y que
-  // esta función acaba de sacar de "solicitud". Antes de este fix, esta función nunca tocaba
-  // pendiente_biometria — el caso quedaba con fase="ESCALADA" congelada para siempre (huérfano
-  // confirmado en producción: 447 casos, con fechas hasta el día del fix). limpiarBiometriasResueltas()
-  // (Biometria.js) sí notifica correctamente este mismo tipo de transición, pero corre con mucha
-  // menor frecuencia (~1 vez/hora) que este sync (cada 5-10 min, 24/7) — casi siempre esta función
-  // ganaba la carrera y se quedaba con la única oportunidad de avisar. actualizarFaseBiometriaPendienteDeferred
-  // ya está diseñada para no lanzar excepciones y para ignorar IDs que no estén en pendiente_biometria
-  // (la mayoría de idsAEliminar son casos Digital/Reestudio normales, no biometría), así que es seguro
-  // llamarla siempre con el set completo. Deliberadamente fuera del lock: no es una operación urgente
-  // ni bloqueante para nadie más, y pendiente_biometria puede tener miles de filas.
-  try {
-    if (idsAEliminar && idsAEliminar.size > 0) {
-      actualizarFaseBiometriaPendienteDeferred(idsAEliminar, "RESUELTA_EN_COLA");
+  // Se sincronizan únicamente los IDs retirados realmente de solicitud en este recorte.
+  if (idsEliminadosConfirmados && idsEliminadosConfirmados.size > 0) {
+    var sincronizacionFinalizadas = actualizarFaseBiometriaPendienteDeferred(idsEliminadosConfirmados, "RESUELTA_EN_COLA");
+    if (!sincronizacionFinalizadas.success || sincronizacionFinalizadas.actualizadasIds.length !== idsEliminadosConfirmados.size) {
+      Logger.log("⚠ eliminarSolicitudesFinalizadas: fase RESUELTA_EN_COLA incompleta. " + JSON.stringify(sincronizacionFinalizadas));
     }
-  } catch (e) {
-    Logger.log("⚠ eliminarSolicitudesFinalizadas: aviso a pendiente_biometria falló: " + e.message);
   }
 }
 
@@ -2250,16 +2245,27 @@ function formatDateCustom(date) {
 }
 
 
+/**
+ * Inserta solicitudes nuevas en la cola y reporta el destino real de cada ID.
+ * @param {Array<Object>} listaObjetos solicitudes a persistir en "solicitud".
+ * @returns {{idsInsertados: string[], idsYaEnSolicitud: string[], idsYaEnHistorico: string[], idsInvalidos: string[]}}
+ */
 function procesarYGuardarLote(listaObjetos) {
+  const resultado = {
+    idsInsertados: [],
+    idsYaEnSolicitud: [],
+    idsYaEnHistorico: [],
+    idsInvalidos: []
+  };
+
   if (!listaObjetos || listaObjetos.length === 0) {
     Logger.log("No hay objetos para guardar en este lote.");
-    return;
+    return resultado;
   }
-
 
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(30000); 
+    lock.waitLock(30000);
   } catch (e) {
     Logger.log("❌ Error de concurrencia: Otro proceso está escribiendo. Abortando para no dañar datos.");
     throw new Error("Lock no disponible: " + e.message);
@@ -2268,45 +2274,40 @@ function procesarYGuardarLote(listaObjetos) {
   try {
     const ssP = SpreadsheetApp.openById(TARGET_SOLICITUDES_SS_ID);
     const hojaP = ssP.getSheetByName(SHEET_NAME_SOLICITUDES);
-
     if (!hojaP) throw new Error(`La hoja ${SHEET_NAME_SOLICITUDES} no existe.`);
 
     const setIdsP = getSetDeIds(hojaP);
     if (!setIdsP) throw new Error("Fallo al obtener los IDs existentes de la base de datos.");
-    // getSetDeIds solo ve IDs que siguen en "solicitud" (aún sin asignar). Un caso ya
-    // asignado se borra de "solicitud" en el mismo instante (ver _asignarCasoPrincipal,
-    // MotorAsignacion.js), así que si SAI lo sigue reportando dentro de su ventana de sync
-    // de 3 días (_sincronizarVentanaSAI), sin este chequeo se reinsertaría aquí como "nuevo"
-    // y podría asignarse una segunda vez. Los IDs recién asignados/cerrados siempre quedan
-    // al final de Historico_Gestiones (se agregan con appendRow), así que basta leer la
-    // cola reciente en vez de la hoja completa.
     const setIdsHistRecientes = _getIdsRecientesHistorico(ssP);
+    const filasParaInsertar = [];
 
-    const filaP = [];
-    let duplicadosEvitados = 0;
-
-    listaObjetos.forEach(item => {
+    listaObjetos.forEach(function(item) {
       const solId = String(item.solicitud || "").trim();
-      if (!solId) return;
-
-      if (setIdsP.has(solId) || setIdsHistRecientes.has(solId)) {
-        duplicadosEvitados++;
+      if (!solId) {
+        resultado.idsInvalidos.push(solId);
+        return;
+      }
+      if (setIdsP.has(solId)) {
+        resultado.idsYaEnSolicitud.push(solId);
+        return;
+      }
+      if (setIdsHistRecientes.has(solId)) {
+        resultado.idsYaEnHistorico.push(solId);
         return;
       }
 
       const est = String(item.estadoGeneral || "").toUpperCase();
       const fila = new Array(58).fill("");
-
-      fila[0]  = solId;
-      fila[1]  = item.poliza || item._polizaAsociada || "";
-      fila[2]  = item.identificacionInquilino || "";
-      fila[3]  = item.tipoIdentificacion || "";
-      fila[4]  = item.nombreInquilino || "";
-      fila[5]  = item.correoInquilino || "";
-      fila[6]  = item.telefonoInquilino || "";
-      fila[7]  = item.ingresos ?? "";
-      fila[8]  = item.fechaExpedicion || "";
-      fila[9]  = item.canon ?? "";
+      fila[0] = solId;
+      fila[1] = item.poliza || item._polizaAsociada || "";
+      fila[2] = item.identificacionInquilino || "";
+      fila[3] = item.tipoIdentificacion || "";
+      fila[4] = item.nombreInquilino || "";
+      fila[5] = item.correoInquilino || "";
+      fila[6] = item.telefonoInquilino || "";
+      fila[7] = item.ingresos ?? "";
+      fila[8] = item.fechaExpedicion || "";
+      fila[9] = item.canon ?? "";
       fila[10] = item.cuota ?? "";
       fila[11] = item.direccionInmueble || "";
       fila[12] = item.destinoInmueble || "";
@@ -2322,7 +2323,7 @@ function procesarYGuardarLote(listaObjetos) {
         for (var ci = 0; ci < Math.min(item.codeudores.length, 3); ci++) {
           var base = 37 + (ci * 7);
           var cod = item.codeudores[ci];
-          fila[base]     = cod.nombre || "";
+          fila[base] = cod.nombre || "";
           fila[base + 1] = cod.documento || "";
           fila[base + 2] = cod.tipoDoc || "";
           fila[base + 3] = cod.email || "";
@@ -2332,37 +2333,35 @@ function procesarYGuardarLote(listaObjetos) {
         }
       }
 
-
-      [item.fechaRadicacion, item.fechaResultado].forEach((f, idx) => {
-        fila[17 + idx] = _normalizarFechaApiComoTexto(f);
+      [item.fechaRadicacion, item.fechaResultado].forEach(function(fecha, indice) {
+        fila[17 + indice] = _normalizarFechaApiComoTexto(fecha);
       });
 
-      filaP.push(fila);
-      setIdsP.add(solId); 
+      filasParaInsertar.push(fila);
+      resultado.idsInsertados.push(solId);
+      setIdsP.add(solId);
     });
 
-
-    if (filaP.length > 0) {
+    if (filasParaInsertar.length > 0) {
       const rowInicio = hojaP.getLastRow() + 1;
-      
-
-      const rangoDestino = hojaP.getRange(rowInicio, 1, filaP.length, 58);
+      const rangoDestino = hojaP.getRange(rowInicio, 1, filasParaInsertar.length, 58);
       rangoDestino.setNumberFormat("@");
-      rangoDestino.setValues(filaP);
-      
-      SpreadsheetApp.flush(); 
-      Logger.log(`✅ ÉXITO: ${filaP.length} solicitudes nuevas guardadas. Duplicados ignorados: ${duplicadosEvitados}`);
-    } else {
-      Logger.log(`No se guardó nada. Todo el lote ya existía en la BD. (Duplicados ignorados: ${duplicadosEvitados})`);
+      rangoDestino.setValues(filasParaInsertar);
+      SpreadsheetApp.flush();
     }
 
+    Logger.log(
+      "✅ Cola procesada: " + resultado.idsInsertados.length + " insertadas, "
+      + resultado.idsYaEnSolicitud.length + " ya presentes, "
+      + resultado.idsYaEnHistorico.length + " ya asignadas, "
+      + resultado.idsInvalidos.length + " inválidas."
+    );
+    return resultado;
   } catch (err) {
-  
     Logger.log("❌ ERROR CRÍTICO ESCRIBIENDO EN EXCEL: " + err.message);
-    throw err; 
+    throw err;
   } finally {
-    
-    lock.releaseLock();
+    if (lock.hasLock()) lock.releaseLock();
   }
 }
 
