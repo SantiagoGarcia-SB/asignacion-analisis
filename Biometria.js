@@ -3132,18 +3132,530 @@ function testEnviarWhatsAppDuplicado() {
 var ESTADOS_FINALES_GESTION = new Set(['APROBADO', 'RECHAZADO']);
 var VENTANA_DIAS_VERIFICACION_SAI = 3;
 
-// Alcance de verificarAprobacionDesaplazamientos(): por ahora solo desaplazamiento e
-// inducción (columna 61 de Historico_Gestiones, el "tipo asignado"), no digital/canones
-// altos. Ventana de 90 días porque esa es la vigencia real de una solicitud — más allá
-// de eso ya no tiene sentido seguir preguntándole a SAI.
-var TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = new Set(['desaplazamiento', 'induccion']);
+// La conciliación de desaplazamientos ya no consulta ni modifica el histórico: este
+// representa la gestión y los SLA del analista. El seguimiento y el cierre real en SAI
+// pertenecen a pendiente_biometria, que conserva el ciclo completo de cada biometría.
 var VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION = 90;
+var FASE_VERIFICACION_CIERRE_BIOMETRIA = 'ASIGNADA';
+var ENCABEZADO_ESTADO_CIERRE_SAI_BIOMETRIA = 'estado_sai_cierre';
+var ENCABEZADO_FECHA_CIERRE_SAI_BIOMETRIA = 'fecha_cierre_sai';
 
-// Núcleo compartido de verificarAprobacionDesaplazamientos() y
-// verificarAprobacionReestudiosUar() — mismo patrón de consulta (candidatos → SAI
-// caso por caso, sin lock → escritura con lock al final), solo cambia la hoja/columnas
-// de origen y la ventana de días. Unificado el 2026-07-13 (antes eran ~90% el mismo
-// código copiado dos veces).
+// Una verificación consulta SAI de forma secuencial y espera 2 s entre solicitudes.
+// Estos respaldos dejan margen suficiente para persistir las respuestas obtenidas antes
+// del límite de Apps Script, incluso cuando SAI presenta latencia elevada.
+var MAX_CANDIDATOS_VERIFICACION_SAI = 100;
+var TIEMPO_MAXIMO_VERIFICACION_SAI_MS = 4 * 60 * 1000;
+var PROPIEDAD_CURSOR_CIERRE_SAI_BIOMETRIA = 'CURSOR_CIERRE_SAI_BIOMETRIA';
+var PROPIEDAD_LIMITE_CICLO_CIERRE_SAI_BIOMETRIA = 'LIMITE_CICLO_CIERRE_SAI_BIOMETRIA';
+var PROPIEDAD_LEASE_CIERRE_SAI_BIOMETRIA = 'LEASE_CIERRE_SAI_BIOMETRIA';
+var DURACION_LEASE_CIERRE_SAI_BIOMETRIA_MS = 8 * 60 * 1000;
+var RETARDO_CONTINUACION_CIERRE_SAI_BIOMETRIA_MS = 60 * 1000;
+var HANDLER_CONTINUACION_CIERRE_SAI_BIOMETRIA = 'triggerVerificacionDesaplazamientosContinuacion';
+
+/**
+ * Normaliza un encabezado para localizar columnas sin depender de acentos o mayúsculas.
+ * @param {unknown} encabezado Valor leído de la primera fila.
+ * @returns {string} Encabezado normalizado.
+ */
+function _normalizarEncabezadoCierreSaiBiometria(encabezado) {
+  return String(encabezado || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Obtiene o crea las columnas de cierre SAI del maestro de biometrías.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} hojaBio Hoja pendiente_biometria.
+ * @returns {{estadoCierre: number, fechaCierre: number}} Columnas 1-indexadas.
+ */
+function _obtenerColumnasCierreSaiBiometria(hojaBio) {
+  var ultimaColumna = hojaBio.getLastColumn();
+  var encabezados = hojaBio.getRange(1, 1, 1, ultimaColumna).getDisplayValues()[0];
+  var columnas = {};
+  encabezados.forEach(function(encabezado, indice) {
+    columnas[_normalizarEncabezadoCierreSaiBiometria(encabezado)] = indice + 1;
+  });
+
+  var encabezadosFaltantes = [];
+  if (!columnas[ENCABEZADO_ESTADO_CIERRE_SAI_BIOMETRIA]) {
+    encabezadosFaltantes.push(ENCABEZADO_ESTADO_CIERRE_SAI_BIOMETRIA);
+  }
+  if (!columnas[ENCABEZADO_FECHA_CIERRE_SAI_BIOMETRIA]) {
+    encabezadosFaltantes.push(ENCABEZADO_FECHA_CIERRE_SAI_BIOMETRIA);
+  }
+
+  if (encabezadosFaltantes.length > 0) {
+    hojaBio.insertColumnsAfter(ultimaColumna, encabezadosFaltantes.length);
+    hojaBio.getRange(1, ultimaColumna + 1, 1, encabezadosFaltantes.length)
+      .setValues([encabezadosFaltantes]);
+    encabezadosFaltantes.forEach(function(encabezado, indice) {
+      columnas[encabezado] = ultimaColumna + indice + 1;
+    });
+    SpreadsheetApp.flush();
+    Logger.log('✅ pendiente_biometria: se agregaron columnas de cierre SAI: ' + encabezadosFaltantes.join(', ') + '.');
+  }
+
+  return {
+    estadoCierre: columnas[ENCABEZADO_ESTADO_CIERRE_SAI_BIOMETRIA],
+    fechaCierre: columnas[ENCABEZADO_FECHA_CIERRE_SAI_BIOMETRIA]
+  };
+}
+
+/**
+ * Adquiere una reserva temporal para evitar dos consultas SAI simultáneas.
+ * @returns {string|null} Token de la reserva o null cuando ya existe una ejecución activa.
+ */
+function _adquirirLeaseCierreSaiBiometria() {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    var props = PropertiesService.getScriptProperties();
+    var actual = JSON.parse(props.getProperty(PROPIEDAD_LEASE_CIERRE_SAI_BIOMETRIA) || '{}');
+    if (Number(actual.expiraEnMs || 0) > Date.now()) return null;
+
+    var token = String(Date.now()) + '-' + String(Math.random()).slice(2);
+    props.setProperty(PROPIEDAD_LEASE_CIERRE_SAI_BIOMETRIA, JSON.stringify({
+      token: token,
+      expiraEnMs: Date.now() + DURACION_LEASE_CIERRE_SAI_BIOMETRIA_MS
+    }));
+    return token;
+  } catch (e) {
+    Logger.log('⚠️ Cierre SAI biometría: no se pudo adquirir la reserva: ' + e.message);
+    return null;
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+/**
+ * Libera una reserva solo si todavía pertenece a esta ejecución.
+ * @param {string} token Token emitido al adquirir la reserva.
+ * @returns {void}
+ */
+function _liberarLeaseCierreSaiBiometria(token) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    var props = PropertiesService.getScriptProperties();
+    var actual = JSON.parse(props.getProperty(PROPIEDAD_LEASE_CIERRE_SAI_BIOMETRIA) || '{}');
+    if (actual.token === token) props.deleteProperty(PROPIEDAD_LEASE_CIERRE_SAI_BIOMETRIA);
+  } catch (e) {
+    Logger.log('⚠️ Cierre SAI biometría: no se pudo liberar la reserva: ' + e.message);
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+/**
+ * Lee un punto válido de la cola persistido por esta conciliación.
+ * @param {string} propiedad Nombre de Script Property.
+ * @returns {{solicitudId: string, filaReal: number}|null} Punto persistido o null.
+ */
+function _leerPuntoCierreSaiBiometria(propiedad) {
+  var valor = PropertiesService.getScriptProperties().getProperty(propiedad);
+  if (!valor) return null;
+  try {
+    var punto = JSON.parse(valor);
+    if (punto && punto.solicitudId) {
+      return { solicitudId: String(punto.solicitudId), filaReal: Number(punto.filaReal || 0) };
+    }
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Encuentra el cursor exacto y, si desapareció, continúa desde su sucesora física.
+ * @param {Array<{filaReal: number, solicitudId: string}>} candidatos Candidatos elegibles.
+ * @param {{solicitudId: string, filaReal: number}|null} punto Cursor persistido.
+ * @returns {number} Índice de reanudación o -1 cuando no existe un sucesor.
+ */
+function _encontrarIndiceReanudacionCierreSaiBiometria(candidatos, punto) {
+  if (!punto) return 0;
+  for (var i = 0; i < candidatos.length; i++) {
+    if (candidatos[i].solicitudId === punto.solicitudId && candidatos[i].filaReal === punto.filaReal) return i;
+  }
+  if (punto.filaReal > 0) {
+    for (var j = 0; j < candidatos.length; j++) {
+      if (candidatos[j].filaReal >= punto.filaReal) return j;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Rota los candidatos desde el siguiente punto pendiente de la ejecución anterior.
+ * @param {Array<{filaReal: number, solicitudId: string}>} candidatos Candidatos elegibles.
+ * @param {{solicitudId: string, filaReal: number}|null} cursor Punto desde el que se debe retomar.
+ * @returns {Array<{filaReal: number, solicitudId: string}>} Candidatos ordenados para el lote.
+ */
+function _ordenarCandidatosCierreSaiBiometria(candidatos, cursor) {
+  var indiceInicio = _encontrarIndiceReanudacionCierreSaiBiometria(candidatos, cursor);
+  if (cursor && indiceInicio < 0) return [];
+  if (indiceInicio < 1) return candidatos.slice();
+  return candidatos.slice(indiceInicio).concat(candidatos.slice(0, indiceInicio));
+}
+
+/**
+ * Prepara una vuelta de la cola y evita que una continuación reconsulte casos ya vistos.
+ * @param {Array<{filaReal: number, solicitudId: string}>} candidatos Candidatos elegibles.
+ * @param {{solicitudId: string, filaReal: number}|null} cursor Punto desde el que se debe retomar.
+ * @returns {{orden: Array<Object>, cantidadHastaLimite: number}} Plan de consulta de una vuelta.
+ */
+function _prepararPlanCierreSaiBiometria(candidatos, cursor) {
+  var orden = _ordenarCandidatosCierreSaiBiometria(candidatos, cursor);
+  if (orden.length === 0) return { orden: [], cantidadHastaLimite: 0 };
+
+  var limite = _leerPuntoCierreSaiBiometria(PROPIEDAD_LIMITE_CICLO_CIERRE_SAI_BIOMETRIA);
+  var indiceLimite = -1;
+  if (limite) {
+    for (var i = 0; i < orden.length; i++) {
+      if (orden[i].solicitudId === limite.solicitudId && orden[i].filaReal === limite.filaReal) {
+        indiceLimite = i;
+        break;
+      }
+    }
+  }
+
+  if (indiceLimite < 0) {
+    var nuevoLimite = orden[orden.length - 1];
+    PropertiesService.getScriptProperties().setProperty(
+      PROPIEDAD_LIMITE_CICLO_CIERRE_SAI_BIOMETRIA,
+      JSON.stringify(nuevoLimite)
+    );
+    indiceLimite = orden.length - 1;
+  }
+
+  return { orden: orden, cantidadHastaLimite: indiceLimite + 1 };
+}
+
+/**
+ * Persiste el siguiente punto a revisar; vacío significa que se completó una vuelta.
+ * @param {{solicitudId: string, filaReal: number}|null} siguientePunto Próximo candidato pendiente.
+ * @returns {void}
+ */
+function _guardarCursorCierreSaiBiometria(siguientePunto) {
+  var props = PropertiesService.getScriptProperties();
+  if (siguientePunto) {
+    props.setProperty(PROPIEDAD_CURSOR_CIERRE_SAI_BIOMETRIA, JSON.stringify(siguientePunto));
+  } else {
+    props.deleteProperty(PROPIEDAD_CURSOR_CIERRE_SAI_BIOMETRIA);
+    props.deleteProperty(PROPIEDAD_LIMITE_CICLO_CIERRE_SAI_BIOMETRIA);
+  }
+}
+
+/**
+ * Descarta respuestas cuya fila cambió mientras se consultaba SAI.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} hojaBio Hoja pendiente_biometria.
+ * @param {Array<Object>} observacionesSai Respuestas 200 obtenidas de SAI.
+ * @param {Array<Object>} cierresSai Respuestas terminales obtenidas de SAI.
+ * @param {{estadoCierre: number, fechaCierre: number}} columnasCierre Columnas de cierre.
+ * @returns {{observaciones: Array<Object>, cierres: Array<Object>}} Actualizaciones aún vigentes.
+ */
+function _filtrarActualizacionesVigentesCierreSaiBiometria(hojaBio, observacionesSai, cierresSai, columnasCierre) {
+  if (observacionesSai.length === 0) return { observaciones: [], cierres: [] };
+  var ultimaFila = hojaBio.getLastRow();
+  if (ultimaFila < 2) return { observaciones: [], cierres: [] };
+  var columnasLectura = Math.max(COL_INTENTOS_SAI_NULL, columnasCierre.estadoCierre);
+  var datos = hojaBio.getRange(2, 1, ultimaFila - 1, columnasLectura).getValues();
+  var vigentesPorFila = {};
+
+  observacionesSai.forEach(function(observacion) {
+    var fila = datos[observacion.filaReal - 2];
+    if (!fila) return;
+    var solicitudId = String(fila[0] || '').trim();
+    var fase = String(fila[75] || '').trim().toUpperCase();
+    var estadoCierre = String(fila[columnasCierre.estadoCierre - 1] || '').trim().toUpperCase();
+    if (solicitudId === observacion.solicitudId
+      && (fase === FASE_VERIFICACION_CIERRE_BIOMETRIA || fase === 'ARCHIVADA')
+      && !ESTADOS_FINALES_GESTION.has(estadoCierre)) {
+      vigentesPorFila[observacion.filaReal] = true;
+    }
+  });
+
+  return {
+    observaciones: observacionesSai.filter(function(observacion) {
+      return vigentesPorFila[observacion.filaReal];
+    }),
+    cierres: cierresSai.filter(function(cierre) {
+      return vigentesPorFila[cierre.filaReal];
+    })
+  };
+}
+
+/**
+ * Garantiza a lo sumo un trigger temporal de continuación para el ciclo activo.
+ * @param {boolean} hayPendientes Indica si debe programarse una nueva continuación.
+ * @returns {{success: boolean, message: string}} Resultado de configurar la continuación.
+ */
+function _configurarContinuacionCierreSaiBiometria(hayPendientes) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    ScriptApp.getProjectTriggers().forEach(function(trigger) {
+      if (trigger.getHandlerFunction() === HANDLER_CONTINUACION_CIERRE_SAI_BIOMETRIA) {
+        ScriptApp.deleteTrigger(trigger);
+      }
+    });
+    if (hayPendientes) {
+      ScriptApp.newTrigger(HANDLER_CONTINUACION_CIERRE_SAI_BIOMETRIA)
+        .timeBased()
+        .after(RETARDO_CONTINUACION_CIERRE_SAI_BIOMETRIA_MS)
+        .create();
+      Logger.log('⏭️ Cierre SAI biometría: continuación programada en aproximadamente un minuto.');
+    }
+    return { success: true, message: 'Continuación SAI configurada.' };
+  } catch (e) {
+    var mensaje = 'No se pudo configurar la continuación SAI: ' + e.message;
+    Logger.log('⚠️ Cierre SAI biometría: ' + mensaje);
+    return { success: false, message: mensaje };
+  } finally {
+    if (lock.hasLock()) lock.releaseLock();
+  }
+}
+
+/**
+ * Ejecuta el ciclo programado y encadena otro lote únicamente tras una persistencia exitosa.
+ * @param {string} origen Identificador de la ejecución programada.
+ * @returns {Object} Resumen de la verificación.
+ */
+function _ejecutarVerificacionDesaplazamientosProgramada(origen) {
+  var resultado = verificarAprobacionDesaplazamientos();
+  if (resultado.ejecucionOmitida) {
+    Logger.log('⏭️ Cierre SAI biometría (' + origen + '): otra ejecución sigue activa.');
+    return resultado;
+  }
+  if (!resultado.success) {
+    Logger.log('⚠️ Cierre SAI biometría (' + origen + '): ' + resultado.message);
+    return resultado;
+  }
+
+  var continuacion = _configurarContinuacionCierreSaiBiometria(resultado.hasMore === true);
+  if (!continuacion.success) {
+    resultado.success = false;
+    resultado.message = continuacion.message;
+    return resultado;
+  }
+
+  Logger.log('Cierre SAI biometría (' + origen + '): ' + resultado.totalRevisados
+    + ' revisados, ' + resultado.totalActualizados + ' cierres, '
+    + (resultado.pendientesParaProximaCorrida || 0) + ' pendientes.');
+  return resultado;
+}
+
+/**
+ * Confirma en pendiente_biometria el resultado final de SAI para biometrías asignadas
+ * o archivadas. Conserva intacto Historico_Gestiones, que es la fuente de gestión humana
+ * y SLA.
+ * @returns {{success: boolean, message: string, totalRevisados: number, totalActualizados: number, pendientesParaProximaCorrida: number, hasMore: boolean, detalles: Array<Object>}}
+ */
+function verificarAprobacionDesaplazamientos() {
+  var tokenLease = _adquirirLeaseCierreSaiBiometria();
+  if (!tokenLease) {
+    return {
+      success: true,
+      ejecucionOmitida: true,
+      message: 'Ya existe una ejecución de cierre SAI de biometrías activa.',
+      totalRevisados: 0,
+      totalActualizados: 0,
+      pendientesParaProximaCorrida: 0,
+      hasMore: false,
+      detalles: []
+    };
+  }
+
+  try {
+    return _verificarAprobacionDesaplazamientosConCursor();
+  } finally {
+    _liberarLeaseCierreSaiBiometria(tokenLease);
+  }
+}
+
+/**
+ * Ejecuta un único lote de cierre SAI y persiste el punto exacto de reanudación.
+ * @returns {Object} Resumen del lote ejecutado.
+ */
+function _verificarAprobacionDesaplazamientosConCursor() {
+  var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
+  var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+  if (!hojaBio) return { success: false, message: 'Hoja pendiente_biometria no encontrada.' };
+  if (hojaBio.getLastRow() < 2) {
+    _guardarCursorCierreSaiBiometria('');
+    return { success: true, message: 'No hay biometrías pendientes de verificación.', totalRevisados: 0, totalActualizados: 0, pendientesParaProximaCorrida: 0, hasMore: false, detalles: [] };
+  }
+
+  var lockEsquema = LockService.getScriptLock();
+  var columnasCierre;
+  try {
+    lockEsquema.waitLock(30000);
+    columnasCierre = _obtenerColumnasCierreSaiBiometria(hojaBio);
+  } catch (e) {
+    return { success: false, message: 'No se pudo preparar el esquema de cierre SAI. Intenta más tarde.' };
+  } finally {
+    if (lockEsquema.hasLock()) lockEsquema.releaseLock();
+  }
+
+  var ultimaFila = hojaBio.getLastRow();
+  var columnasLectura = Math.max(COL_INTENTOS_SAI_NULL, columnasCierre.estadoCierre, columnasCierre.fechaCierre);
+  var datos = hojaBio.getRange(2, 1, ultimaFila - 1, columnasLectura).getValues();
+  var limiteFecha = new Date();
+  limiteFecha.setDate(limiteFecha.getDate() - VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION);
+  var candidatos = [];
+
+  for (var i = 0; i < datos.length; i++) {
+    var solicitudId = String(datos[i][0] || '').trim();
+    var fase = String(datos[i][75] || '').trim().toUpperCase();
+    var estadoCierre = String(datos[i][columnasCierre.estadoCierre - 1] || '').trim().toUpperCase();
+    var fechaAsignacion = _parseFechaGAS(datos[i][COL_FECHA_ACTUALIZACION_FASE - 1]);
+
+    if (!solicitudId || (fase !== FASE_VERIFICACION_CIERRE_BIOMETRIA && fase !== 'ARCHIVADA')) continue;
+    if (ESTADOS_FINALES_GESTION.has(estadoCierre)) continue;
+    if (!fechaAsignacion || fechaAsignacion < limiteFecha) continue;
+    candidatos.push({ filaReal: i + 2, solicitudId: solicitudId });
+  }
+
+  if (candidatos.length === 0) {
+    _guardarCursorCierreSaiBiometria('');
+    return { success: true, message: 'No hay biometrías asignadas o archivadas pendientes de cierre SAI.', totalRevisados: 0, totalActualizados: 0, pendientesParaProximaCorrida: 0, hasMore: false, detalles: [] };
+  }
+
+  var endpoint = getEndPointNewSai();
+  var apiKey = getKeyFull();
+  if (!endpoint || !apiKey) return { success: false, message: 'Endpoint o API key de SAI no configurados.' };
+
+  var cursor = _leerPuntoCierreSaiBiometria(PROPIEDAD_CURSOR_CIERRE_SAI_BIOMETRIA);
+  var planCierre = _prepararPlanCierreSaiBiometria(candidatos, cursor);
+  var candidatosOrdenados = planCierre.orden;
+  var cantidadAProcesar = Math.min(
+    candidatosOrdenados.length,
+    MAX_CANDIDATOS_VERIFICACION_SAI,
+    planCierre.cantidadHastaLimite
+  );
+  var inicioMs = Date.now();
+  var observacionesSai = [];
+  var cierresSai = [];
+  var detalles = [];
+  var detenidaPorTiempo = false;
+
+  if (candidatosOrdenados.length > cantidadAProcesar) {
+    Logger.log('📋 Cierre SAI biometría: ' + candidatosOrdenados.length + ' asignadas o archivadas; se procesarán hasta ' + cantidadAProcesar + ' desde ' + (cursor ? cursor.solicitudId : 'el inicio') + '.');
+  }
+
+  for (var j = 0; j < cantidadAProcesar; j++) {
+    if (Date.now() - inicioMs >= TIEMPO_MAXIMO_VERIFICACION_SAI_MS) {
+      detenidaPorTiempo = true;
+      Logger.log('⏱️ Cierre SAI biometría: se alcanzó el presupuesto de tiempo; las solicitudes restantes se procesarán en la continuación.');
+      break;
+    }
+
+    var candidato = candidatosOrdenados[j];
+    try {
+      var response = UrlFetchApp.fetch(endpoint + candidato.solicitudId, {
+        method: 'GET',
+        muteHttpExceptions: true,
+        headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
+      });
+
+      if (response.getResponseCode() === 200) {
+        var datosSai = JSON.parse(response.getContentText());
+        var estadoSai = String(datosSai.studyStatus || '').toUpperCase().trim();
+        observacionesSai.push({ filaReal: candidato.filaReal, solicitudId: candidato.solicitudId, estado: estadoSai });
+
+        if (ESTADOS_FINALES_GESTION.has(estadoSai)) {
+          cierresSai.push({ filaReal: candidato.filaReal, solicitudId: candidato.solicitudId, estado: estadoSai });
+          detalles.push({ solicitudId: candidato.solicitudId, estado: 'ACTUALIZADO', detalle: estadoSai });
+        } else {
+          detalles.push({ solicitudId: candidato.solicitudId, estado: 'SIN_CAMBIO', detalle: estadoSai || 'sin estado' });
+        }
+      } else {
+        detalles.push({ solicitudId: candidato.solicitudId, estado: 'ERROR_HTTP', detalle: 'HTTP ' + response.getResponseCode() });
+      }
+    } catch (e) {
+      detalles.push({ solicitudId: candidato.solicitudId, estado: 'ERROR', detalle: e.message });
+    }
+
+    if (j < cantidadAProcesar - 1) Utilities.sleep(2000);
+  }
+
+  var totalRevisados = detalles.length;
+  var completoCiclo = totalRevisados >= planCierre.cantidadHastaLimite;
+  var pendientesParaProximaCorrida = completoCiclo
+    ? 0
+    : candidatosOrdenados.length - totalRevisados;
+  var hasMore = !completoCiclo && pendientesParaProximaCorrida > 0;
+  var siguientePunto = hasMore ? candidatosOrdenados[totalRevisados] : null;
+  var mensajePendientes = hasMore
+    ? ' Quedan ' + pendientesParaProximaCorrida + ' pendientes para la continuación'
+      + (detenidaPorTiempo ? ' por límite de tiempo.' : '.')
+    : '';
+
+  var lockEscritura = LockService.getScriptLock();
+  try {
+    lockEscritura.waitLock(30000);
+  } catch (e) {
+    return { success: false, message: 'No se pudo adquirir el lock. Intenta más tarde.' };
+  }
+
+  try {
+    var actualizaciones = _filtrarActualizacionesVigentesCierreSaiBiometria(
+      hojaBio,
+      observacionesSai,
+      cierresSai,
+      columnasCierre
+    );
+    var filasPorEstado = {};
+    actualizaciones.observaciones.forEach(function(observacion) {
+      if (!filasPorEstado[observacion.estado]) filasPorEstado[observacion.estado] = [];
+      filasPorEstado[observacion.estado].push(observacion.filaReal);
+    });
+    Object.keys(filasPorEstado).forEach(function(estado) {
+      var filas = filasPorEstado[estado];
+      hojaBio.getRangeList(filas.map(function(fila) { return hojaBio.getRange(fila, 63).getA1Notation(); })).setValue(estado);
+    });
+
+    if (actualizaciones.cierres.length > 0) {
+      var filasCierrePorEstado = {};
+      actualizaciones.cierres.forEach(function(cierre) {
+        if (!filasCierrePorEstado[cierre.estado]) filasCierrePorEstado[cierre.estado] = [];
+        filasCierrePorEstado[cierre.estado].push(cierre.filaReal);
+      });
+      var fechaCierre = new Date();
+      Object.keys(filasCierrePorEstado).forEach(function(estado) {
+        var filas = filasCierrePorEstado[estado];
+        hojaBio.getRangeList(filas.map(function(fila) {
+          return hojaBio.getRange(fila, columnasCierre.estadoCierre).getA1Notation();
+        })).setValue(estado);
+        var rangosFecha = hojaBio.getRangeList(filas.map(function(fila) {
+          return hojaBio.getRange(fila, columnasCierre.fechaCierre).getA1Notation();
+        }));
+        rangosFecha.setValue(fechaCierre);
+        rangosFecha.setNumberFormat('dd/MM/yyyy HH:mm:ss');
+      });
+    }
+    SpreadsheetApp.flush();
+    _guardarCursorCierreSaiBiometria(siguientePunto);
+
+    return {
+      success: true,
+      message: 'Verificación completada. ' + actualizaciones.cierres.length + ' de ' + totalRevisados + ' cierres SAI confirmados.' + mensajePendientes,
+      totalRevisados: totalRevisados,
+      totalActualizados: actualizaciones.cierres.length,
+      pendientesParaProximaCorrida: pendientesParaProximaCorrida,
+      hasMore: hasMore,
+      detalles: detalles
+    };
+  } catch (error) {
+    return { success: false, message: 'Error interno: ' + error.toString() };
+  } finally {
+    if (lockEscritura.hasLock()) lockEscritura.releaseLock();
+  }
+}
+
+// Núcleo de conciliación SAI para reestudios/UAR. Conserva su destino en
+// Historico_Gestiones porque no pertenece al ciclo de biometría.
 function _verificarAprobacionesPendientesEnSAI(config) {
   const ss = SpreadsheetApp.openById(config.ssId);
   const hojaHist = ss.getSheetByName("Historico_Gestiones");
@@ -3185,10 +3697,24 @@ function _verificarAprobacionesPendientesEnSAI(config) {
   // Consultar SAI candidato por candidato ANTES de tomar el lock: son llamadas HTTP
   // con pausa de 2s entre cada una, y no deben retener el ScriptLock global que
   // también usan la asignación de casos y el resto del sistema.
+  var cantidadAProcesar = Math.min(candidatos.length, MAX_CANDIDATOS_VERIFICACION_SAI);
+  var inicioMs = Date.now();
   var actualizaciones = [];
   var detalles = [];
+  var detenidaPorTiempo = false;
 
-  for (var j = 0; j < candidatos.length; j++) {
+  if (candidatos.length > cantidadAProcesar) {
+    Logger.log("📋 Verificación SAI: " + candidatos.length + " pendientes; se procesarán hasta "
+      + cantidadAProcesar + " en esta corrida.");
+  }
+
+  for (var j = 0; j < cantidadAProcesar; j++) {
+    if (Date.now() - inicioMs >= TIEMPO_MAXIMO_VERIFICACION_SAI_MS) {
+      detenidaPorTiempo = true;
+      Logger.log("⏱️ Verificación SAI: se alcanzó el presupuesto de tiempo; las solicitudes restantes se procesarán en la próxima corrida.");
+      break;
+    }
+
     var c = candidatos[j];
     try {
       var response = UrlFetchApp.fetch(endpoint + c.solicitudId, {
@@ -3214,14 +3740,21 @@ function _verificarAprobacionesPendientesEnSAI(config) {
       detalles.push({ solicitudId: c.solicitudId, estado: "ERROR", detalle: e.message });
     }
 
-    if (j < candidatos.length - 1) Utilities.sleep(2000);
+    if (j < cantidadAProcesar - 1) Utilities.sleep(2000);
   }
+
+  var totalRevisados = detalles.length;
+  var pendientesParaProximaCorrida = candidatos.length - totalRevisados;
+  var mensajePendientes = pendientesParaProximaCorrida > 0
+    ? " Quedan " + pendientesParaProximaCorrida + " pendientes para la próxima corrida"
+      + (detenidaPorTiempo ? " por límite de tiempo." : ".")
+    : "";
 
   if (actualizaciones.length === 0) {
     return {
       success: true,
-      message: "Verificación completada. 0 de " + candidatos.length + " actualizados.",
-      totalRevisados: candidatos.length,
+      message: "Verificación completada. 0 de " + totalRevisados + " actualizados." + mensajePendientes,
+      totalRevisados: totalRevisados,
       totalActualizados: 0,
       detalles: detalles
     };
@@ -3235,15 +3768,22 @@ function _verificarAprobacionesPendientesEnSAI(config) {
   }
 
   try {
-    actualizaciones.forEach(function(u) {
-      hojaHist.getRange(u.filaReal, config.colEscribirEstado).setValue(u.estado);
+    var rangosPorEstado = {};
+    actualizaciones.forEach(function(actualizacion) {
+      if (!rangosPorEstado[actualizacion.estado]) rangosPorEstado[actualizacion.estado] = [];
+      rangosPorEstado[actualizacion.estado].push(
+        hojaHist.getRange(actualizacion.filaReal, config.colEscribirEstado).getA1Notation()
+      );
+    });
+    Object.keys(rangosPorEstado).forEach(function(estado) {
+      hojaHist.getRangeList(rangosPorEstado[estado]).setValue(estado);
     });
     SpreadsheetApp.flush();
 
     return {
       success: true,
-      message: "Verificación completada. " + actualizaciones.length + " de " + candidatos.length + " actualizados.",
-      totalRevisados: candidatos.length,
+      message: "Verificación completada. " + actualizaciones.length + " de " + totalRevisados + " actualizados." + mensajePendientes,
+      totalRevisados: totalRevisados,
       totalActualizados: actualizaciones.length,
       detalles: detalles
     };
@@ -3255,39 +3795,36 @@ function _verificarAprobacionesPendientesEnSAI(config) {
 }
 
 /**
- * Verifica contra SAI el resultado real de los casos de desaplazamiento e inducción
- * (Historico_Gestiones principal) que un analista dejó sin resolución definitiva
- * (aplazado, negado con motivo pendiente, etc.). No toca digital/canones altos.
- * Diseñada para ejecutarse con trigger diario de 4 a 5 pm.
+ * Entrada para los triggers diarios de cierre SAI de biometrías.
+ * Puede configurarse en dos ventanas independientes, por ejemplo 02:00–03:00
+ * y 16:00–17:00; el lease impide que ambas se solapen.
+ * @returns {void}
  */
-function verificarAprobacionDesaplazamientos() {
-  return _verificarAprobacionesPendientesEnSAI({
-    ssId: TARGET_SOLICITUDES_SS_ID,
-    numCols: 61,
-    colSolicitud: 0,
-    colFechaAsig: 24,
-    colEstado: 16,
-    colEscribirEstado: 17,
-    colTipoAsignado: 60,
-    tiposFiltro: TIPOS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION,
-    ventanaDias: VENTANA_DIAS_VERIFICACION_DESAPLAZAMIENTO_INDUCCION
-  });
-}
-
 function triggerVerificacionDesaplazamientos() {
   try {
-    var resultado = verificarAprobacionDesaplazamientos();
-    Logger.log("Verificación desaplazamientos: " + resultado.totalRevisados + " revisados, " + resultado.totalActualizados + " actualizados.");
+    _ejecutarVerificacionDesaplazamientosProgramada('trigger diario');
   } catch (e) {
-    Logger.log("Error en trigger verificación desaplazamientos: " + e.message);
+    Logger.log('Error en trigger verificación desaplazamientos: ' + e.message);
   }
 }
 
-// SUSPENDIDA (2026-07-13): `verificarAprobacionDesaplazamientos()` ya cubre `induccion`
-// explícitamente (mismo Historico_Gestiones, mismo filtro de tipo) — este trigger corría
-// exactamente el mismo trabajo que `triggerVerificacionDesaplazamientos`, duplicando
-// innecesariamente las llamadas a SAI. Se puede borrar el trigger de tiempo asociado a
-// esta función en el editor de Apps Script (ícono del reloj) cuando sea conveniente.
+/**
+ * Continúa un backlog iniciado por triggerVerificacionDesaplazamientos.
+ * Este handler se programa temporalmente y se elimina al completar una vuelta.
+ * @returns {void}
+ */
+function triggerVerificacionDesaplazamientosContinuacion() {
+  try {
+    _ejecutarVerificacionDesaplazamientosProgramada('continuación');
+  } catch (e) {
+    Logger.log('Error en continuación de cierre SAI biometría: ' + e.message);
+  }
+}
+
+// SUSPENDIDA: la conciliación automática de SAI para biometrías ahora se concentra en
+// pendiente_biometria. Esta función no debe reactivarse para escribir resultados SAI
+// en Historico_Gestiones, ya que ese historial conserva exclusivamente la gestión y SLA
+// del analista.
 function triggerVerificacionInducciones() {
   Logger.log("triggerVerificacionInducciones SUSPENDIDA — ya cubierta por triggerVerificacionDesaplazamientos (verifica inducción internamente)");
   return;

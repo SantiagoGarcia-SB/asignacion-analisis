@@ -3442,7 +3442,7 @@ function trigger_importarFestivosColombiaAnual() {
 function admin_verificarDesaplazamientos() {
   try {
     verificarPermisoAdmin();
-    return verificarAprobacionDesaplazamientos();
+    return _ejecutarVerificacionDesaplazamientosProgramada('administrador');
   } catch (e) {
     return { success: false, message: e.message || e.toString() };
   }
