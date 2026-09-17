@@ -2676,6 +2676,13 @@ function seleccionarOrdenDesaplazamiento(botonClick) {
 // DESARCHIVADO MANUAL DE BIOMETRÍAS
 // ==============================================================
 function abrirDesarchivarBiometrias() {
+    function aFechaLocalIso(fecha) {
+        var anio = fecha.getFullYear();
+        var mes = String(fecha.getMonth() + 1).padStart(2, '0');
+        var dia = String(fecha.getDate()).padStart(2, '0');
+        return anio + '-' + mes + '-' + dia;
+    }
+
     Swal.fire({
         title: 'Consultando archivadas...',
         allowOutsideClick: false,
@@ -2693,29 +2700,72 @@ function abrirDesarchivarBiometrias() {
                 return;
             }
 
-            var listaTexto = res.lista.slice(0, 5).map(function(item) {
-                return item.solicitud + ' (archivada ' + item.fechaArchivado + ')';
-            }).join('<br>');
+            var hoy = new Date();
+            var ayer = new Date(hoy);
+            var anteayer = new Date(hoy);
+            ayer.setDate(hoy.getDate() - 1);
+            anteayer.setDate(hoy.getDate() - 2);
+
+            var fechaHoy = aFechaLocalIso(hoy);
+            var fechaAyer = aFechaLocalIso(ayer);
+            var fechaAnteayer = aFechaLocalIso(anteayer);
+            var cantidadInicial = Math.min(res.total, 10, 100);
 
             Swal.fire({
                 title: 'Desarchivar biometrías',
-                html: '<p style="text-align:left;font-size:0.85rem;color:var(--gris);">Hay <b>' + res.total + '</b> biometría(s) archivada(s). Se recuperarán las más recientes primero. Cada una se revalida contra SAI antes de reponerla — si ya se resolvió, se deja cerrada.</p>' +
-                      '<p style="text-align:left;font-size:0.78rem;color:var(--gris-light);margin-top:8px;">Más recientes:<br>' + listaTexto + '</p>',
-                input: 'number',
-                inputLabel: '¿Cuántas quieres recuperar?',
-                inputValue: Math.min(res.total, 10),
-                inputAttributes: { min: 1, max: res.total, step: 1 },
+                html: '<p style="text-align:left;font-size:0.85rem;color:var(--gris);">Elige la fecha de consulta SAI para recuperar biometrías archivadas. Cada caso se revalida contra SAI antes de reponerlo.</p>' +
+                      '<label for="fechaConsultaSaiOpcion" style="display:block;text-align:left;font-weight:600;margin-top:12px;">Fecha de consulta SAI</label>' +
+                      '<select id="fechaConsultaSaiOpcion" class="swal2-select" style="display:flex;width:100%;margin:6px 0 0;">' +
+                        '<option value="' + fechaHoy + '">Hoy (' + fechaHoy + ')</option>' +
+                        '<option value="' + fechaAyer + '">Ayer (' + fechaAyer + ')</option>' +
+                        '<option value="' + fechaAnteayer + '">Anteayer (' + fechaAnteayer + ')</option>' +
+                        '<option value="otra">Otra fecha</option>' +
+                      '</select>' +
+                      '<input id="fechaConsultaSai" class="swal2-input" type="date" max="' + fechaHoy + '" value="' + fechaHoy + '" disabled aria-label="Otra fecha de consulta SAI">' +
+                      '<label for="cantidadReactivacion" style="display:block;text-align:left;font-weight:600;margin-top:12px;">Cantidad a recuperar</label>' +
+                      '<input id="cantidadReactivacion" class="swal2-input" type="number" min="1" max="100" step="1" value="' + cantidadInicial + '" aria-label="Cantidad a recuperar">' +
+                      '<p style="text-align:left;font-size:0.8rem;color:var(--gris-light);margin-top:8px;"><b>Máximo 100 por operación.</b> El límite definitivo lo valida el backend.</p>',
                 showCancelButton: true,
                 confirmButtonColor: '#253150',
                 cancelButtonColor: '#706F6F',
                 confirmButtonText: 'Recuperar',
-                inputValidator: function(value) {
-                    var n = parseInt(value, 10);
-                    if (!n || n <= 0) return 'Ingresa una cantidad válida.';
-                    if (n > res.total) return 'Solo hay ' + res.total + ' archivada(s).';
+                didOpen: function() {
+                    var popup = Swal.getPopup();
+                    var opcionFecha = popup.querySelector('#fechaConsultaSaiOpcion');
+                    var fechaPersonalizada = popup.querySelector('#fechaConsultaSai');
+                    opcionFecha.addEventListener('change', function() {
+                        fechaPersonalizada.disabled = opcionFecha.value !== 'otra';
+                    });
+                },
+                preConfirm: function() {
+                    var popup = Swal.getPopup();
+                    var opcionFecha = popup.querySelector('#fechaConsultaSaiOpcion');
+                    var fechaPersonalizada = popup.querySelector('#fechaConsultaSai');
+                    var cantidadInput = popup.querySelector('#cantidadReactivacion');
+                    var fechaConsultaSai = opcionFecha.value === 'otra'
+                        ? fechaPersonalizada.value
+                        : opcionFecha.value;
+                    var cantidad = cantidadInput.valueAsNumber;
+
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaConsultaSai)
+                        || fechaConsultaSai > fechaHoy
+                        || !fechaPersonalizada.validity.valid) {
+                        Swal.showValidationMessage('Selecciona una fecha de consulta SAI válida no futura.');
+                        return false;
+                    }
+                    if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100) {
+                        Swal.showValidationMessage('Ingresa una cantidad entera entre 1 y 100.');
+                        return false;
+                    }
+                    return { fechaConsultaSai: fechaConsultaSai, cantidad: cantidad };
                 }
             }).then(function(result) {
                 if (!result.isConfirmed) return;
+
+                var solicitudReactivacion = {
+                    fechaConsultaSai: result.value.fechaConsultaSai,
+                    cantidad: result.value.cantidad
+                };
 
                 Swal.fire({
                     title: 'Recuperando casos...',
@@ -2729,6 +2779,9 @@ function abrirDesarchivarBiometrias() {
                         if (resDes && resDes.success) {
                             Swal.fire('Listo', resDes.message, 'success');
                             refrescarDashboard();
+                        } else if (resDes && resDes.errorCode === 'CANTIDAD_MAXIMA_EXCEDIDA') {
+                            var maximo = resDes.maxCantidad === undefined ? '' : ' Máximo autorizado: ' + resDes.maxCantidad + '.';
+                            Swal.fire('Límite de cantidad', (resDes.message || 'Cantidad máxima excedida.') + maximo, 'warning');
                         } else {
                             Swal.fire('Error', (resDes && resDes.message) || 'Error desconocido', 'error');
                         }
@@ -2736,7 +2789,7 @@ function abrirDesarchivarBiometrias() {
                     .withFailureHandler(function(err) {
                         Swal.fire('Error de conexión', mensajeErrorAmigable(err), 'error');
                     })
-                    .admin_desarchivarBiometrias(parseInt(result.value, 10));
+                    .admin_desarchivarBiometrias(solicitudReactivacion);
             });
         })
         .withFailureHandler(function(err) {

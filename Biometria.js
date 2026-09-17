@@ -2376,86 +2376,312 @@ function admin_listarBiometriasArchivadas() {
   }
 }
 
-// Recupera las `cantidad` solicitudes más recientemente archivadas: revalida cada una
-// contra SAI (mismo patrón que corregirBiometriasMalEnrutadas) y solo repone en la cola
-// de llamada ("solicitud") las que SAI sigue reportando como pendientes de biometría. Las
-// que ya se resolvieron por otro lado se dejan cerradas (fase "RESUELTA") en vez de
-// reabrirlas. Se salta a propósito la protección de _actualizarFaseBiometriaPendiente()
-// contra fases terminales, porque esta sí es una reactivación deliberada del admin.
-function admin_desarchivarBiometrias(cantidad) {
-  try {
-    var n = parseInt(cantidad, 10);
-    if (!n || n <= 0) return { success: false, message: "La cantidad debe ser un número mayor a 0." };
+// Valida que la solicitud de reactivación sea un objeto plano con solo las claves admitidas.
+// @param {*} solicitud dato recibido desde el panel administrativo
+// @return {boolean} true cuando el contrato tiene exactamente las dos claves propias permitidas
+function _esSolicitudDesarchivarBiometriasExacta(solicitud) {
+  if (!solicitud || Array.isArray(solicitud) || Object.getPrototypeOf(solicitud) !== Object.prototype) return false;
+  var claves = Object.getOwnPropertyNames(solicitud).sort();
+  if (claves.length !== 2 || claves[0] !== "cantidad" || claves[1] !== "fechaConsultaSai") return false;
+  return !Object.getOwnPropertySymbols || Object.getOwnPropertySymbols(solicitud).length === 0;
+}
 
+// Valida una fecha literal de calendario sin convertirla a un instante de otra zona horaria.
+// @param {*} fecha valor recibido en fechaConsultaSai
+// @return {boolean} true si representa un día existente que no es futuro en GMT-5
+function _esFechaConsultaSaiValida(fecha) {
+  if (typeof fecha !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return false;
+  var anio = Number(fecha.slice(0, 4));
+  var mes = Number(fecha.slice(5, 7));
+  var dia = Number(fecha.slice(8, 10));
+  if (anio < 1 || mes < 1 || mes > 12 || dia < 1 || dia > 31) return false;
+
+  var calendario = new Date(0);
+  calendario.setUTCFullYear(anio, mes - 1, dia);
+  calendario.setUTCHours(0, 0, 0, 0);
+  if (calendario.getUTCFullYear() !== anio
+    || calendario.getUTCMonth() !== mes - 1
+    || calendario.getUTCDate() !== dia) return false;
+
+  return fecha <= Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd");
+}
+
+// Determina si un valor es un entero seguro sin coerciones de tipo.
+// @param {*} cantidad valor recibido en la solicitud
+// @return {boolean} true si es un entero seguro de JavaScript
+function _esCantidadDesarchivarEnteraSegura(cantidad) {
+  return typeof cantidad === "number" && Number.isSafeInteger(cantidad);
+}
+
+// Valida el contrato antes de acceder a servicios de Sheets, SAI o bloqueos.
+// @param {*} solicitud dato de entrada del panel administrativo
+// @return {{valida: boolean, respuesta: (Object|null)}} resultado de validación seguro para el cliente
+function _validarSolicitudDesarchivarBiometrias(solicitud) {
+  var respuestaInvalida = {
+    success: false,
+    errorCode: "SOLICITUD_INVALIDA",
+    message: "La solicitud de desarchivado no es válida."
+  };
+  if (!_esSolicitudDesarchivarBiometriasExacta(solicitud)) return { valida: false, respuesta: respuestaInvalida };
+  if (!_esFechaConsultaSaiValida(solicitud.fechaConsultaSai)) return { valida: false, respuesta: respuestaInvalida };
+  if (!_esCantidadDesarchivarEnteraSegura(solicitud.cantidad)) return { valida: false, respuesta: respuestaInvalida };
+  if (solicitud.cantidad > 100) {
+    return {
+      valida: false,
+      respuesta: {
+        success: false,
+        errorCode: "CANTIDAD_MAXIMA_EXCEDIDA",
+        maxCantidad: 100,
+        message: "El máximo de desarchivado por operación es 100."
+      }
+    };
+  }
+  if (solicitud.cantidad < 1) return { valida: false, respuesta: respuestaInvalida };
+  return { valida: true, respuesta: null };
+}
+
+/**
+ * Normaliza una fecha de consulta SAI almacenada en hoja al día operativo.
+ * @param {*} fechaConsultaSai Valor de la columna 60 de la fila física.
+ * @return {string|null} Día YYYY-MM-DD válido o null si no es interpretable.
+ */
+function _normalizarFechaConsultaSaiCandidata(fechaConsultaSai) {
+  if (Object.prototype.toString.call(fechaConsultaSai) === "[object Date]") {
+    if (isNaN(fechaConsultaSai.getTime())) return null;
+    return Utilities.formatDate(fechaConsultaSai, "GMT-5", "yyyy-MM-dd");
+  }
+  return _esFechaConsultaSaiValida(fechaConsultaSai) ? fechaConsultaSai : null;
+}
+
+/**
+ * Filtra las filas físicas de desarchivado y aplica el límite después del filtro.
+ * @param {Object[][]} ids Valores de la columna de solicitud.
+ * @param {Object[][]} fases Valores de la columna de fase.
+ * @param {Object[][]} fechasConsultaSai Valores de la columna 60/índice 59.
+ * @param {string} fechaSolicitada Día operativo solicitado.
+ * @param {number} cantidad Límite validado de candidatas.
+ * @return {{fila: number, solicitud: string}[]} Candidatas en orden físico de hoja.
+ */
+function _seleccionarCandidatasDesarchivarBiometrias(ids, fases, fechasConsultaSai, fechaSolicitada, cantidad) {
+  var coincidencias = [];
+  for (var i = 0; i < ids.length; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
+    var solicitud = String(ids[i][0]).trim();
+    if (!solicitud || _normalizarFechaConsultaSaiCandidata(fechasConsultaSai[i][0]) !== fechaSolicitada) continue;
+    coincidencias.push({ fila: i + 2, solicitud: solicitud });
+  }
+  return coincidencias.slice(0, Math.min(cantidad, 100));
+}
+
+/**
+ * Espera la cadencia mínima antes de un nuevo intento individual a SAI.
+ * @param {number|null} ultimoIntentoMs Marca del intento anterior.
+ * @return {number} Marca del nuevo intento autorizada para la llamada SAI.
+ */
+function _esperarCadenciaSai(ultimoIntentoMs) {
+  var ahora = new Date().getTime();
+  if (ultimoIntentoMs !== null) {
+    var esperaPendiente = 1000 - (ahora - ultimoIntentoMs);
+    if (esperaPendiente > 0) Utilities.sleep(esperaPendiente);
+  }
+  return new Date().getTime();
+}
+
+/**
+ * Cuenta las coincidencias físicas antes de aplicar el límite de reactivación.
+ * @param {Object[][]} ids Valores de la columna de solicitud.
+ * @param {Object[][]} fases Valores de la columna de fase.
+ * @param {Object[][]} fechasConsultaSai Valores de la columna 60.
+ * @param {string} fechaSolicitada Día operativo solicitado.
+ * @return {number} Total de filas físicas candidatas.
+ */
+function _contarCandidatasDesarchivarBiometrias(ids, fases, fechasConsultaSai, fechaSolicitada) {
+  var cantidad = 0;
+  for (var i = 0; i < ids.length; i++) {
+    if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
+    if (!String(ids[i][0]).trim()) continue;
+    if (_normalizarFechaConsultaSaiCandidata(fechasConsultaSai[i][0]) === fechaSolicitada) cantidad++;
+  }
+  return cantidad;
+}
+
+/**
+ * Clasifica una respuesta SAI sin exponer ni persistir datos no admisibles.
+ * @param {*} datosApi Respuesta individual recibida de SAI.
+ * @return {string} ELEGIBLE, RESUELTA o REINTENTABLE.
+ */
+function _clasificarRespuestaSaiDesarchivarBiometrias(datosApi) {
+  if (!datosApi || typeof datosApi !== "object" || Array.isArray(datosApi)) return "REINTENTABLE";
+  if (datosApi.resultCode === undefined || datosApi.studyStatus === undefined
+    || datosApi.mainResultCode === undefined || datosApi.requestType === undefined) return "REINTENTABLE";
+
+  var resultCode = String(datosApi.resultCode).trim();
+  var studyStatus = String(datosApi.studyStatus).trim().toUpperCase();
+  var mainResultCode = String(datosApi.mainResultCode).trim();
+  var requestType = String(datosApi.requestType).trim().toUpperCase();
+  return resultCode === "500"
+    && studyStatus === "APROBADO_PENDIENTE_BIOMETRIA"
+    && mainResultCode === "2"
+    && requestType !== "AC"
+    && requestType !== "AV"
+    ? "ELEGIBLE"
+    : "RESUELTA";
+}
+
+/**
+ * Construye las métricas agregadas y no identificables de la operación.
+ * @param {number} cantidadSolicitada Cantidad validada solicitada.
+ * @return {Object} Métricas iniciales de la reactivación.
+ */
+function _crearMetricasDesarchivarBiometrias(cantidadSolicitada) {
+  return {
+    solicitudValida: true,
+    resultCode: "EN_PROCESO",
+    cantidadSolicitada: cantidadSolicitada,
+    candidatasFiltradas: 0,
+    candidatasSeleccionadas: 0,
+    intentosSai: 0,
+    elegibles: 0,
+    resueltas: 0,
+    reintentables: 0,
+    persistencia: {
+      insertadas: 0,
+      yaEnSolicitud: 0,
+      yaEnHistorico: 0,
+      invalidas: 0,
+      noConfirmadas: 0
+    },
+    esperaSaiMs: 0,
+    duracionMs: 0,
+    estadoPresupuesto: "EN_PROCESO"
+  };
+}
+
+/**
+ * Finaliza las métricas de una operación sin incluir datos de fila ni SAI.
+ * @param {Object} metricas Métricas agregadas acumuladas.
+ * @param {number} inicioMs Instante de inicio de la operación.
+ * @param {string} resultCode Resultado agregado de la operación.
+ * @return {Object} Métricas finalizadas.
+ */
+function _finalizarMetricasDesarchivarBiometrias(metricas, inicioMs, resultCode) {
+  metricas.resultCode = resultCode;
+  metricas.duracionMs = Math.max(0, new Date().getTime() - inicioMs);
+  metricas.estadoPresupuesto = metricas.candidatasSeleccionadas <= 100 && metricas.intentosSai <= 100
+    ? "DENTRO_DEL_LIMITE"
+    : "LIMITE_EXCEDIDO";
+  return metricas;
+}
+
+// Recupera las solicitudes archivadas solicitadas por el panel administrativo.
+function admin_desarchivarBiometrias(request) {
+  var validacion;
+  try {
+    validacion = _validarSolicitudDesarchivarBiometrias(request);
+  } catch (e) {
+    return { success: false, errorCode: "SOLICITUD_INVALIDA", message: "La solicitud de desarchivado no es válida." };
+  }
+  if (!validacion.valida) return validacion.respuesta;
+
+  var inicioOperacionMs = new Date().getTime();
+  var metricas = _crearMetricasDesarchivarBiometrias(request.cantidad);
+  try {
     var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
     if (!hojaBio || hojaBio.getLastRow() < 2) {
-      return { success: true, message: "No hay biometrías archivadas.", restauradas: 0, yaResueltas: 0, sinRespuestaSai: 0 };
+      return {
+        success: true,
+        message: "No hay biometrías archivadas para recuperar.",
+        restauradas: 0,
+        yaResueltas: 0,
+        sinRespuestaSai: 0,
+        metricas: _finalizarMetricasDesarchivarBiometrias(metricas, inicioOperacionMs, "SIN_COINCIDENCIAS")
+      };
     }
 
     var lastRow = hojaBio.getLastRow();
     var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
     var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
-    var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
-
-    var candidatos = [];
-    for (var i = 0; i < ids.length; i++) {
-      if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
-      var solId = String(ids[i][0]).trim();
-      if (!solId) continue;
-      var fecha = _parseFechaGAS(fechas[i][0]);
-      candidatos.push({ fila: i + 2, solicitud: solId, ts: fecha ? fecha.getTime() : 0 });
-    }
-
-    candidatos.sort(function(a, b) { return b.ts - a.ts; });
-    candidatos = candidatos.slice(0, n);
+    var fechasConsultaSai = hojaBio.getRange(2, 60, lastRow - 1, 1).getValues();
+    metricas.candidatasFiltradas = _contarCandidatasDesarchivarBiometrias(
+      ids, fases, fechasConsultaSai, request.fechaConsultaSai
+    );
+    var candidatos = _seleccionarCandidatasDesarchivarBiometrias(
+      ids, fases, fechasConsultaSai, request.fechaConsultaSai, request.cantidad
+    );
+    metricas.candidatasSeleccionadas = candidatos.length;
 
     if (candidatos.length === 0) {
-      return { success: true, message: "No hay biometrías archivadas para recuperar.", restauradas: 0, yaResueltas: 0, sinRespuestaSai: 0 };
+      return {
+        success: true,
+        message: "No hay biometrías archivadas para recuperar.",
+        restauradas: 0,
+        yaResueltas: 0,
+        sinRespuestaSai: 0,
+        metricas: _finalizarMetricasDesarchivarBiometrias(metricas, inicioOperacionMs, "SIN_COINCIDENCIAS")
+      };
     }
 
     var paraReponer = [];
-    var filasAActualizar = []; // { fila, nuevaFase }
-    var yaResueltas = 0, sinRespuestaSai = 0;
+    var filasAActualizar = [];
+    var yaResueltas = 0;
+    var sinRespuestaSai = 0;
+    var ultimoIntentoSaiMs = null;
 
     for (var c = 0; c < candidatos.length; c++) {
-      var datosApi = _consultarSaiIndividual(candidatos[c].solicitud);
-      if (!datosApi) {
-        sinRespuestaSai++;
-        continue;
+      var inicioEsperaSaiMs = new Date().getTime();
+      ultimoIntentoSaiMs = _esperarCadenciaSai(ultimoIntentoSaiMs);
+      metricas.esperaSaiMs += Math.max(0, ultimoIntentoSaiMs - inicioEsperaSaiMs);
+      metricas.intentosSai++;
+
+      var datosApi = null;
+      try {
+        datosApi = _consultarSaiIndividual(candidatos[c].solicitud);
+      } catch (e) {
+        Logger.log("⚠️ admin_desarchivarBiometrias: consulta SAI no disponible; la fila queda ARCHIVADA.");
       }
 
-      var statusActual = String(datosApi.studyStatus || "").toUpperCase().trim();
-      if (statusActual !== "APROBADO_PENDIENTE_BIOMETRIA" || !_esResultCodeBiometriaPendiente(datosApi.resultCode)) {
+      var clasificacionSai = _clasificarRespuestaSaiDesarchivarBiometrias(datosApi);
+      if (clasificacionSai === "REINTENTABLE") {
+        sinRespuestaSai++;
+        metricas.reintentables++;
+        continue;
+      }
+      if (clasificacionSai === "RESUELTA") {
         filasAActualizar.push({ fila: candidatos[c].fila, solicitud: candidatos[c].solicitud, nuevaFase: "RESUELTA" });
         yaResueltas++;
+        metricas.resueltas++;
         continue;
       }
 
-      paraReponer.push(_homologarDatosApi(datosApi));
-      filasAActualizar.push({ fila: candidatos[c].fila, solicitud: candidatos[c].solicitud, nuevaFase: "ESCALADA" });
-      Utilities.sleep(1000);
+      try {
+        paraReponer.push(_homologarDatosApi(datosApi));
+        filasAActualizar.push({ fila: candidatos[c].fila, solicitud: candidatos[c].solicitud, nuevaFase: "ESCALADA" });
+        metricas.elegibles++;
+      } catch (e) {
+        sinRespuestaSai++;
+        metricas.reintentables++;
+        Logger.log("⚠️ admin_desarchivarBiometrias: respuesta SAI no interpretable; la fila queda ARCHIVADA.");
+      }
     }
-
-    // --- FIX Bug 2: Atomic mark-on-success ---
-    // Patrón idéntico al de _volcarBloque() en _procesarCortePendientes():
-    // Escribir en "solicitud" PRIMERO; solo marcar ESCALADA si tiene éxito.
-    // Las RESUELTA no dependen de procesarYGuardarLote y se confirman siempre.
 
     var falloEscrituraSolicitud = false;
     var resultadoReposicion = {
       idsInsertados: [], idsYaEnSolicitud: [], idsYaEnHistorico: [], idsInvalidos: []
     };
-
     if (paraReponer.length > 0) {
       try {
-        resultadoReposicion = procesarYGuardarLote(paraReponer);
+        resultadoReposicion = procesarYGuardarLote(paraReponer) || resultadoReposicion;
       } catch (e) {
         falloEscrituraSolicitud = true;
-        Logger.log("❌ procesarYGuardarLote falló en admin_desarchivarBiometrias: " + e.message
-          + " — los " + paraReponer.length + " caso(s) que iban a ESCALADA se dejan en ARCHIVADA para reintento futuro.");
+        Logger.log("❌ procesarYGuardarLote falló en admin_desarchivarBiometrias; las filas quedan ARCHIVADAS para reintento.");
       }
     }
+
+    metricas.persistencia.insertadas = resultadoReposicion.idsInsertados.length;
+    metricas.persistencia.yaEnSolicitud = resultadoReposicion.idsYaEnSolicitud.length;
+    metricas.persistencia.yaEnHistorico = resultadoReposicion.idsYaEnHistorico.length;
+    metricas.persistencia.invalidas = resultadoReposicion.idsInvalidos.length;
 
     var idsConfirmadosEnCola = new Set(
       resultadoReposicion.idsInsertados.concat(resultadoReposicion.idsYaEnSolicitud)
@@ -2472,9 +2698,8 @@ function admin_desarchivarBiometrias(cantidad) {
       noConfirmadas.push(item.solicitud);
       return false;
     });
-    var restauradas = filasParaEscribir.filter(function(item) {
-      return item.nuevaFase === "ESCALADA";
-    }).length;
+    metricas.persistencia.noConfirmadas = noConfirmadas.length;
+    metricas.reintentables += noConfirmadas.length;
 
     var ahora = Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd HH:mm:ss");
     var lockFase = LockService.getScriptLock();
@@ -2485,7 +2710,7 @@ function admin_desarchivarBiometrias(cantidad) {
       filasParaEscribir.forEach(function(item) {
         var faseActual = String(hojaBio.getRange(item.fila, 76).getValue()).trim().toUpperCase();
         if (faseActual !== "ARCHIVADA") {
-          Logger.log("⚠️ admin_desarchivarBiometrias: se conserva fase " + faseActual + " para " + item.solicitud + ".");
+          Logger.log("⚠️ admin_desarchivarBiometrias: la fase cambió durante la reactivación; no se sobrescribe.");
           return;
         }
         hojaBio.getRange(item.fila, 76).setValue(item.nuevaFase);
@@ -2495,20 +2720,32 @@ function admin_desarchivarBiometrias(cantidad) {
       });
       if (fasesActualizadas > 0) SpreadsheetApp.flush();
     } catch (e) {
-      throw new Error("No se pudo confirmar la fase de las biometrías repuestas: " + e.message);
+      throw new Error("No se pudo confirmar la fase de las biometrías repuestas.");
     } finally {
       if (lockFase.hasLock()) lockFase.releaseLock();
     }
-    restauradas = restauradasConfirmadas;
 
-    var msg = restauradas + " biometría(s) repuestas en la cola de llamada.";
+    var msg = restauradasConfirmadas + " biometría(s) repuestas en la cola de llamada.";
     if (yaResueltas > 0) msg += " " + yaResueltas + " ya se habían resuelto en SAI (se dejaron cerradas).";
-    if (sinRespuestaSai > 0) msg += " " + sinRespuestaSai + " sin respuesta de SAI (se dejaron archivadas, reintentar luego).";
-    if (noConfirmadas.length > 0) msg += " ⚠️ " + noConfirmadas.length + " caso(s) no quedaron confirmados en solicitud y se dejaron archivados: " + noConfirmadas.join(", ") + ".";
+    if (sinRespuestaSai > 0) msg += " " + sinRespuestaSai + " sin respuesta interpretable de SAI (se dejaron archivadas, reintentar luego).";
+    if (noConfirmadas.length > 0) msg += " ⚠️ " + noConfirmadas.length + " caso(s) no quedaron confirmados en solicitud y se dejaron archivados.";
 
-    return { success: noConfirmadas.length === 0 || yaResueltas > 0, message: msg, restauradas: restauradas, yaResueltas: yaResueltas, sinRespuestaSai: sinRespuestaSai };
+    return {
+      success: noConfirmadas.length === 0 || yaResueltas > 0,
+      message: msg,
+      restauradas: restauradasConfirmadas,
+      yaResueltas: yaResueltas,
+      sinRespuestaSai: sinRespuestaSai,
+      metricas: _finalizarMetricasDesarchivarBiometrias(metricas, inicioOperacionMs, "COMPLETADA")
+    };
   } catch (e) {
-    return { success: false, message: e.message };
+    Logger.log("❌ admin_desarchivarBiometrias: error controlado durante la reactivación.");
+    return {
+      success: false,
+      errorCode: "REACTIVACION_NO_DISPONIBLE",
+      message: "No fue posible completar el desarchivado de biometrías.",
+      metricas: _finalizarMetricasDesarchivarBiometrias(metricas, inicioOperacionMs, "ERROR")
+    };
   }
 }
 

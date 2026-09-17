@@ -1,0 +1,183 @@
+{
+  "pbtResults": {
+    "1. Write bug-condition exploration properties for the strict 100-candidate reactivation contract (BEFORE implementing the fix)": {
+      "status": "passed",
+      "failingExample": "Expected-failure exploration succeeded (final 6-property run). fast-check seed 20260419 / path 0:0:0: a one-row ARCHIVADA fixture with request {fechaConsultaSai:'2026-04-19',cantidad:101} returned success:true, not CANTIDAD_MAXIMA_EXCEDIDA. seed 20260420 / path 0:0:0: {fechaConsultaSai:'2026-04-19',cantidad:'1'} was coerced, accepted, and had effects. Filter/cap fixture: LEADING-0..LEADING-4 displaced MATCH-95..MATCH-99. Fake-clock fixture: no-response -> eligible consecutive SAI attempts had gap 0 ms. SAI matrix: 503 yielded persistenceCalls=1 (must be 0) rather than RESUELTA. seed 20260421 / path 0:0: accessed fechaActualizacionFase, a forbidden reactivation field.",
+      "lastRunTimestamp": 1789664058431
+    },
+    "2. Write preservation properties for existing SAI persistence and later assignment (BEFORE implementing the fix)": {
+      "status": "passed",
+      "lastRunTimestamp": 1789664239650
+    },
+    "3.5 Verify the exploration properties now pass": {
+      "status": "passed",
+      "lastRunTimestamp": 1789665120133
+    },
+    "3.6 Verify the preservation properties still pass": {
+      "status": "passed",
+      "lastRunTimestamp": 1789665194877
+    }
+  },
+  "executionHistory": {
+    "1. Write bug-condition exploration properties for the strict 100-candidate reactivation contract (BEFORE implementing the fix)": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663873848
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663883220
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664078151
+      }
+    ],
+    "2. Write preservation properties for existing SAI persistence and later assignment (BEFORE implementing the fix)": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663874119
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664081838
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664276851
+      }
+    ],
+    "3.1 Update the reactivation modal contract in `VistaAdmin.html`": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663874236
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664281462
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664460635
+      }
+    ],
+    "3.2 Enforce exact validation and zero-effect rejection in `Biometria.js::admin_desarchivarBiometrias(request)`": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663874484
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664465802
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664608020
+      }
+    ],
+    "3.3 Select bounded physical candidates and schedule SAI deterministically": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663875198
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664612641
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664773389
+      }
+    ],
+    "3.4 Reuse protected SAI persistence and expose aggregate observability": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663875542
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664777800
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664966690
+      }
+    ],
+    "3.5 Verify the exploration properties now pass": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663875739
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789664971695
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665145943
+      }
+    ],
+    "3.6 Verify the preservation properties still pass": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663875914
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665150523
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665204716
+      }
+    ],
+    "4. Checkpoint - Validate bounded reactivation without regressions": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789663876054
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665209647
+      },
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665311682
+      }
+    ],
+    "3. Implement the strict bounded reactivation fix": [
+      {
+        "executionId": "71132b0d-c55c-49df-a75b-032fe21949fc",
+        "chatSessionId": "sess_68690b6a-d1d6-457d-b9c5-0e9c23692127",
+        "timestamp": 1789665204852
+      }
+    ]
+  }
+}
