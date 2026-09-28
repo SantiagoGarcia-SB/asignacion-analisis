@@ -2390,7 +2390,6 @@ function _invalidarCacheResumenArchivadas() {
 //  3. Solo se devuelve el resumen agregado que la UI usa (total + porFecha), no la lista
 //     completa de casos — `lista` se conserva vacía por compatibilidad del contrato.
 function admin_listarBiometriasArchivadas() {
-  var _t0 = Date.now();
   var cache = null;
   try {
     cache = CacheService.getScriptCache();
@@ -2398,17 +2397,13 @@ function admin_listarBiometriasArchivadas() {
     if (enCache) {
       var cacheado = JSON.parse(enCache);
       cacheado.desdeCache = true;
-      Logger.log("⏱ LISTAR_ARCHIVADAS: CACHE HIT en " + (Date.now() - _t0) + "ms");
       return cacheado;
     }
   } catch (e) { /* si el caché falla, se recalcula normalmente */ }
-  Logger.log("⏱ LISTAR_ARCHIVADAS: cache miss/get en " + (Date.now() - _t0) + "ms");
 
   try {
-    var _tOpen = Date.now();
     var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
-    Logger.log("⏱ LISTAR_ARCHIVADAS: openById+getSheet en " + (Date.now() - _tOpen) + "ms");
     if (!hojaBio || hojaBio.getLastRow() < 2) {
       return { success: true, total: 0, lista: [], porFecha: [] };
     }
@@ -2417,23 +2412,18 @@ function admin_listarBiometriasArchivadas() {
     // 76 (fase). En vez de traer las 77 columnas por fila (incluye JSON de codeudores y
     // textos largos en las columnas bajas, que no se usan), se leen dos rangos estrechos:
     //  - columna 1 sola
-    //  - columnas 60..76 (17 columnas de metadatos ligeros: fechas, estados, fase)
+    //  - columnas 60..77 (metadatos ligeros: fechas, estados, fase)
     // Baja el payload de ~77 a ~18 columnas por fila. Son 2 round-trips en lugar de 1, pero
     // cada uno mueve muchísimos menos datos — que es lo que realmente pesa con miles de filas.
     var lastRow = hojaBio.getLastRow();
-    var maxCols = hojaBio.getLastColumn();
     var numFilas = lastRow - 1;
-    var _tRead = Date.now();
     var colSolicitud = hojaBio.getRange(2, 1, numFilas, 1).getValues();
     var COL_FECHA_CONSULTA_SAI = 60;
     var anchoMeta = COL_FECHA_ACTUALIZACION_FASE - COL_FECHA_CONSULTA_SAI + 1; // 60..77
     var colsMeta = hojaBio.getRange(2, COL_FECHA_CONSULTA_SAI, numFilas, anchoMeta).getValues();
     var idxFaseEnMeta = 76 - COL_FECHA_CONSULTA_SAI;         // fase (col 76) dentro del bloque meta
     var idxFechaSaiEnMeta = 0;                                // fecha_consulta_sai (col 60) = primera del bloque
-    Logger.log("⏱ LISTAR_ARCHIVADAS: 2 getValues de " + numFilas + " filas (1 col + " + anchoMeta
-      + " cols; hoja: " + lastRow + " filas, " + maxCols + " cols) en " + (Date.now() - _tRead) + "ms");
 
-    var _tLoop = Date.now();
     var archivadas = [];
     for (var i = 0; i < colsMeta.length; i++) {
       if (String(colsMeta[i][idxFaseEnMeta]).trim().toUpperCase() !== "ARCHIVADA") continue;
@@ -2443,8 +2433,6 @@ function admin_listarBiometriasArchivadas() {
         fechaConsultaSai: _normalizarFechaConsultaSaiCandidata(colsMeta[i][idxFechaSaiEnMeta])
       });
     }
-    Logger.log("⏱ LISTAR_ARCHIVADAS: filtro+normalización de " + numFilas + " filas ("
-      + archivadas.length + " archivadas) en " + (Date.now() - _tLoop) + "ms");
 
     var resultado = {
       success: true,
@@ -2456,7 +2444,6 @@ function admin_listarBiometriasArchivadas() {
     if (cache) {
       try { cache.put(_RESUMEN_ARCHIVADAS_CACHE_KEY, JSON.stringify(resultado), _RESUMEN_ARCHIVADAS_CACHE_TTL_S); } catch (e) {}
     }
-    Logger.log("⏱ LISTAR_ARCHIVADAS: TOTAL (recalculado) " + (Date.now() - _t0) + "ms");
     return resultado;
   } catch (e) {
     return { success: false, message: e.message };
