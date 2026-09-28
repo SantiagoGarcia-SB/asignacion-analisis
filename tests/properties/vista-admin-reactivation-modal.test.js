@@ -13,15 +13,23 @@ const finModal = vistaAdmin.indexOf('function cargarOrdenDesaplazamientoActual()
 const modalReactivacion = vistaAdmin.slice(inicioModal, finModal);
 
 describe('abrirDesarchivarBiometrias', () => {
-  it('muestra fecha SAI y restringe localmente la cantidad a 1..100', () => {
+  it('puebla las fechas SAI desde porFecha con su conteo real y restringe la cantidad a 1..100', () => {
     expect(modalReactivacion).toContain('Fecha de consulta SAI');
-    expect(modalReactivacion).toContain('Hoy (');
-    expect(modalReactivacion).toContain('Ayer (');
-    expect(modalReactivacion).toContain('Anteayer (');
-    expect(modalReactivacion).toContain('Otra fecha');
+    // Opciones construidas desde res.porFecha (fechas reales), no adivinadas Hoy/Ayer/Anteayer.
+    expect(modalReactivacion).toContain('res.porFecha');
+    expect(modalReactivacion).toContain('data-total="');
+    expect(modalReactivacion).toContain('caso(s)</option>');
+    expect(modalReactivacion).not.toContain('Hoy (');
+    expect(modalReactivacion).not.toContain('Anteayer (');
+    // El tope de cantidad se acota al conteo de la fecha elegida, sin exceder 100.
     expect(modalReactivacion).toContain('Máximo 100 por operación.');
-    expect(modalReactivacion).toContain('type="number" min="1" max="100" step="1"');
     expect(modalReactivacion).toContain('cantidad < 1 || cantidad > 100');
+    expect(modalReactivacion).toContain('cantidad > totalFecha');
+  });
+
+  it('avisa cuando ninguna archivada tiene fecha de consulta SAI interpretable', () => {
+    expect(modalReactivacion).toContain('Sin fecha de consulta SAI');
+    expect(modalReactivacion).toContain('porFecha.length === 0');
   });
 
   it('envía exclusivamente fechaConsultaSai y cantidad sin mezclar Orden Biometría', () => {
@@ -37,5 +45,13 @@ describe('abrirDesarchivarBiometrias', () => {
     expect(modalReactivacion).toContain('resDes.message');
     expect(modalReactivacion).toContain('resDes.maxCantidad');
     expect(modalReactivacion.match(/admin_desarchivarBiometrias\(/g)).toHaveLength(1);
+  });
+
+  it('da feedback honesto por resultado: éxito solo si hubo repuestas', () => {
+    expect(modalReactivacion).toContain('mostrarResultadoDesarchivarBiometrias(resDes)');
+    expect(modalReactivacion).toContain("restauradas > 0 ? 'success' : 'info'");
+    expect(modalReactivacion).toContain('resDes.restauradas');
+    expect(modalReactivacion).toContain('resDes.yaResueltas');
+    expect(modalReactivacion).toContain('resDes.sinRespuestaSai');
   });
 });

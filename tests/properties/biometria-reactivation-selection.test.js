@@ -21,6 +21,25 @@ function crearSelector() {
   return factory(Utilities);
 }
 
+function crearAgrupador() {
+  const factory = new Function(
+    `${biometriaSource}\nreturn _agruparArchivadasPorFechaConsultaSai;`
+  );
+  return factory();
+}
+
+function crearNormalizador() {
+  const Utilities = {
+    // Día operativo "de hoy" fijo y bien futuro para que ninguna fecha de prueba sea futura.
+    formatDate() { return '2030-01-01'; },
+  };
+  const factory = new Function(
+    'Utilities',
+    `${biometriaSource}\nreturn _normalizarFechaConsultaSaiCandidata;`
+  );
+  return factory(Utilities);
+}
+
 function crearProgramador(relojInicial) {
   let reloj = relojInicial;
   function FechaFalsa() {
@@ -49,10 +68,23 @@ function comoColumnas(filas) {
   };
 }
 
+// Normaliza igual que _normalizarFechaConsultaSaiCandidata para strings (día = primeros 10):
+// el formato real de la columna 60 lleva hora ("yyyy-MM-dd HH:mm:ss").
+function diaEsperado(valor) {
+  return String(valor).trim().slice(0, 10);
+}
+
 const arbFilaFisica = fc.record({
   fase: fc.constantFrom('ARCHIVADA', 'ESCALADA', 'RESUELTA', ' archivada '),
   id: fc.constantFrom('', 'SOL-001', 'SOL-002', 'SOL-DUP'),
-  fechaConsultaSai: fc.constantFrom(FECHA_SOLICITADA, '2026-04-18', 'fecha-invalida', ''),
+  fechaConsultaSai: fc.constantFrom(
+    FECHA_SOLICITADA,
+    FECHA_SOLICITADA + ' 07:24:58',
+    '2026-04-18',
+    '2026-04-18 23:59:59',
+    'fecha-invalida',
+    ''
+  ),
 });
 
 describe('admin_desarchivarBiometrias candidate selection', () => {
@@ -86,7 +118,7 @@ describe('admin_desarchivarBiometrias candidate selection', () => {
             .filter(({ fila }) => (
               String(fila.fase).trim().toUpperCase() === 'ARCHIVADA'
               && fila.id !== ''
-              && fila.fechaConsultaSai === FECHA_SOLICITADA
+              && diaEsperado(fila.fechaConsultaSai) === FECHA_SOLICITADA
             ))
             .slice(0, cantidad)
             .map(({ fila, indice }) => ({ fila: indice + 2, solicitud: fila.id }));
@@ -119,5 +151,81 @@ describe('admin_desarchivarBiometrias candidate selection', () => {
 
     expect(segundoIntento - primerIntento).toBeGreaterThanOrEqual(1000);
     expect(tercerIntento - segundoIntento).toBeGreaterThanOrEqual(1000);
+  });
+});
+
+describe('_normalizarFechaConsultaSaiCandidata', () => {
+  it('extrae el día de un texto "yyyy-MM-dd HH:mm:ss" (formato real de la columna 60)', () => {
+    const normalizar = crearNormalizador();
+    // Formato exacto con que se persiste fila[59] = ahora en _guardarLoteBiometriaPendiente.
+    expect(normalizar('2026-07-01 07:24:58')).toBe('2026-07-01');
+    expect(normalizar('  2026-07-01 07:24:58  ')).toBe('2026-07-01');
+  });
+
+  it('sigue aceptando un día puro yyyy-MM-dd', () => {
+    const normalizar = crearNormalizador();
+    expect(normalizar('2026-07-01')).toBe('2026-07-01');
+  });
+
+  it('devuelve null para valores no interpretables', () => {
+    const normalizar = crearNormalizador();
+    expect(normalizar('')).toBeNull();
+    expect(normalizar('fecha-invalida')).toBeNull();
+    expect(normalizar('2026-02-30 10:00:00')).toBeNull();
+    expect(normalizar(null)).toBeNull();
+    expect(normalizar(12345)).toBeNull();
+  });
+
+  it('normaliza un objeto Date al día GMT-5', () => {
+    const normalizar = crearNormalizador();
+    // El mock de Utilities.formatDate devuelve el día fijo para cualquier Date válido.
+    expect(normalizar(new Date('2026-07-01T12:00:00Z'))).toBe('2030-01-01');
+    expect(normalizar(new Date('invalid'))).toBeNull();
+  });
+});
+
+describe('_agruparArchivadasPorFechaConsultaSai', () => {
+  it('agrupa por día, cuenta el total real y ordena de más reciente a más antigua', () => {
+    const agrupar = crearAgrupador();
+    const resultado = agrupar([
+      { fechaConsultaSai: '2026-04-18' },
+      { fechaConsultaSai: '2026-04-19' },
+      { fechaConsultaSai: '2026-04-18' },
+      { fechaConsultaSai: '2026-04-18' },
+    ]);
+    expect(resultado).toEqual([
+      { fecha: '2026-04-19', total: 1 },
+      { fecha: '2026-04-18', total: 3 },
+    ]);
+  });
+
+  it('excluye candidatas sin fecha de consulta SAI interpretable', () => {
+    const agrupar = crearAgrupador();
+    const resultado = agrupar([
+      { fechaConsultaSai: null },
+      { fechaConsultaSai: '' },
+      { fechaConsultaSai: '2026-04-19' },
+    ]);
+    expect(resultado).toEqual([{ fecha: '2026-04-19', total: 1 }]);
+  });
+
+  it('el total agrupado nunca excede la cantidad de candidatas con fecha', () => {
+    const agrupar = crearAgrupador();
+    const arbCandidata = fc.record({
+      fechaConsultaSai: fc.constantFrom('2026-04-19', '2026-04-18', '2026-04-17', null, ''),
+    });
+    fc.assert(
+      fc.property(fc.array(arbCandidata, { maxLength: 200 }), (candidatas) => {
+        const grupos = agrupar(candidatas);
+        const sumaGrupos = grupos.reduce((acc, g) => acc + g.total, 0);
+        const conFecha = candidatas.filter((c) => c.fechaConsultaSai).length;
+        expect(sumaGrupos).toBe(conFecha);
+        // Orden estrictamente descendente por fecha.
+        for (let i = 1; i < grupos.length; i++) {
+          expect(grupos[i - 1].fecha > grupos[i].fecha).toBe(true);
+        }
+      }),
+      { numRuns: 100, seed: 20260928 }
+    );
   });
 });

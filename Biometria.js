@@ -1030,6 +1030,8 @@ function _archivarColaBiometriaVencida() {
     if (!resultadoFase.success || resultadoFase.actualizadasIds.length !== idsAQuitarDeSolicitud.size) {
       Logger.log("⚠️ _archivarColaBiometriaVencida: fase ARCHIVADA incompleta. " + JSON.stringify(resultadoFase));
     }
+    // Entraron nuevas archivadas: el resumen cacheado quedó obsoleto.
+    _invalidarCacheResumenArchivadas();
   } catch (e) {
     Logger.log("❌ Error en _archivarColaBiometriaVencida: " + e.message);
   } finally {
@@ -2343,34 +2345,119 @@ function corregirBiometriasMalEnrutadas() {
 // funciones le dan al admin una forma de ver qué se archivó y recuperar los N casos más
 // recientes, siempre revalidando contra SAI antes de reponerlos en la cola.
 
-// Devuelve las solicitudes en pendiente_biometria con fase "ARCHIVADA", más recientes
-// primero (por fecha_actualizacion_fase), para que el admin decida cuántas recuperar.
+/**
+ * Agrupa las candidatas archivadas por día de consulta SAI para que el panel muestre
+ * fechas reales con su conteo, en vez de que el admin adivine una fecha a ciegas.
+ * El día se normaliza con el MISMO criterio que la selección del desarchivado
+ * (_normalizarFechaConsultaSaiCandidata sobre la columna 60), de modo que el conteo
+ * mostrado coincide exactamente con lo que admin_desarchivarBiometrias podrá recuperar.
+ * @param {{fechaConsultaSai: (string|null)}[]} archivadas Candidatas con su día operativo ya normalizado.
+ * @return {{fecha: string, total: number}[]} Grupos con día YYYY-MM-DD válido, más recientes primero.
+ */
+function _agruparArchivadasPorFechaConsultaSai(archivadas) {
+  var conteos = {};
+  for (var i = 0; i < archivadas.length; i++) {
+    var dia = archivadas[i].fechaConsultaSai;
+    if (!dia) continue; // sin fecha de consulta SAI interpretable: no es recuperable por fecha
+    conteos[dia] = (conteos[dia] || 0) + 1;
+  }
+  return Object.keys(conteos)
+    .sort(function(a, b) { return a < b ? 1 : (a > b ? -1 : 0); })
+    .map(function(dia) { return { fecha: dia, total: conteos[dia] }; });
+}
+
+// Clave y TTL del caché del resumen de archivadas. El conteo solo cambia cuando corre el
+// trigger de archivado (_archivarColaBiometriaVencida) o cuando el admin desarchiva
+// (admin_desarchivarBiometrias); ambos invalidan el caché explícitamente. El TTL corto es
+// una red de seguridad para que, ante cualquier ruta no contemplada, no quede obsoleto por
+// mucho tiempo. Se acepta que el conteo esté hasta ~3 min desactualizado (no es crítico).
+var _RESUMEN_ARCHIVADAS_CACHE_KEY = 'RESUMEN_BIOMETRIAS_ARCHIVADAS_V1';
+var _RESUMEN_ARCHIVADAS_CACHE_TTL_S = 180;
+
+/** Invalida el caché del resumen de biometrías archivadas. Se llama al archivar y al desarchivar. */
+function _invalidarCacheResumenArchivadas() {
+  try { CacheService.getScriptCache().remove(_RESUMEN_ARCHIVADAS_CACHE_KEY); } catch (e) {}
+}
+
+// Devuelve el resumen de solicitudes en pendiente_biometria con fase "ARCHIVADA":
+// el total y una agrupación `porFecha` (día de consulta SAI, columna 60) con conteos
+// reales, para que el panel ofrezca fechas existentes en vez de adivinarlas.
+//
+// Optimización de latencia (la hoja crece a miles de filas archivadas):
+//  1. Lectura en bloque: un único getRange en vez de cuatro, evitando 3 round-trips a Sheets.
+//  2. Caché del resumen (CacheService, TTL corto + invalidación al archivar/desarchivar):
+//     el primer clic lo calcula; los siguientes lo leen casi instantáneamente.
+//  3. Solo se devuelve el resumen agregado que la UI usa (total + porFecha), no la lista
+//     completa de casos — `lista` se conserva vacía por compatibilidad del contrato.
 function admin_listarBiometriasArchivadas() {
+  var _t0 = Date.now();
+  var cache = null;
   try {
+    cache = CacheService.getScriptCache();
+    var enCache = cache.get(_RESUMEN_ARCHIVADAS_CACHE_KEY);
+    if (enCache) {
+      var cacheado = JSON.parse(enCache);
+      cacheado.desdeCache = true;
+      Logger.log("⏱ LISTAR_ARCHIVADAS: CACHE HIT en " + (Date.now() - _t0) + "ms");
+      return cacheado;
+    }
+  } catch (e) { /* si el caché falla, se recalcula normalmente */ }
+  Logger.log("⏱ LISTAR_ARCHIVADAS: cache miss/get en " + (Date.now() - _t0) + "ms");
+
+  try {
+    var _tOpen = Date.now();
     var ssBio = SpreadsheetApp.openById(ID_SHEET_BIOMETRIA_PENDIENTE);
     var hojaBio = ssBio.getSheetByName(NOMBRE_HOJA_PENDIENTE_BIOMETRIA);
+    Logger.log("⏱ LISTAR_ARCHIVADAS: openById+getSheet en " + (Date.now() - _tOpen) + "ms");
     if (!hojaBio || hojaBio.getLastRow() < 2) {
-      return { success: true, total: 0, lista: [] };
+      return { success: true, total: 0, lista: [], porFecha: [] };
     }
 
+    // Solo se necesitan 3 columnas no contiguas: 1 (solicitud), 60 (fecha_consulta_sai) y
+    // 76 (fase). En vez de traer las 77 columnas por fila (incluye JSON de codeudores y
+    // textos largos en las columnas bajas, que no se usan), se leen dos rangos estrechos:
+    //  - columna 1 sola
+    //  - columnas 60..76 (17 columnas de metadatos ligeros: fechas, estados, fase)
+    // Baja el payload de ~77 a ~18 columnas por fila. Son 2 round-trips en lugar de 1, pero
+    // cada uno mueve muchísimos menos datos — que es lo que realmente pesa con miles de filas.
     var lastRow = hojaBio.getLastRow();
-    var ids = hojaBio.getRange(2, 1, lastRow - 1, 1).getValues();
-    var fases = hojaBio.getRange(2, 76, lastRow - 1, 1).getValues();
-    var fechas = hojaBio.getRange(2, COL_FECHA_ACTUALIZACION_FASE, lastRow - 1, 1).getValues();
+    var maxCols = hojaBio.getLastColumn();
+    var numFilas = lastRow - 1;
+    var _tRead = Date.now();
+    var colSolicitud = hojaBio.getRange(2, 1, numFilas, 1).getValues();
+    var COL_FECHA_CONSULTA_SAI = 60;
+    var anchoMeta = COL_FECHA_ACTUALIZACION_FASE - COL_FECHA_CONSULTA_SAI + 1; // 60..77
+    var colsMeta = hojaBio.getRange(2, COL_FECHA_CONSULTA_SAI, numFilas, anchoMeta).getValues();
+    var idxFaseEnMeta = 76 - COL_FECHA_CONSULTA_SAI;         // fase (col 76) dentro del bloque meta
+    var idxFechaSaiEnMeta = 0;                                // fecha_consulta_sai (col 60) = primera del bloque
+    Logger.log("⏱ LISTAR_ARCHIVADAS: 2 getValues de " + numFilas + " filas (1 col + " + anchoMeta
+      + " cols; hoja: " + lastRow + " filas, " + maxCols + " cols) en " + (Date.now() - _tRead) + "ms");
 
+    var _tLoop = Date.now();
     var archivadas = [];
-    for (var i = 0; i < ids.length; i++) {
-      if (String(fases[i][0]).trim().toUpperCase() !== "ARCHIVADA") continue;
-      var solId = String(ids[i][0]).trim();
+    for (var i = 0; i < colsMeta.length; i++) {
+      if (String(colsMeta[i][idxFaseEnMeta]).trim().toUpperCase() !== "ARCHIVADA") continue;
+      var solId = String(colSolicitud[i][0]).trim();
       if (!solId) continue;
-      var fecha = _parseFechaGAS(fechas[i][0]);
-      archivadas.push({ solicitud: solId, fechaArchivado: fecha ? Utilities.formatDate(fecha, "GMT-5", "dd/MM/yyyy HH:mm") : "" , _ts: fecha ? fecha.getTime() : 0 });
+      archivadas.push({
+        fechaConsultaSai: _normalizarFechaConsultaSaiCandidata(colsMeta[i][idxFechaSaiEnMeta])
+      });
     }
+    Logger.log("⏱ LISTAR_ARCHIVADAS: filtro+normalización de " + numFilas + " filas ("
+      + archivadas.length + " archivadas) en " + (Date.now() - _tLoop) + "ms");
 
-    archivadas.sort(function(a, b) { return b._ts - a._ts; });
-    archivadas.forEach(function(a) { delete a._ts; });
+    var resultado = {
+      success: true,
+      total: archivadas.length,
+      lista: [],
+      porFecha: _agruparArchivadasPorFechaConsultaSai(archivadas)
+    };
 
-    return { success: true, total: archivadas.length, lista: archivadas.slice(0, 50) };
+    if (cache) {
+      try { cache.put(_RESUMEN_ARCHIVADAS_CACHE_KEY, JSON.stringify(resultado), _RESUMEN_ARCHIVADAS_CACHE_TTL_S); } catch (e) {}
+    }
+    Logger.log("⏱ LISTAR_ARCHIVADAS: TOTAL (recalculado) " + (Date.now() - _t0) + "ms");
+    return resultado;
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -2450,7 +2537,14 @@ function _normalizarFechaConsultaSaiCandidata(fechaConsultaSai) {
     if (isNaN(fechaConsultaSai.getTime())) return null;
     return Utilities.formatDate(fechaConsultaSai, "GMT-5", "yyyy-MM-dd");
   }
-  return _esFechaConsultaSaiValida(fechaConsultaSai) ? fechaConsultaSai : null;
+  // La columna 60 se persiste como texto "yyyy-MM-dd HH:mm:ss" (ver fila[59] = ahora en
+  // _guardarLoteBiometriaPendiente), así que hay que quedarse con el día antes de validar.
+  // Exigir el patrón exacto sin hora dejaba fuera a TODAS las filas reales.
+  if (typeof fechaConsultaSai === "string") {
+    var soloDia = fechaConsultaSai.trim().slice(0, 10);
+    return _esFechaConsultaSaiValida(soloDia) ? soloDia : null;
+  }
+  return null;
 }
 
 /**
@@ -2724,6 +2818,9 @@ function admin_desarchivarBiometrias(request) {
     } finally {
       if (lockFase.hasLock()) lockFase.releaseLock();
     }
+
+    // Cambió el conjunto de archivadas: el resumen cacheado quedó obsoleto.
+    if (fasesActualizadas > 0) _invalidarCacheResumenArchivadas();
 
     var msg = restauradasConfirmadas + " biometría(s) repuestas en la cola de llamada.";
     if (yaResueltas > 0) msg += " " + yaResueltas + " ya se habían resuelto en SAI (se dejaron cerradas).";
